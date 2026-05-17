@@ -132,7 +132,7 @@ export const warpedSurfaces: Pattern = {
     { label: "Color Palette", type: "select", options: ["Iridescent", "Fire", "Ocean", "Void"],
       get: () => palette, set: (v) => { palette = v; } },
     { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.9,  get: () => saturation, set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.2, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness, set: (v) => { brightness = v; } },
+    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness, set: (v) => { brightness = v; } },
   ],
 
   init(ctx: PatternContext) {

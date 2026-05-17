@@ -100,7 +100,7 @@ export const crystalGem: Pattern = {
     { label: "Hue",        type: "range",  min: 0.0, max: 1.0, step: 0.01, default: 0.6,  get: () => hue,          set: (v) => { hue = v; } },
     { label: "Saturation", type: "range",  min: 0.0, max: 1.0, step: 0.05, default: 0.8,  get: () => saturation,   set: (v) => { saturation = v; } },
     { label: "Fresnel",    type: "range",  min: 0.0, max: 3.0, step: 0.1,  default: 1.4,  get: () => fresnelStr,   set: (v) => { fresnelStr = v; } },
-    { label: "Brightness", type: "range",  min: 0.2, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness,   set: (v) => { brightness = v; } },
+    { label: "Brightness", type: "range",  min: 0.75, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness,   set: (v) => { brightness = v; } },
     { label: "Rotation",   type: "range",  min: 0.0, max: 2.0, step: 0.05, default: 0.5,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
     { label: "Facets",     type: "select", options: ["8", "16", "32", "64"],
       get: () => facets,

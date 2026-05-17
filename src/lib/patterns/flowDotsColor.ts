@@ -137,7 +137,7 @@ export const flowDotsColor: Pattern = {
     { label: "Perspective",    type: "range", min: 0.0, max: 2.0, step: 0.05, default: 1.9,  get: () => perspective, set: v => { perspective = v; } },
     { label: "Color Speed",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.55, get: () => colorSpeed, set: v => { colorSpeed = v; } },
     { label: "Saturation",     type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5,  get: () => saturation, set: v => { saturation = v; } },
-    { label: "Brightness",     type: "range", min: 0.2, max: 2.0, step: 0.05, default: 1.2,  get: () => brightness, set: v => { brightness = v; } },
+    { label: "Brightness",     type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.2,  get: () => brightness, set: v => { brightness = v; } },
     { label: "Rotate",         type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.03, get: () => rotateSpeed, set: v => { rotateSpeed = v; } },
     { label: "Opacity",        type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.85, get: () => opacity,    set: v => { opacity = v; } },
     { label: "Color Palette",  type: "select", options: PALETTE_NAMES,

@@ -97,7 +97,7 @@ export const shaderGradient: Pattern = {
     { label: "Speed",       type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.02, get: () => speed,       set: (v) => { speed = v; } },
     { label: "Colors",      type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.85,  get: () => colors,      set: (v) => { colors = v; } },
     { label: "Saturation",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.95,  get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",  type: "range", min: 0.0,   max: 2.0,  step: 0.05, default: 1.0,   get: () => brightness,  set: (v) => { brightness = v; } },
+    { label: "Brightness",  type: "range", min: 0.75,  max: 2.0,  step: 0.05, default: 1.0,   get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Dynamic",     type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.6,   get: () => dynamic,     set: (v) => { dynamic = v; } },
   ],
 

@@ -196,7 +196,7 @@ export const lightPaint: Pattern = {
     },
     {
       label: "Brightness",
-      type: "range", min: 0.5, max: 8.0, step: 0.1,
+      type: "range", min: 0.75, max: 8.0, step: 0.1,
       default: 1,
       get: () => gain,
       set: (v) => { gain = v; },

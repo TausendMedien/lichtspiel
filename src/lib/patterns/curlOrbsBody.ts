@@ -162,7 +162,7 @@ export const curlOrbsBody: Pattern = {
     { label: "Colors",       type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.4,  get: () => colorRange, set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.05, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
     { label: "Saturation",   type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1,    get: () => saturation, set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.2,  max: 2.0,  step: 0.05, default: 0.8,  get: () => brightness, set: (v) => { brightness = v; } },
+    { label: "Brightness",   type: "range", min: 0.75,  max: 2.0,  step: 0.05, default: 0.8,  get: () => brightness, set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0,  max: 0.5,  step: 0.01, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 

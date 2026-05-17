@@ -148,7 +148,7 @@ export const tunnelEdgePalette: Pattern = {
     { label: "Ring Offset",  type: "range", min: -3.14, max: 3.14, step: 0.05, default: 0,    get: () => ringOffset,  set: (v) => { ringOffset = v; } },
     { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    get: () => wobble,      set: (v) => { wobble = v; } },
     { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, get: () => shadowWidth, set: (v) => { shadowWidth = v; } },
-    { label: "Brightness",   type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 1,    get: () => brightness,  set: (v) => { brightness = v; } },
+    { label: "Brightness",   type: "range", min: 0.75,  max: 1.0,  step: 0.05, default: 1,    get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Saturation",   type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 1,    get: () => saturation,  set: (v) => { saturation = v; } },
     { label: "separator", type: "separator" },
     { label: "Center",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1, get: () => colCenter, set: (v) => { colCenter = v; } },

@@ -900,7 +900,16 @@
 
 <canvas bind:this={canvas} class="block w-full h-full"
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
-  ontouchstart={() => { if (appState !== "overview") poke(); }}
+  ontouchstart={() => {
+    if (appState !== "overview") {
+      if (hudVisible && !overlayHidden) {
+        hudVisible = false;
+        if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
+      } else {
+        poke();
+      }
+    }
+  }}
 ></canvas>
 
 <!-- ─── Cross-fade snapshot overlay ──────────────────────────────────── -->
@@ -1601,9 +1610,20 @@
                       max={ctrl.max}
                       step={ctrl.step}
                       value={ctrlVals[ctrl.label] ?? ctrl.get()}
-                      onpointerdown={ctrl.readonly ? undefined : () => { draggingLabel = ctrl.label; }}
-                      onpointerup={ctrl.readonly ? undefined : () => { draggingLabel = null; }}
-                      onpointercancel={ctrl.readonly ? undefined : () => { draggingLabel = null; }}
+                      onpointerdown={ctrl.readonly ? undefined : () => {
+                        draggingLabel = ctrl.label;
+                        overlayHidden = true;
+                      }}
+                      onpointerup={ctrl.readonly ? undefined : (e) => {
+                        const v = parseFloat((e.target as HTMLInputElement).value);
+                        ctrl.set(v);
+                        ctrlVals[ctrl.label] = v;
+                        saveSettings(patterns);
+                        requestAnimationFrame(() => { draggingLabel = null; overlayHidden = false; });
+                      }}
+                      onpointercancel={ctrl.readonly ? undefined : () => {
+                        requestAnimationFrame(() => { draggingLabel = null; overlayHidden = false; });
+                      }}
                       oninput={ctrl.readonly ? undefined : (e) => {
                         const v = parseFloat((e.target as HTMLInputElement).value);
                         ctrl.set(v);

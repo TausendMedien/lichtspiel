@@ -240,7 +240,7 @@ export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
   controls: [
-    { label: "Brightness",  type: "range", min: 0.05, max: 1.0,  step: 0.05, default: 0.55, get: () => brightness, set: (v) => { brightness = v; } },
+    { label: "Brightness",  type: "range", min: 0.75, max: 1.0,  step: 0.05, default: 0.75, get: () => brightness, set: (v) => { brightness = v; } },
     { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.1,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
     { label: "Line Width",  type: "range", min: 0.5,  max: 6.0,  step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
