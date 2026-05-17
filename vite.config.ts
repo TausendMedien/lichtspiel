@@ -4,12 +4,24 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const commitHash = (() => {
-  try {
-    return execSync("git rev-parse --short HEAD").toString().trim();
-  } catch {
-    return "dev";
-  }
+// Bump this when releasing a significant new version
+const BASE_VERSION = "0.3";
+
+const buildVersion = (() => {
+  // Format timestamp in Europe/Berlin timezone: YYMMDD-HHmm
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
+  const ts = `${parts.year}${parts.month}${parts.day}-${parts.hour}${parts.minute}`;
+  return `v${BASE_VERSION}.${ts}`;
 })();
 
 export default defineConfig({
@@ -30,7 +42,7 @@ export default defineConfig({
   ],
   base: "/lichtspiel/",
   define: {
-    __COMMIT__: JSON.stringify(commitHash),
+    __VERSION__: JSON.stringify(buildVersion),
   },
   server: {
     port: process.env.PORT ? parseInt(process.env.PORT) : 5173,

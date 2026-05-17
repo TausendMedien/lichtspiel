@@ -68,13 +68,20 @@
   let snapshotFading = $state(false);
 
   // MIDI / audio / sharing state
+  const MIDI_ENABLED_KEY = 'pp:midi';
+  let midiEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(MIDI_ENABLED_KEY) === 'true' : false);
   let midiConnected = $state(false);
   let favorites = $state(new Set<string>());
   let showFavoritesOnly = $state(false);
+  let showPoseOnly = $state(false);
   let presetSlots = $state<(Snapshot | null)[]>([null, null, null]);
   let copiedLink = $state(false);
   let slotPressTimer: ReturnType<typeof setTimeout> | null = null;
   let slotFlash = $state<number | null>(null);
+
+  // MIDI lifecycle callbacks populated in onMount
+  let _midiStart: (() => void) | null = null;
+  let _midiStop:  (() => void) | null = null;
 
   // Gamepad / controller state
   let gamepadConnected = $state(false);
@@ -147,14 +154,17 @@
   $effect(() => { const _ = index; sliderFocusIndex = 0; });
 
   const displayPatterns = $derived(
-    showFavoritesOnly
-      ? patterns.map((p, i) => ({ p, i })).filter(({ p }) => favorites.has(p.id))
-      : patterns.map((p, i) => ({ p, i }))
+    patterns.map((p, i) => ({ p, i }))
+      .filter(({ p }) => !showFavoritesOnly || favorites.has(p.id))
+      .filter(({ p }) => !showPoseOnly || p.usesPose)
   );
 
   // Reactive mirror of current pattern's control values so the display
   // updates live as the user drags a slider (or types in a text field).
   let ctrlVals = $state<Record<string, number | string>>({});
+  // Track which slider the user is actively dragging to avoid liveSync
+  // overwriting the value attribute mid-drag (breaks touch/pointer on iPad/Mac).
+  let draggingLabel: string | null = null;
 
   function syncCtrlVals() {
     const next: Record<string, number | string> = {};
@@ -671,10 +681,19 @@
       (c) => { gamepadConnected = c; },
     );
 
-    const midiController = createMIDIController(
-      handleMIDIAction,
-      (c) => { midiConnected = c; },
-    );
+    let midiController: ReturnType<typeof createMIDIController> | null = null;
+    function startMidi() {
+      if (midiController) return;
+      midiController = createMIDIController(handleMIDIAction, (c) => { midiConnected = c; });
+    }
+    function stopMidi() {
+      midiController?.dispose();
+      midiController = null;
+      midiConnected = false;
+    }
+    _midiStart = startMidi;
+    _midiStop  = stopMidi;
+    if (midiEnabled) startMidi();
 
     // Apply shared URL if present
     const shared = decodeShare();
@@ -764,6 +783,7 @@
       if (hudVisible && appState !== 'overview') {
         for (const c of patterns[index]?.controls ?? []) {
           if (c.type === 'range') {
+            if (c.label === draggingLabel) continue;
             const v = c.get();
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'toggle' || c.type === 'section') {
@@ -859,7 +879,7 @@
     return () => {
       cancelAnimationFrame(liveRaf);
       gpController.dispose();
-      midiController.dispose();
+      stopMidi();
       detach();
       detachTouch();
       document.removeEventListener("fullscreenchange", onFsChange);
@@ -928,28 +948,33 @@
       </div>
     </div>
 
-    <!-- Favorites filter bar -->
+    <!-- Filter bar -->
     <div class="flex gap-1.5 px-3 pb-3 flex-wrap justify-center">
       <button
         class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
-          {!showFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-        onclick={() => { showFavoritesOnly = false; }}
+          {!showFavoritesOnly && !showPoseOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
+        onclick={() => { showFavoritesOnly = false; showPoseOnly = false; }}
       >All</button>
       <button
         class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
           {showFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-        onclick={() => { showFavoritesOnly = true; }}
+        onclick={() => { showFavoritesOnly = true; showPoseOnly = false; }}
       >★ Favorites</button>
+      <button
+        class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
+          {showPoseOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
+        onclick={() => { showPoseOnly = true; showFavoritesOnly = false; }}
+      >⬡ Pose</button>
     </div>
 
     <div class="grid grid-cols-3 gap-2 px-3 w-full max-w-lg pb-4">
-      {#if showFavoritesOnly && displayPatterns.length === 0}
+      {#if displayPatterns.length === 0}
         <div class="col-span-3 py-8 text-center text-sm text-white/35">
-          No favorites yet — star a pattern to add it here
+          {#if showFavoritesOnly}No favorites yet — star a pattern to add it here{:else}No patterns match this filter{/if}
         </div>
       {:else}
         {#each displayPatterns as { p, i }}
-          {#if p.id === 'lightTrail' && !showFavoritesOnly}
+          {#if p.id === 'lightTrail' && !showFavoritesOnly && !showPoseOnly}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
@@ -964,7 +989,12 @@
             onclick={() => activatePattern(i)}
             onmouseenter={() => { focusedIndex = i; switchTo(i); }}
           >
-            <span class="text-[10px] font-mono text-white/35">{i + 1}</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] font-mono text-white/35">{i + 1}</span>
+              {#if p.usesPose}
+                <span class="text-[9px] font-semibold tracking-widest text-white/40 border border-white/25 rounded px-1 py-0.5 normal-case">pose</span>
+              {/if}
+            </div>
             <span class="text-[13px] font-semibold leading-snug text-white pr-5">{p.name}</span>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <span
@@ -989,7 +1019,7 @@
       {/if}
     </div>
 
-    <div class="absolute bottom-4 right-4 font-mono text-[10px] text-white/20">{__COMMIT__}</div>
+    <div class="absolute bottom-4 right-4 font-mono text-[10px] text-white/20">{__VERSION__}</div>
 
   </div>
 {/if}
@@ -1242,6 +1272,35 @@
               class="w-full accent-white pointer-events-none" />
           </div>
         </div>
+      </div>
+
+      <!-- MIDI section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">MIDI</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70">Enable MIDI</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {midiEnabled ? 'bg-white/60' : 'bg-white/20'}"
+            onclick={() => {
+              midiEnabled = !midiEnabled;
+              localStorage.setItem(MIDI_ENABLED_KEY, String(midiEnabled));
+              if (midiEnabled) _midiStart?.(); else _midiStop?.();
+            }}
+            role="switch"
+            aria-checked={midiEnabled}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {midiEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        {#if midiEnabled}
+          <div class="mt-2 text-[11px] text-white/40">{midiConnected ? '♪ Device connected' : 'No device detected'}</div>
+        {/if}
       </div>
 
       <!-- Custom Colours section -->
@@ -1514,6 +1573,9 @@
                       max={ctrl.max}
                       step={ctrl.step}
                       value={ctrlVals[ctrl.label] ?? ctrl.get()}
+                      onpointerdown={ctrl.readonly ? undefined : () => { draggingLabel = ctrl.label; }}
+                      onpointerup={ctrl.readonly ? undefined : () => { draggingLabel = null; }}
+                      onpointercancel={ctrl.readonly ? undefined : () => { draggingLabel = null; }}
                       oninput={ctrl.readonly ? undefined : (e) => {
                         const v = parseFloat((e.target as HTMLInputElement).value);
                         ctrl.set(v);
@@ -1626,7 +1688,7 @@
           {#if gamepadConnected}
             <div class="mt-1 text-xs text-white/30">⎮ Gamepad</div>
           {/if}
-          {#if midiConnected}
+          {#if midiEnabled && midiConnected}
             <div class="mt-1 text-xs text-white/30">♪ MIDI</div>
           {/if}
         </div>
@@ -1645,7 +1707,7 @@
           {/if}
           <button
             class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {demoActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
-            onclick={() => { demoActive ? stopDemo() : startDemo(); }}
+            onclick={() => { demoActive ? stopDemo() : demoVisible = true; }}
           >
             {demoActive ? "● Demo" : "Demo"}
           </button>
