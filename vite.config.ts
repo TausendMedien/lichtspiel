@@ -8,8 +8,16 @@ import { VitePWA } from "vite-plugin-pwa";
 const BASE_VERSION = "0.3";
 
 const buildVersion = (() => {
-  // Format timestamp in Europe/Berlin timezone: YYMMDD-HHmm
-  const now = new Date();
+  // Use the git commit timestamp so the version is fixed at commit time,
+  // not at build time — ensures the version I report after pushing matches
+  // exactly what appears in the app.
+  let commitUnix: number;
+  try {
+    commitUnix = parseInt(execSync("git log -1 --format=%ct").toString().trim(), 10);
+  } catch {
+    commitUnix = Math.floor(Date.now() / 1000);
+  }
+  const now = new Date(commitUnix * 1000);
   const fmt = new Intl.DateTimeFormat("de-DE", {
     timeZone: "Europe/Berlin",
     year: "2-digit",
