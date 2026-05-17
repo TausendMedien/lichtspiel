@@ -990,6 +990,13 @@
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
+          {#if p.id === 'img-tealLines' && !showFavoritesOnly}
+            <div class="col-span-3 mt-2 flex items-center gap-2">
+              <div class="h-px flex-1 bg-white/20"></div>
+              <span class="text-[10px] uppercase tracking-widest text-white/40">Static Images</span>
+              <div class="h-px flex-1 bg-white/20"></div>
+            </div>
+          {/if}
           <button
             class="relative flex flex-col gap-1 rounded-xl border px-3 py-3 text-left transition-all duration-150 cursor-pointer
               {focusedIndex === i
@@ -1458,6 +1465,13 @@
             <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
+              <div class="h-px flex-1 bg-white/20"></div>
+            </div>
+          {/if}
+          {#if p.id === 'img-tealLines'}
+            <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
+              <div class="h-px flex-1 bg-white/20"></div>
+              <span class="text-[10px] uppercase tracking-widest text-white/40">Static Images</span>
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
