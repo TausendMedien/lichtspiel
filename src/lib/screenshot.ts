@@ -5,8 +5,12 @@ export function takeScreenshot(canvas: HTMLCanvasElement): void {
     .slice(0, 19);
   const filename = `Lichtspiel-Ulrich_Tausend-1000lights.de-${timestamp}.png`;
 
-  canvas.toBlob((blob) => {
+  canvas.toBlob(async (blob) => {
     if (!blob) { console.warn('[screenshot] toBlob returned null'); return; }
+    const file = new File([blob], filename, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Lichtspiel' }); return; } catch {}
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

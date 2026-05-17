@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { fade } from "svelte/transition";
   import { createRenderer, type RendererHandle } from "./lib/renderer";
   import { attachKeyboard, type KeyAction } from "./lib/keyboard";
@@ -248,10 +248,11 @@
     return from; // all disabled or only current enabled — stay put
   }
 
-  function crossFadeTo(n: number) {
+  async function crossFadeTo(n: number) {
     // Capture current frame BEFORE switching so snapshot covers the transition
     snapshotUrl = canvas.toDataURL();
     snapshotFading = false;
+    await tick(); // ensure snapshot img is in DOM before canvas switches
     // Switch pattern while snapshot covers the canvas
     index = switchTo(n);
     focusedIndex = index;
@@ -261,8 +262,8 @@
   }
 
   function scheduleNext() {
-    demoTimer = setTimeout(() => {
-      crossFadeTo(nextDemoIndex(index));
+    demoTimer = setTimeout(async () => {
+      await crossFadeTo(nextDemoIndex(index));
       scheduleNext();
     }, demoDwell * 1000);
   }
@@ -1035,7 +1036,7 @@
       {/if}
     </div>
 
-    <div class="absolute bottom-4 right-4 font-mono text-[10px] text-white/20">{__VERSION__}</div>
+    <div class="absolute right-4 font-mono text-[10px] text-white/20" style="bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))">{__VERSION__}</div>
 
   </div>
 {/if}
@@ -1822,18 +1823,16 @@
           onclick={copyShare}
           title="Copy shareable link"
         >{copiedLink ? '✓ Copied!' : '⛓'}</button>
-        {#if isTouch}
-          <button
-            class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
-            onclick={applyScreenshot}
-            title="Screenshot"
-          >📷</button>
-          <button
-            class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
-            onclick={() => recorder?.toggle()}
-            title="Record video"
-          >{isRecording ? '⏹' : '⏺'}</button>
-        {/if}
+        <button
+          class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
+          onclick={applyScreenshot}
+          title="Screenshot"
+        >📷</button>
+        <button
+          class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
+          onclick={() => recorder?.toggle()}
+          title="Record video"
+        >{isRecording ? '⏹' : '⏺'}</button>
       </div>
       <div class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-white/70">
         {#if isTouch}
