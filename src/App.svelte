@@ -1303,6 +1303,34 @@
         {/if}
       </div>
 
+      <!-- Developer section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Developer</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70">Export preset defaults</span>
+          <button
+            onclick={() => {
+              const entries: string[] = [];
+              for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i)!;
+                if (k.startsWith('pp:slots:')) {
+                  const patternId = k.slice('pp:slots:'.length);
+                  const val = localStorage.getItem(k);
+                  entries.push(`  '${patternId}': ${val},`);
+                }
+              }
+              const ts = `  // paste into src/lib/preset-defaults.ts\n${entries.join('\n')}`;
+              navigator.clipboard.writeText(ts);
+            }}
+            class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+          >Copy Defaults</button>
+        </div>
+      </div>
+
       <!-- Custom Colours section -->
       <div>
         <div class="mb-2 flex items-center gap-2">

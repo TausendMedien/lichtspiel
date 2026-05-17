@@ -1,18 +1,26 @@
 export type Snapshot = Record<string, number | boolean | string>;
 
+import { presetDefaults } from './preset-defaults';
+
 function key(patternId: string): string {
   return `pp:slots:${patternId}`;
+}
+
+function defaults(patternId: string): (Snapshot | null)[] {
+  const d = presetDefaults[patternId];
+  if (!d) return [null, null, null];
+  return [d[0] ?? null, d[1] ?? null, d[2] ?? null];
 }
 
 export function getSlots(patternId: string): (Snapshot | null)[] {
   try {
     const raw = localStorage.getItem(key(patternId));
-    if (!raw) return [null, null, null];
+    if (!raw) return defaults(patternId);
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [null, null, null];
+    if (!Array.isArray(parsed)) return defaults(patternId);
     return [parsed[0] ?? null, parsed[1] ?? null, parsed[2] ?? null];
   } catch {
-    return [null, null, null];
+    return defaults(patternId);
   }
 }
 
