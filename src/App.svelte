@@ -1571,7 +1571,7 @@
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
   >
-    <div class="flex max-h-full flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+    <div class="flex max-h-full flex-col overflow-hidden rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
       {#if patterns[index].controls?.length}
         {@const controlMeta = (() => {
           let sectionOn = true;

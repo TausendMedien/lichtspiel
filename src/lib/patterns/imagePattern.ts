@@ -56,7 +56,6 @@ const fragmentShader = /* glsl */`
   uniform float uDrift;
   uniform float uRipple;
   uniform float uChromaticAb;
-  uniform float uGrain;
   uniform float uEdgePulse;
   uniform float uAudioLevel;
   uniform vec2  uParallaxShift;
@@ -206,13 +205,7 @@ const fragmentShader = /* glsl */`
       col += uAudioLevel * luma * 0.55;
     }
 
-    // 14. Film grain
-    if (uGrain > 0.001) {
-      float noise = rand(clampedUv + fract(uTime * 0.017)) - 0.5;
-      col += noise * uGrain * 0.14;
-    }
-
-    // 15. Vignette — at low values subtle edge softening, at 1 edges are pure black
+    // 14. Vignette — at low values subtle edge softening, at 1 edges are pure black
     if (uVignette > 0.001) {
       vec2 vigUv = vUv * 2.0 - 1.0;
       float dist2 = dot(vigUv, vigUv);
@@ -246,7 +239,6 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
   let styleOn      = true;
   let vignette     = 0.0;
   let chromaticAb  = 0.0;
-  let grain        = 0.0;
   let edgePulse    = 0.0;
 
   // Motion section
@@ -273,6 +265,11 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
     motionControlLabels: [],
 
     controls: [
+      // ── Motion ───────────────────────────────────────────────────────
+      { label: 'Motion',      type: 'section', get: () => motionOn, set: v => { motionOn = v; } },
+      { label: 'Drift',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,  set: v => { drift = v; } },
+      { label: 'Ripple',      type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple, set: v => { ripple = v; } },
+
       // ── Image ────────────────────────────────────────────────────────
       { label: 'Image',       type: 'section', get: () => imgOn,   set: v => { imgOn = v; } },
       { label: 'Saturation',  type: 'range', min: 0,    max: 2,  step: 0.05, default: 1.0, get: () => saturation,   set: v => { saturation = v; } },
@@ -287,13 +284,7 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
       { label: 'Style',       type: 'section', get: () => styleOn, set: v => { styleOn = v; } },
       { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
-      { label: 'Film Grain',  type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
       { label: 'Edge Pulse',  type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
-
-      // ── Motion ───────────────────────────────────────────────────────
-      { label: 'Motion',      type: 'section', get: () => motionOn, set: v => { motionOn = v; } },
-      { label: 'Drift',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,  set: v => { drift = v; } },
-      { label: 'Ripple',      type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple, set: v => { ripple = v; } },
     ],
 
     init(ctx: PatternContext) {
@@ -327,7 +318,6 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
           uDrift:        { value: drift },
           uRipple:       { value: ripple },
           uChromaticAb:  { value: chromaticAb },
-          uGrain:        { value: grain },
           uEdgePulse:    { value: edgePulse },
           uAudioLevel:   { value: 0 },
           uParallaxShift: { value: new THREE.Vector2(0, 0) },
@@ -365,7 +355,6 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
 
       u.uVignette.value     = styleOn ? vignette : 0;
       u.uChromaticAb.value  = styleOn ? chromaticAb : 0;
-      u.uGrain.value        = styleOn ? grain : 0;
       u.uEdgePulse.value    = styleOn ? edgePulse : 0;
 
       u.uDrift.value        = motionOn ? drift : 0;
