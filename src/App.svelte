@@ -67,6 +67,12 @@
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
 
+  // Screenshot / recording toggles
+  const SCREENSHOTS_ENABLED_KEY = 'pp:screenshots';
+  const RECORDINGS_ENABLED_KEY  = 'pp:recordings';
+  let screenshotsEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(SCREENSHOTS_ENABLED_KEY) !== 'false' : true);
+  let recordingsEnabled  = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(RECORDINGS_ENABLED_KEY)  !== 'false' : true);
+
   // MIDI / audio / sharing state
   const MIDI_ENABLED_KEY = 'pp:midi';
   let midiEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(MIDI_ENABLED_KEY) === 'true' : false);
@@ -466,6 +472,7 @@
   }
 
   function applyScreenshot() {
+    if (!screenshotsEnabled) return;
     const c = handle?.getCanvas();
     if (c) {
       takeScreenshot(c);
@@ -475,6 +482,7 @@
   }
 
   function applyToggleRecording() {
+    if (!recordingsEnabled) return;
     const c = handle?.getCanvas();
     if (!c) return;
     if (isRecording) { stopRecording(); isRecording = false; }
@@ -1333,6 +1341,43 @@
         {/if}
       </div>
 
+      <!-- Capture section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Capture</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Screenshots</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {screenshotsEnabled ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => { screenshotsEnabled = !screenshotsEnabled; localStorage.setItem(SCREENSHOTS_ENABLED_KEY, String(screenshotsEnabled)); }}
+              role="switch"
+              aria-checked={screenshotsEnabled}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {screenshotsEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Screen Recording</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {recordingsEnabled ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => { recordingsEnabled = !recordingsEnabled; localStorage.setItem(RECORDINGS_ENABLED_KEY, String(recordingsEnabled)); }}
+              role="switch"
+              aria-checked={recordingsEnabled}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {recordingsEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Developer section -->
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
@@ -1836,16 +1881,20 @@
           onclick={copyShare}
           title="Copy shareable link"
         >{copiedLink ? '✓ Copied!' : '⛓'}</button>
-        <button
-          class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
-          onclick={applyScreenshot}
-          title="Screenshot"
-        >📷</button>
-        <button
-          class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
-          onclick={() => recorder?.toggle()}
-          title="Record video"
-        >{isRecording ? '⏹' : '⏺'}</button>
+        {#if screenshotsEnabled}
+          <button
+            class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
+            onclick={applyScreenshot}
+            title="Screenshot"
+          >📷</button>
+        {/if}
+        {#if recordingsEnabled}
+          <button
+            class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
+            onclick={() => recorder?.toggle()}
+            title="Record video"
+          >{isRecording ? '⏹' : '⏺'}</button>
+        {/if}
       </div>
       <div class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-white/70">
         {#if isTouch}
