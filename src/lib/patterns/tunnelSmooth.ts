@@ -9,7 +9,6 @@ let speed = 10;
 let wobble = 0.0;
 let ringCount = 42;
 let lineThickness = 0.10;
-let saturation = 1.0;
 let colorSpeed = 0.60;
 
 let colorPhase = 0;
@@ -32,7 +31,6 @@ const fragmentShader = /* glsl */ `
   uniform float uWobble;
   uniform float uRingCount;
   uniform float uLineWidth;
-  uniform float uSaturation;
   uniform float uColorPhase;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -74,9 +72,7 @@ const fragmentShader = /* glsl */ `
     float lit = 0.55 + 0.15 * sin(uTime * 0.4 + depth * 0.2);
     vec3 col = hsl2rgb(hue, 1.0, lit);
 
-    col = mix(vec3(1.0), col, uSaturation);
-
-    float pulse = mix(1.0, 0.85 + 0.15 * sin(uTime * 2.0 + stripe * 12.0), uSaturation);
+    float pulse = 0.85 + 0.15 * sin(uTime * 2.0 + stripe * 12.0);
     col *= pulse * line;
 
     gl_FragColor = vec4(col, line);
@@ -91,7 +87,6 @@ export const tunnelSmooth: Pattern = {
     { label: "Wobble",      type: "range", min: 0,    max: 1.0, step: 0.05, default: 0, get: () => wobble,        set: (v) => { wobble = v; } },
     { label: "Ring Count",  type: "range", min: 1,    max: 50,  step: 1, default: 42,    get: () => ringCount,     set: (v) => { ringCount = v; } },
     { label: "Thickness",   type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, get: () => lineThickness, set: (v) => { lineThickness = v; } },
-    { label: "Saturation",  type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 1, get: () => saturation,    set: (v) => { saturation = v; } },
     { label: "Color Speed", type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 0.6, get: () => colorSpeed,    set: (v) => { colorSpeed = v; } },
   ],
 
@@ -105,7 +100,6 @@ export const tunnelSmooth: Pattern = {
         uWobble:     { value: wobble },
         uRingCount:  { value: ringCount },
         uLineWidth:  { value: lineThickness },
-        uSaturation: { value: saturation },
         uColorPhase: { value: colorPhase },
       },
       vertexShader,
@@ -129,7 +123,6 @@ export const tunnelSmooth: Pattern = {
     material.uniforms.uWobble.value     = wobble;
     material.uniforms.uRingCount.value  = ringCount;
     material.uniforms.uLineWidth.value  = lineThickness;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
   },
 

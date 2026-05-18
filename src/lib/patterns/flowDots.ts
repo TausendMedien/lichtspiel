@@ -10,9 +10,7 @@ let dotSize     = 0.42;
 let warpAmount  = 1.75;
 let flowSpeed   = 0.02;
 let perspective = 1.9;
-let saturation  = 0.50;
 let colorSpeed  = 0.55;
-let brightness  = 1.20;
 let rotateSpeed = 0.03;
 let opacity = 0.85;
 
@@ -34,9 +32,7 @@ const fragmentShader = /* glsl */ `
   uniform float uDotSize;
   uniform float uWarpAmount;
   uniform float uPerspective;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
   uniform float uOpacity;
 
@@ -89,11 +85,9 @@ const fragmentShader = /* glsl */ `
     float df  = max(0.0, dot(sN, ld));
     float sp  = pow(max(0.0, dot(reflect(-ld, sN), vec3(0,0,1))), 22.0);
     vec3  dBase = mix(vec3(0.45, 0.88, 1.0), vec3(1.0), phi * 0.35 + perspGrad * 0.25);
-    float gray  = dot(dBase, vec3(0.299, 0.587, 0.114));
-    dBase = mix(vec3(gray), dBase, uSaturation);
     vec3  dCol = dBase * (0.3 + 0.7 * df) + vec3(1.0) * sp * 0.55;
 
-    vec3 col = mix(bgCol, dCol * uBrightness, dotMask);
+    vec3 col = mix(bgCol, dCol, dotMask);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), mix(1.0, uOpacity, dotMask));
   }
 `;
@@ -108,8 +102,6 @@ export const flowDots: Pattern = {
     { label: "Flow Speed",   type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Perspective",  type: "range", min: 0.0, max: 2.0, step: 0.05, default: 1.9, get: () => perspective, set: (v) => { perspective = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.55, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5, get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.2, get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.03, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
     { label: "Opacity",      type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.85, get: () => opacity,     set: (v) => { opacity = v; } },
   ],
@@ -124,9 +116,7 @@ export const flowDots: Pattern = {
         uDotSize:     { value: dotSize },
         uWarpAmount:  { value: warpAmount },
         uPerspective: { value: perspective },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
-        uBrightness:  { value: brightness },
         uRotAngle:    { value: rotAngle },
         uOpacity:     { value: opacity },
       },
@@ -147,9 +137,7 @@ export const flowDots: Pattern = {
     material.uniforms.uDotSize.value     = dotSize;
     material.uniforms.uWarpAmount.value  = warpAmount;
     material.uniforms.uPerspective.value = perspective;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uBrightness.value  = brightness;
     material.uniforms.uRotAngle.value    = rotAngle;
     material.uniforms.uOpacity.value     = opacity;
   },

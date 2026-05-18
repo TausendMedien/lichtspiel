@@ -10,9 +10,7 @@ let dotSize     = 0.67;
 let warpAmount  = 3.0;
 let flowSpeed   = 0.01;
 let swirlLines  = 1.25;
-let saturation  = 0.95;
 let colorSpeed  = 0.35;
-let brightness  = 1.45;
 let rotateSpeed = 0.01;
 let opacity = 0.85;
 
@@ -34,9 +32,7 @@ const fragmentShader = /* glsl */ `
   uniform float uDotSize;
   uniform float uWarpAmount;
   uniform float uSwirlLines;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
   uniform float uOpacity;
 
@@ -93,12 +89,10 @@ const fragmentShader = /* glsl */ `
     vec3  ld  = normalize(vec3(-0.5, 0.7, 0.8));
     float df  = max(0.0, dot(sN, ld));
     float sp  = pow(max(0.0, dot(reflect(-ld, sN), vec3(0,0,1))), 28.0);
-    vec3  pBase = mix(vec3(0.44, 0.07, 0.88), vec3(0.88, 0.72, 1.0), phi * uSaturation);
-    float gray  = dot(pBase, vec3(0.299, 0.587, 0.114));
-    pBase = mix(vec3(gray), pBase, uSaturation);
+    vec3  pBase = mix(vec3(0.44, 0.07, 0.88), vec3(0.88, 0.72, 1.0), phi);
     vec3  pCol = pBase * (0.25 + 0.75 * df) + vec3(1.0) * sp * 0.85;
 
-    vec3 col = mix(bgCol, pCol * uBrightness, dotMask * uOpacity);
+    vec3 col = mix(bgCol, pCol, dotMask * uOpacity);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -114,8 +108,6 @@ export const pearlFlow: Pattern = {
     { label: "Flow Speed",   type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.01, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Swirl Lines",  type: "range", min: 0.0, max: 1.5, step: 0.05, default: 1.25, get: () => swirlLines,  set: (v) => { swirlLines = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.35, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.95, get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.45, get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.01, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
     { label: "Opacity",      type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.85, get: () => opacity,     set: (v) => { opacity = v; } },
   ],
@@ -130,9 +122,7 @@ export const pearlFlow: Pattern = {
         uDotSize:    { value: dotSize },
         uWarpAmount: { value: warpAmount },
         uSwirlLines: { value: swirlLines },
-        uSaturation: { value: saturation },
         uColorPhase: { value: colorPhase },
-        uBrightness: { value: brightness },
         uRotAngle:   { value: rotAngle },
         uOpacity:    { value: opacity },
       },
@@ -153,9 +143,7 @@ export const pearlFlow: Pattern = {
     material.uniforms.uDotSize.value    = dotSize;
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uSwirlLines.value = swirlLines;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uRotAngle.value   = rotAngle;
     material.uniforms.uOpacity.value    = opacity;
   },

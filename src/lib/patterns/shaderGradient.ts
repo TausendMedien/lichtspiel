@@ -9,8 +9,6 @@ let scene: THREE.Scene | null = null;
 let speed = 0.02;
 let accTime = 0;
 let colors = 0.85;
-let saturation = 0.95;
-let brightness = 1.0;
 let dynamic = 0.6;
 
 const vertexShader = /* glsl */ `
@@ -26,8 +24,6 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
   uniform float uTime;
   uniform float uColors;
-  uniform float uSaturation;
-  uniform float uBrightness;
   uniform float uDynamic;
   uniform vec2 uResolution;
 
@@ -74,17 +70,12 @@ const fragmentShader = /* glsl */ `
     col = mix(col, vec3(0.95, 0.05, 0.9) * uColors, clamp(length(q) * 0.6, 0.0, 1.0));
     col = mix(col, vec3(0.1,  0.5,  1.0) * uColors, clamp(r.x * r.y * 1.4, 0.0, 1.0));
 
-    // Saturation (0 = B&W, 1 = full color)
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
-
     // Dynamic: contrast around mid-gray (0 = flat/uniform, 1 = full contrast)
     float contrast = 0.2 + uDynamic * 1.8;
     col = (col - 0.5) * contrast + 0.5;
     col = clamp(col, 0.0, 1.0);
 
-    // Brightness
-    col = clamp(col * uBrightness, 0.0, 1.0);
+    col = clamp(col, 0.0, 1.0);
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -96,8 +87,6 @@ export const shaderGradient: Pattern = {
   controls: [
     { label: "Speed",       type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.02, get: () => speed,       set: (v) => { speed = v; } },
     { label: "Colors",      type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.85,  get: () => colors,      set: (v) => { colors = v; } },
-    { label: "Saturation",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.95,  get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",  type: "range", min: 0.75,  max: 2.0,  step: 0.05, default: 1.0,   get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Dynamic",     type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.6,   get: () => dynamic,     set: (v) => { dynamic = v; } },
   ],
 
@@ -110,8 +99,6 @@ export const shaderGradient: Pattern = {
       uniforms: {
         uTime:       { value: 0 },
         uColors:      { value: colors },
-        uSaturation:  { value: saturation },
-        uBrightness:  { value: brightness },
         uDynamic:     { value: dynamic },
         uResolution:  { value: new THREE.Vector2(ctx.size.width, ctx.size.height) },
       },
@@ -130,8 +117,6 @@ export const shaderGradient: Pattern = {
     accTime += dt * speed;
     material.uniforms.uTime.value = accTime;
     material.uniforms.uColors.value = colors;
-    material.uniforms.uSaturation.value = saturation;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uDynamic.value = dynamic;
   },
 

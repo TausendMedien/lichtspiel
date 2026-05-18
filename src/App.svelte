@@ -21,6 +21,7 @@
   import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones } from "./lib/globalAudioSettings.svelte";
+  import { colorC2 } from "./lib/colorC2";
 
   const AUDIO_BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
 
@@ -1403,6 +1404,34 @@
             }}
             class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
           >Copy Defaults</button>
+        </div>
+      </div>
+
+      <!-- Global Colour Controls (C2) -->
+      <div>
+        <div class="mb-2 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Colour</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2">
+          {#each ([
+            { label: 'Saturation', key: 'saturation', min: 0, max: 1, step: 0.05 },
+            { label: 'Hue', key: 'hue', min: 0, max: 1, step: 0.01 },
+            { label: 'Brightness', key: 'brightness', min: 0.75, max: 2, step: 0.05 },
+          ] as const) as ctrl}
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-white/70 w-20 shrink-0">{ctrl.label}</span>
+              <input
+                type="range"
+                min={ctrl.min} max={ctrl.max} step={ctrl.step}
+                value={colorC2[ctrl.key]}
+                oninput={(e) => { colorC2[ctrl.key] = parseFloat((e.target as HTMLInputElement).value); }}
+                class="flex-1 h-1 accent-white cursor-pointer"
+              />
+              <span class="text-xs text-white/50 w-8 text-right">{colorC2[ctrl.key].toFixed(2)}</span>
+            </div>
+          {/each}
         </div>
       </div>
 

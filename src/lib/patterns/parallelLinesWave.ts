@@ -10,7 +10,6 @@ let scrollSpeed = 0.02;
 let lineWidth = 0.14;
 let waveAmp = 0.015;
 let colorRange = 0.65;
-let saturation = 0.15;
 let colorSpeed = 1.0;
 let waveSpeed = 1.0;
 let rotateSpeed = 0.02;
@@ -37,7 +36,6 @@ const fragmentShader = /* glsl */ `
   uniform float uWaveAmp;
   uniform float uWaveSpeed;
   uniform float uColorRange;
-  uniform float uSaturation;
   uniform float uColorPhase;
   uniform float uRotAngle;
 
@@ -75,7 +73,6 @@ const fragmentShader = /* glsl */ `
     vec3 col = hsl2rgb(hue, 1.0, lit);
 
     float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
 
     float pulse = 0.85 + 0.15 * sin(uTime * 2.0 + stripe * 12.0);
     col *= pulse * line;
@@ -95,7 +92,6 @@ export const parallelLinesWave: Pattern = {
     { label: "Colors",          type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0.65,  get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Wave Speed",      type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 1,  get: () => waveSpeed,   set: (v) => { waveSpeed = v; } },
     { label: "Color Speed",     type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,  get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",      type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0.15,  get: () => saturation,  set: (v) => { saturation = v; } },
     { label: "Rotate",          type: "range", min: 0.0, max: 0.5,  step: 0.01, default: 0.02,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -110,7 +106,6 @@ export const parallelLinesWave: Pattern = {
         uWaveAmp:     { value: waveAmp },
         uWaveSpeed:   { value: waveSpeed },
         uColorRange:  { value: colorRange },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
       },
@@ -137,7 +132,6 @@ export const parallelLinesWave: Pattern = {
     material.uniforms.uWaveAmp.value     = waveAmp;
     material.uniforms.uWaveSpeed.value   = waveSpeed;
     material.uniforms.uColorRange.value  = colorRange;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uRotAngle.value    = rotAngle;
   },

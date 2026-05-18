@@ -13,9 +13,7 @@ let flowSpeed   = 0.02;
 let orbCount    = 16;
 let orbSize     = 0.060;
 let colorRange  = 0.40;
-let saturation  = 1.0;
 let colorSpeed  = 0.05;
-let brightness  = 0.80;
 let rotateSpeed = 0.0;
 let bodyTracking = true;
 
@@ -43,9 +41,7 @@ const fragmentShader = /* glsl */ `
   uniform float uOrbCount;
   uniform float uOrbSize;
   uniform float uColorRange;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
   uniform vec2  uPersonPoints[15];
   uniform int   uPersonCount;
@@ -113,9 +109,9 @@ const fragmentShader = /* glsl */ `
     float line = smoothstep(0.0, aa, band) * smoothstep(lw, lw - aa, band);
 
     float hue    = 0.5 + sin(uColorPhase + phi * uColorRange * 6.28) * 0.08;
-    vec3 lineCol = mix(hsl2rgb(hue, uSaturation, 0.65), vec3(1.0), 0.45);
+    vec3 lineCol = mix(hsl2rgb(hue, 1.0, 0.65), vec3(1.0), 0.45);
     vec3 bgCol   = mix(vec3(0.0, 0.025, 0.04), vec3(0.0, 0.07, 0.11), phi * 0.6 + 0.2);
-    vec3 col     = bgCol + lineCol * line * uBrightness;
+    vec3 col     = bgCol + lineCol * line;
 
     // Hash-based orb glows (blue-white)
     for (int i = 0; i < 20; i++) {
@@ -130,7 +126,7 @@ const fragmentShader = /* glsl */ `
       float nd  = bd / bSz;
       float core = exp(-nd * nd * 2.8);
       float halo = exp(-nd * nd * 0.35);
-      col += vec3(0.85, 0.93, 1.0) * (core + halo * 0.28) * uBrightness;
+      col += vec3(0.85, 0.93, 1.0) * (core + halo * 0.28);
     }
 
     // Person-point glows (warm magenta/purple tint — visually distinct)
@@ -140,7 +136,7 @@ const fragmentShader = /* glsl */ `
       float nd = bd / personOrbSize;
       float core = exp(-nd * nd * 2.0);
       float halo = exp(-nd * nd * 0.25);
-      col += vec3(0.95, 0.6, 1.0) * (core * 0.9 + halo * 0.3) * uBrightness;
+      col += vec3(0.95, 0.6, 1.0) * (core * 0.9 + halo * 0.3);
     }
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -161,8 +157,6 @@ export const curlOrbsBody: Pattern = {
     { label: "Orb Size",     type: "range", min: 0.01, max: 0.15, step: 0.005, default: 0.06, get: () => orbSize,  set: (v) => { orbSize = v; } },
     { label: "Colors",       type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.4,  get: () => colorRange, set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.05, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1,    get: () => saturation, set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75,  max: 2.0,  step: 0.05, default: 0.8,  get: () => brightness, set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0,  max: 0.5,  step: 0.01, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -179,9 +173,7 @@ export const curlOrbsBody: Pattern = {
         uOrbCount:     { value: orbCount },
         uOrbSize:      { value: orbSize },
         uColorRange:   { value: colorRange },
-        uSaturation:   { value: saturation },
         uColorPhase:   { value: colorPhase },
-        uBrightness:   { value: brightness },
         uRotAngle:     { value: rotAngle },
         uPersonPoints: { value: personPoints },
         uPersonCount:  { value: 0 },
@@ -222,9 +214,7 @@ export const curlOrbsBody: Pattern = {
     material.uniforms.uOrbCount.value   = orbCount;
     material.uniforms.uOrbSize.value    = orbSize;
     material.uniforms.uColorRange.value = colorRange;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uRotAngle.value   = rotAngle;
     material.uniforms.uPersonCount.value = count;
   },

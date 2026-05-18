@@ -10,9 +10,7 @@ let flowSpeed   = 0.0;
 let warpAmount  = 1.4;
 let tealAmt     = 0.75;
 let purpleAmt   = 0.80;
-let saturation  = 0.50;
 let colorSpeed  = 0.08;
-let brightness  = 1.30;
 let rotateSpeed = 0.0;
 
 let paletteIndex = 1; // default: Purple/Teal (matches original look)
@@ -50,9 +48,7 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform float uTealAmt;
   uniform float uPurpleAmt;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
   uniform vec3  uColorA;
   uniform vec3  uColorB;
@@ -102,10 +98,6 @@ const fragmentShader = /* glsl */ `
     vec3 col = uDarkColor + ca * tealMask + cb * purpleMask;
     col += vec3(0.85, 0.95, 0.9) * edge * 0.18;
 
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
-
-    col *= uBrightness;
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -133,8 +125,6 @@ export const baroqueSwilsColor: Pattern = {
     { label: "Color A Mix",   type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.75, get: () => tealAmt,   set: v => { tealAmt = v; } },
     { label: "Color B Mix",   type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.8,  get: () => purpleAmt, set: v => { purpleAmt = v; } },
     { label: "Color Speed",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.08, get: () => colorSpeed,  set: v => { colorSpeed = v; } },
-    { label: "Saturation",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5,  get: () => saturation,  set: v => { saturation = v; } },
-    { label: "Brightness",    type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.3,  get: () => brightness,  set: v => { brightness = v; } },
     { label: "Rotate",        type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0,    get: () => rotateSpeed, set: v => { rotateSpeed = v; } },
     { label: "Color Palette", type: "select", options: PALETTE_NAMES,
       get: () => paletteIndex,
@@ -161,9 +151,7 @@ export const baroqueSwilsColor: Pattern = {
         uWarpAmount: { value: warpAmount },
         uTealAmt:    { value: tealAmt },
         uPurpleAmt:  { value: purpleAmt },
-        uSaturation: { value: saturation },
         uColorPhase: { value: colorPhase },
-        uBrightness: { value: brightness },
         uRotAngle:   { value: rotAngle },
         uColorA:     { value: new THREE.Color(...hexToVec3(colorA)) },
         uColorB:     { value: new THREE.Color(...hexToVec3(colorB)) },
@@ -186,9 +174,7 @@ export const baroqueSwilsColor: Pattern = {
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uTealAmt.value    = tealAmt;
     material.uniforms.uPurpleAmt.value  = purpleAmt;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uRotAngle.value   = rotAngle;
   },
 

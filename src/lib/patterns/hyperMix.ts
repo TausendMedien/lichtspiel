@@ -10,7 +10,6 @@ const params = {
   pointSize: 0.8,
   blur: 0.50,        // 0 = hard circle, 1 = full soft glow
   pointCount: 55000,
-  saturation: 1.0,
 };
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
@@ -136,7 +135,6 @@ const fragmentShader = /* glsl */ `
 
 uniform vec3 uColor1;
 uniform vec3 uColor2;
-uniform float uSaturation;
 uniform float uBlur;
 uniform float uCountScale;
 uniform float uPtSize;
@@ -158,8 +156,6 @@ void main() {
   float alpha = softness * vAlpha * uCountScale * 0.85;
 
   vec3 col = mix(uColor1, uColor2, vColorRatio);
-  float gray = dot(col, vec3(0.299, 0.587, 0.114));
-  col = mix(vec3(gray), col, uSaturation);
 
   gl_FragColor = vec4(col, alpha);
 }
@@ -251,13 +247,6 @@ export const hyperMix: Pattern = {
         }
       },
     },
-    {
-      label: "Saturation",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 1,
-      get: () => params.saturation,
-      set: (v) => { params.saturation = v; if (material) material.uniforms.uSaturation.value = v; },
-    },
   ],
 
   init(ctx: PatternContext) {
@@ -278,7 +267,6 @@ export const hyperMix: Pattern = {
         uCountScale: { value: 1.0 },
         uColor1:     { value: new THREE.Color(0x00ccff) },
         uColor2:     { value: new THREE.Color(0xff00cc) },
-        uSaturation: { value: params.saturation },
       },
       vertexShader,
       fragmentShader,

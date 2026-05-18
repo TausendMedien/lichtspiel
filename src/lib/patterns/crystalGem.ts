@@ -5,11 +5,8 @@ let mesh: THREE.Mesh | null = null;
 let geometry: THREE.SphereGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
 
-let hue          = 0.6;   // 0–1 full hue cycle
-let saturation   = 0.8;
 let fresnelStr   = 1.4;
 let rotationSpeed = 0.5;
-let brightness   = 1.1;
 let facets       = 1;     // select index → 8, 16, 32, 64 segments
 
 let rotX = 0, rotY = 0, rotZ = 0;
@@ -33,10 +30,7 @@ const fragmentShader = /* glsl */ `
   precision highp float;
   varying vec3 vWorldPos;
   varying vec3 vViewDir;
-  uniform float uHue;
-  uniform float uSaturation;
   uniform float uFresnel;
-  uniform float uBrightness;
 
   vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
@@ -60,10 +54,10 @@ const fragmentShader = /* glsl */ `
     float side = dot(vNormal, vec3(1.0, 0.0, 0.0)) * 0.5 + 0.5;
 
     // Primary gem color — green zone excluded via remapHue
-    float h1 = remapHue(uHue + up * 0.15);
-    float h2 = remapHue(uHue + 0.5 + side * 0.2);
-    vec3 col1 = hsv2rgb(vec3(h1, uSaturation, 0.9));
-    vec3 col2 = hsv2rgb(vec3(h2, uSaturation * 0.6, 0.5));
+    float h1 = remapHue(0.6 + up * 0.15);
+    float h2 = remapHue(0.6 + 0.5 + side * 0.2);
+    vec3 col1 = hsv2rgb(vec3(h1, 1.0, 0.9));
+    vec3 col2 = hsv2rgb(vec3(h2, 0.6, 0.5));
 
     // Blend based on viewing angle to simulate internal reflections
     float facetAngle = abs(dot(vNormal, vViewDir));
@@ -71,7 +65,7 @@ const fragmentShader = /* glsl */ `
 
     // Fresnel rim glow
     float fresnel = pow(1.0 - max(0.0, dot(vNormal, vViewDir)), 3.0);
-    vec3 rimColor = hsv2rgb(vec3(fract(uHue + 0.15), 0.4, 1.0));
+    vec3 rimColor = hsv2rgb(vec3(fract(0.6 + 0.15), 0.4, 1.0));
     col = mix(col, rimColor, fresnel * uFresnel * 0.6);
 
     // Specular highlight
@@ -79,7 +73,6 @@ const fragmentShader = /* glsl */ `
     float spec = pow(max(0.0, dot(reflect(-lightDir, vNormal), vViewDir)), 64.0);
     col += vec3(spec * 0.8);
 
-    col *= uBrightness;
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -97,10 +90,7 @@ export const crystalGem: Pattern = {
   name: "Crystal Gem",
   attribution: "Inspired by Mauricio Massaia — proto-07",
   controls: [
-    { label: "Hue",        type: "range",  min: 0.0, max: 1.0, step: 0.01, default: 0.6,  get: () => hue,          set: (v) => { hue = v; } },
-    { label: "Saturation", type: "range",  min: 0.0, max: 1.0, step: 0.05, default: 0.8,  get: () => saturation,   set: (v) => { saturation = v; } },
     { label: "Fresnel",    type: "range",  min: 0.0, max: 3.0, step: 0.1,  default: 1.4,  get: () => fresnelStr,   set: (v) => { fresnelStr = v; } },
-    { label: "Brightness", type: "range",  min: 0.75, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness,   set: (v) => { brightness = v; } },
     { label: "Rotation",   type: "range",  min: 0.0, max: 2.0, step: 0.05, default: 0.5,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
     { label: "Facets",     type: "select", options: ["8", "16", "32", "64"],
       get: () => facets,
@@ -119,10 +109,7 @@ export const crystalGem: Pattern = {
     geometry = buildGeometry();
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uHue:        { value: hue },
-        uSaturation: { value: saturation },
         uFresnel:    { value: fresnelStr },
-        uBrightness: { value: brightness },
       },
       vertexShader, fragmentShader,
     });
@@ -140,10 +127,7 @@ export const crystalGem: Pattern = {
     rotX += dt * rotationSpeed * 0.1;
     rotZ += dt * rotationSpeed * 0.2;
     mesh.rotation.set(rotX, rotY, rotZ);
-    material.uniforms.uHue.value        = hue;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uFresnel.value    = fresnelStr;
-    material.uniforms.uBrightness.value = brightness;
   },
 
   resize(_width: number, _height: number) {},

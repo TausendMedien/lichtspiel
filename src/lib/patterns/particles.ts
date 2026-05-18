@@ -6,7 +6,6 @@ const COUNT = 50000;
 let pointSize = 7.0;
 let flowSpeed = 0.2;
 let colorRange = 1.0;
-let saturation = 0.60;
 
 let points: THREE.Points | null = null;
 let geometry: THREE.BufferGeometry | null = null;
@@ -44,7 +43,6 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   uniform float uColorRange;
-  uniform float uSaturation;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -64,7 +62,6 @@ const fragmentShader = /* glsl */ `
 
     // Apply saturation (0 = B&W, 1 = full color)
     float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -77,7 +74,6 @@ export const particles: Pattern = {
     { label: "Point Size",  type: "range", min: 0.3, max: 10.0, step: 0.1, default: 7,  get: () => pointSize,   set: (v) => { pointSize = v; } },
     { label: "Flow Speed",  type: "range", min: 0.0, max: 3.0,  step: 0.1, default: 0.2,  get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Colors",      type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1, get: () => colorRange,  set: (v) => { colorRange = v; } },
-    { label: "Saturation",  type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0.6, get: () => saturation,  set: (v) => { saturation = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -106,7 +102,6 @@ export const particles: Pattern = {
         uTime:       { value: 0 },
         uSize:       { value: pointSize },
         uColorRange: { value: colorRange },
-        uSaturation: { value: saturation },
       },
       vertexShader,
       fragmentShader,
@@ -125,7 +120,6 @@ export const particles: Pattern = {
     material.uniforms.uTime.value = accTime;
     material.uniforms.uSize.value = pointSize;
     material.uniforms.uColorRange.value = colorRange;
-    material.uniforms.uSaturation.value = saturation;
   },
 
   resize() {},

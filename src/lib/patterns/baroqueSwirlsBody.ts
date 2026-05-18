@@ -11,9 +11,7 @@ let flowSpeed    = 0.0;
 let warpAmount   = 1.4;
 let tealAmt      = 0.75;
 let purpleAmt    = 0.80;
-let saturation   = 0.50;
 let colorSpeed   = 0.08;
-let brightness   = 1.30;
 let rotateSpeed  = 0.0;
 let bodyTracking = true;
 let bodyWarpStr  = 0.5;
@@ -39,9 +37,7 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform float uTealAmt;
   uniform float uPurpleAmt;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
   uniform vec2  uPersonPoints[15];
   uniform int   uPersonCount;
@@ -105,16 +101,12 @@ const fragmentShader = /* glsl */ `
     vec3 col = dark + teal * tealMask + purple * purpleMask;
     col += vec3(0.85, 0.95, 0.9) * edge * 0.18;
 
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
-    col *= uBrightness;
-
     // Subtle glow at person positions so you can see where the body is
     for (int i = 0; i < 15; i++) {
       if (i >= uPersonCount) break;
       float dist = length(p - uPersonPoints[i]);
       float nd = dist / 0.07;
-      col += vec3(0.9, 1.0, 0.8) * exp(-nd * nd * 1.5) * 0.35 * uBrightness;
+      col += vec3(0.9, 1.0, 0.8) * exp(-nd * nd * 1.5) * 0.35;
     }
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -134,8 +126,6 @@ export const baroqueSwirlsBody: Pattern = {
     { label: "Teal",           type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.75, get: () => tealAmt,   set: (v) => { tealAmt = v; } },
     { label: "Purple",         type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.8, get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
     { label: "Color Speed",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.08, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",     type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5, get: () => saturation, set: (v) => { saturation = v; } },
-    { label: "Brightness",     type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.3, get: () => brightness, set: (v) => { brightness = v; } },
     { label: "Rotate",         type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -150,9 +140,7 @@ export const baroqueSwirlsBody: Pattern = {
         uWarpAmount:   { value: warpAmount },
         uTealAmt:      { value: tealAmt },
         uPurpleAmt:    { value: purpleAmt },
-        uSaturation:   { value: saturation },
         uColorPhase:   { value: colorPhase },
-        uBrightness:   { value: brightness },
         uRotAngle:     { value: rotAngle },
         uPersonPoints: { value: personPoints },
         uPersonCount:  { value: 0 },
@@ -191,9 +179,7 @@ export const baroqueSwirlsBody: Pattern = {
     material.uniforms.uWarpAmount.value  = warpAmount;
     material.uniforms.uTealAmt.value     = tealAmt;
     material.uniforms.uPurpleAmt.value   = purpleAmt;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uBrightness.value  = brightness;
     material.uniforms.uRotAngle.value    = rotAngle;
     material.uniforms.uPersonCount.value = count;
     material.uniforms.uBodyWarpStr.value = bodyWarpStr;

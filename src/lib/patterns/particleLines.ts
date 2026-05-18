@@ -5,10 +5,8 @@ import type { Pattern, PatternContext } from "./types";
 // A second glow-points pass adds per-particle blur and size variation like Particle Field.
 
 let lineCount  = 1000;
-let brightness = 0.55;
 let flowSpeed  = 0.1;
 let colorRange = 1.0;
-let saturation = 1.0;
 let tailLength = 4.0;
 let lineWidth  = 4.0;  // pixels
 
@@ -85,8 +83,6 @@ const lineVertShader = /* glsl */ `
 
 const lineFragShader = /* glsl */ `
   uniform float uColorRange;
-  uniform float uSaturation;
-  uniform float uBrightness;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -97,10 +93,7 @@ const lineFragShader = /* glsl */ `
   void main() {
     float hue = 0.5 + fract(vSeed * uColorRange) * 0.33;
     vec3  col = hsl2rgb(hue, 1.0, 0.6);
-    // sat=0 → white at full brightness; avoids desaturating to mid-gray
-    vec3  white = vec3(uBrightness);
-    col = mix(white, col, uSaturation);
-    gl_FragColor = vec4(col, uBrightness);
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -128,8 +121,6 @@ const glowVertShader = /* glsl */ `
 
 const glowFragShader = /* glsl */ `
   uniform float uColorRange;
-  uniform float uSaturation;
-  uniform float uBrightness;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -141,12 +132,10 @@ const glowFragShader = /* glsl */ `
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
     if (d > 0.5) discard;
-    float alpha = smoothstep(0.5, 0.0, d) * uBrightness * 0.45;
+    float alpha = smoothstep(0.5, 0.0, d) * 0.45;
 
     float hue = 0.5 + fract(vSeed * uColorRange) * 0.33;
     vec3  col = hsl2rgb(hue, 1.0, 0.7);
-    vec3  white = vec3(uBrightness);
-    col = mix(white, col, uSaturation);
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -240,13 +229,11 @@ export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
   controls: [
-    { label: "Brightness",  type: "range", min: 0.75, max: 1.0,  step: 0.05, default: 0.75, get: () => brightness, set: (v) => { brightness = v; } },
     { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.1,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
     { label: "Line Width",  type: "range", min: 0.5,  max: 6.0,  step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
     { label: "Tail Length", type: "range", min: 0.1,  max: 12.0, step: 0.1,  default: 4.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
     { label: "Colors",      type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1.0,  get: () => colorRange, set: (v) => { colorRange = v; } },
-    { label: "Saturation",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1.0,  get: () => saturation, set: (v) => { saturation = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -264,8 +251,6 @@ export const particleLines: Pattern = {
         uLineWidth:  { value: lineWidth },
         uResolution: { value: new THREE.Vector2(vpWidth, vpHeight) },
         uColorRange: { value: colorRange },
-        uSaturation: { value: saturation },
-        uBrightness: { value: brightness },
       },
       vertexShader:   lineVertShader,
       fragmentShader: lineFragShader,
@@ -280,8 +265,6 @@ export const particleLines: Pattern = {
         uTime:       { value: 0 },
         uSize:       { value: 10.0 },
         uColorRange: { value: colorRange },
-        uSaturation: { value: saturation },
-        uBrightness: { value: brightness },
       },
       vertexShader:   glowVertShader,
       fragmentShader: glowFragShader,
@@ -305,13 +288,9 @@ export const particleLines: Pattern = {
     lineMat.uniforms.uTime.value       = accTime;
     lineMat.uniforms.uLineWidth.value  = lineWidth;
     lineMat.uniforms.uColorRange.value = colorRange;
-    lineMat.uniforms.uSaturation.value = saturation;
-    lineMat.uniforms.uBrightness.value = brightness;
 
     glowMat.uniforms.uTime.value       = accTime;
     glowMat.uniforms.uColorRange.value = colorRange;
-    glowMat.uniforms.uSaturation.value = saturation;
-    glowMat.uniforms.uBrightness.value = brightness;
   },
 
   resize(w: number, h: number) {

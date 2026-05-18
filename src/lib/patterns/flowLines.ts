@@ -10,9 +10,7 @@ let flowSpeed  = 0.02;
 let warpAmount = 0.5;
 let lineWidth  = 0.45;
 let colorRange = 0.6;
-let saturation = 1.0;
 let colorSpeed = 0.0;
-let brightness = 0.80;
 let rotateSpeed = 0.01;
 
 let colorPhase = 0;
@@ -36,9 +34,7 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform float uLineWidth;
   uniform float uColorRange;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -96,10 +92,10 @@ const fragmentShader = /* glsl */ `
                            + length(p) * 2.0) * 0.22;
     float dist = length(p);
     float lit  = 0.25 + 0.55 * line + 0.1 * exp(-dist * 3.0);
-    vec3 col = hsl2rgb(hue, uSaturation, clamp(lit, 0.0, 1.0)) * line * uBrightness;
+    vec3 col = hsl2rgb(hue, 1.0, clamp(lit, 0.0, 1.0)) * line;
 
     // Soft center glow (cyan-white)
-    float glow = exp(-dist * 5.0) * 0.6 * uBrightness;
+    float glow = exp(-dist * 5.0) * 0.6;
     col += mix(vec3(0.4, 1.0, 0.95), vec3(1.0), glow * 0.5) * glow;
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -116,8 +112,6 @@ export const flowLines: Pattern = {
     { label: "Line Width",   type: "range", min: 0.1, max: 0.9, step: 0.01, default: 0.45, get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Colors",       type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.6, get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1, get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 0.8, get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.01, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -131,9 +125,7 @@ export const flowLines: Pattern = {
         uWarpAmount:  { value: warpAmount },
         uLineWidth:   { value: lineWidth },
         uColorRange:  { value: colorRange },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
-        uBrightness:  { value: brightness },
         uRotAngle:    { value: rotAngle },
       },
       vertexShader,
@@ -156,9 +148,7 @@ export const flowLines: Pattern = {
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uColorRange.value = colorRange;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uRotAngle.value   = rotAngle;
   },
 

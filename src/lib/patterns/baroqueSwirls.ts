@@ -10,9 +10,7 @@ let flowSpeed   = 0.0;
 let warpAmount  = 1.4;
 let tealAmt     = 0.75;
 let purpleAmt   = 0.80;
-let saturation  = 0.50;
 let colorSpeed  = 0.08;
-let brightness  = 1.30;
 let rotateSpeed = 0.0;
 
 let colorPhase = 0;
@@ -33,9 +31,7 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform float uTealAmt;
   uniform float uPurpleAmt;
-  uniform float uSaturation;
   uniform float uColorPhase;
-  uniform float uBrightness;
   uniform float uRotAngle;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -86,11 +82,6 @@ const fragmentShader = /* glsl */ `
     vec3 col = dark + teal * tealMask + purple * purpleMask;
     col += vec3(0.85, 0.95, 0.9) * edge * 0.18;
 
-    // Saturation
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
-
-    col *= uBrightness;
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -105,8 +96,6 @@ export const baroqueSwirls: Pattern = {
     { label: "Teal",         type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.75, get: () => tealAmt,     set: (v) => { tealAmt = v; } },
     { label: "Purple",       type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.8, get: () => purpleAmt,   set: (v) => { purpleAmt = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.08, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5, get: () => saturation,  set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.3, get: () => brightness,  set: (v) => { brightness = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -120,9 +109,7 @@ export const baroqueSwirls: Pattern = {
         uWarpAmount: { value: warpAmount },
         uTealAmt:    { value: tealAmt },
         uPurpleAmt:  { value: purpleAmt },
-        uSaturation: { value: saturation },
         uColorPhase: { value: colorPhase },
-        uBrightness: { value: brightness },
         uRotAngle:   { value: rotAngle },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
@@ -142,9 +129,7 @@ export const baroqueSwirls: Pattern = {
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uTealAmt.value    = tealAmt;
     material.uniforms.uPurpleAmt.value  = purpleAmt;
-    material.uniforms.uSaturation.value = saturation;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uBrightness.value = brightness;
     material.uniforms.uRotAngle.value   = rotAngle;
   },
 

@@ -12,7 +12,6 @@ let waveAmp = 0.14;
 let bubbleCount = 57;
 let bubbleSize = 0.050;
 let colorRange = 1.0;
-let saturation = 1.0;
 let colorSpeed = 0.45;
 let rotateSpeed = 0.0;
 let opacity = 0.85;
@@ -40,7 +39,6 @@ const fragmentShader = /* glsl */ `
   uniform float uBubbleCount;
   uniform float uBubbleSize;
   uniform float uColorRange;
-  uniform float uSaturation;
   uniform float uColorPhase;
   uniform float uRotAngle;
   uniform float uOpacity;
@@ -74,8 +72,6 @@ const fragmentShader = /* glsl */ `
     float hue = 0.75 + sin(uColorPhase + colIdx / cols * uColorRange * 6.28) * 0.12;
     float lit = 0.55 + 0.1 * sin(uTime * 0.3 + colIdx * 0.3);
     vec3 dotColor = hsl2rgb(hue, 1.0, lit);
-    float gray = dot(dotColor, vec3(0.299, 0.587, 0.114));
-    dotColor = mix(vec3(gray), dotColor, uSaturation);
 
     // --- Large floating bubbles (background layer) ---
     vec3 col = vec3(0.0);
@@ -92,8 +88,6 @@ const fragmentShader = /* glsl */ `
       float isWhite = step(0.6, hash(fi * 13.7));
       float bHue = 0.78 + hash(fi * 17.3) * 0.04;
       vec3 bColor = mix(hsl2rgb(bHue, 1.0, 0.5), vec3(1.0), isWhite);
-      float bGray = dot(bColor, vec3(0.299, 0.587, 0.114));
-      bColor = mix(vec3(bGray), bColor, uSaturation);
       // Gaussian glow: no hard edge, smooth at any size
       float nd   = bDist / bSize;
       float core = exp(-nd * nd * 3.0);
@@ -121,7 +115,6 @@ export const dotRain: Pattern = {
     { label: "Bubble Size",    type: "range", min: 0.01, max: 0.15, step: 0.005, default: 0.05, get: () => bubbleSize,  set: (v) => { bubbleSize = v; } },
     { label: "Colors",         type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1,  get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Color Speed",    type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.45,  get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",     type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1,  get: () => saturation,  set: (v) => { saturation = v; } },
     { label: "Rotate",         type: "range", min: 0.0,  max: 0.5,  step: 0.01, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
     { label: "Opacity",        type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.85, get: () => opacity,     set: (v) => { opacity = v; } },
   ],
@@ -138,7 +131,6 @@ export const dotRain: Pattern = {
         uBubbleCount: { value: bubbleCount },
         uBubbleSize:  { value: bubbleSize },
         uColorRange:  { value: colorRange },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
         uOpacity:     { value: opacity },
@@ -166,7 +158,6 @@ export const dotRain: Pattern = {
     material.uniforms.uBubbleCount.value = bubbleCount;
     material.uniforms.uBubbleSize.value  = bubbleSize;
     material.uniforms.uColorRange.value  = colorRange;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uRotAngle.value    = rotAngle;
     material.uniforms.uOpacity.value     = opacity;

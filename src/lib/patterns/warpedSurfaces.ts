@@ -10,8 +10,6 @@ let noiseScale    = 1.2;
 let warpAmount    = 1.6;
 let flowSpeed     = 0.04;
 let palette       = 0;   // select: Iridescent / Fire / Ocean / Void
-let saturation    = 0.9;
-let brightness    = 1.1;
 
 let accTime = 0;
 
@@ -29,8 +27,6 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform int   uIterations;
   uniform int   uPalette;
-  uniform float uSaturation;
-  uniform float uBrightness;
 
   #define PI  3.14159265358979
   #define TAU 6.28318530717959
@@ -110,11 +106,6 @@ const fragmentShader = /* glsl */ `
 
     vec3 col = applyPalette(v);
 
-    // Saturation
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
-
-    col *= uBrightness;
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -131,8 +122,6 @@ export const warpedSurfaces: Pattern = {
     { label: "Flow Speed",   type: "range", min: 0.0, max: 4.0, step: 0.05, default: 0.04, get: () => flowSpeed, set: (v) => { flowSpeed = v; } },
     { label: "Color Palette", type: "select", options: ["Iridescent", "Fire", "Ocean", "Void"],
       get: () => palette, set: (v) => { palette = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.9,  get: () => saturation, set: (v) => { saturation = v; } },
-    { label: "Brightness",   type: "range", min: 0.75, max: 2.0, step: 0.05, default: 1.1,  get: () => brightness, set: (v) => { brightness = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -145,8 +134,6 @@ export const warpedSurfaces: Pattern = {
         uWarpAmount: { value: warpAmount },
         uIterations: { value: warpIterations },
         uPalette:    { value: palette },
-        uSaturation: { value: saturation },
-        uBrightness: { value: brightness },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
     });
@@ -163,8 +150,6 @@ export const warpedSurfaces: Pattern = {
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uIterations.value = warpIterations;
     material.uniforms.uPalette.value    = palette;
-    material.uniforms.uSaturation.value = saturation;
-    material.uniforms.uBrightness.value = brightness;
   },
 
   resize(width: number, height: number) {

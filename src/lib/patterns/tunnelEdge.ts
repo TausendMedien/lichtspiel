@@ -12,8 +12,6 @@ let edges      = 4;
 let ringOffset = 0.0;
 let wobble     = 0.0;
 let shadowWidth = 0.35;
-let hueShift   = 0.0;
-let saturation = 1.0;
 let colorDrift = 0.2;
 
 let colorPhase = 0;
@@ -38,8 +36,6 @@ const fragmentShader = /* glsl */ `
   uniform float uRingOffset;
   uniform float uWobble;
   uniform float uShadowWidth;
-  uniform float uHueShift;
-  uniform float uSaturation;
   uniform float uColorPhase;
 
   const float PI = 3.14159265358979;
@@ -102,12 +98,11 @@ const fragmentShader = /* glsl */ `
 
     // ── Global colour gradient (outer = warm coral, mid = magenta, centre = dark) ──
     float colorT = clamp(d0 * 2.2, 0.0, 1.0);
-    float hs     = uHueShift;
     float ph     = uColorPhase;
 
-    vec3 colorCenter = hsl2rgb(mod(0.820 + hs + ph * 0.03, 1.0), 0.50, 0.12);
-    vec3 colorMid    = hsl2rgb(mod(0.900 + hs + ph * 0.02, 1.0), 1.00, 0.55);
-    vec3 colorOuter  = hsl2rgb(mod(0.030 + hs + ph * 0.01, 1.0), 0.90, 0.68);
+    vec3 colorCenter = hsl2rgb(mod(0.820 + ph * 0.03, 1.0), 0.50, 0.12);
+    vec3 colorMid    = hsl2rgb(mod(0.900 + ph * 0.02, 1.0), 1.00, 0.55);
+    vec3 colorOuter  = hsl2rgb(mod(0.030 + ph * 0.01, 1.0), 0.90, 0.68);
 
     vec3 col;
     if (colorT < 0.5) {
@@ -127,15 +122,10 @@ const fragmentShader = /* glsl */ `
     col *= (0.78 + 0.28 * stripe);
     col  = clamp(col, 0.0, 1.0);
 
-    // ── Saturation ────────────────────────────────────────────────────────────
-    float lum = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(lum), col, uSaturation);
-
     // ── Density fade at centre (fwidth-based) ────────────────────────────────
     float rawFw = length(vec2(dFdx(stripeRaw), dFdy(stripeRaw)));
     float fade  = 1.0 - smoothstep(0.8, 1.8, rawFw);
-    vec3 darkColor = mix(vec3(0.0), colorCenter, uSaturation);
-    col = mix(darkColor, col, fade);
+    col = mix(colorCenter, col, fade);
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -144,7 +134,7 @@ const fragmentShader = /* glsl */ `
 export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
-  motionControlLabels: ["Speed", "Wobble", "Saturation"],
+  motionControlLabels: ["Speed", "Wobble"],
   controls: [
     { label: "Speed",        type: "range", min: -20,   max: 20,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
     { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, get: () => rotSpeed,     set: (v) => { rotSpeed = v; } },
@@ -153,8 +143,6 @@ export const tunnelEdge: Pattern = {
     { label: "Ring Offset",  type: "range", min: -3.14, max: 3.14, step: 0.05, default: 0,    get: () => ringOffset,   set: (v) => { ringOffset = v; } },
     { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    get: () => wobble,       set: (v) => { wobble = v; } },
     { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, get: () => shadowWidth,  set: (v) => { shadowWidth = v; } },
-    { label: "Hue Shift",    type: "range", min: 0.0,   max: 1.0,  step: 0.01, default: 0,    get: () => hueShift,     set: (v) => { hueShift = v; } },
-    { label: "Saturation",   type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 1,    get: () => saturation,   set: (v) => { saturation = v; } },
     { label: "Color Drift",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.2,  get: () => colorDrift,   set: (v) => { colorDrift = v; } },
   ],
 
@@ -170,8 +158,6 @@ export const tunnelEdge: Pattern = {
         uRingOffset:  { value: ringOffset },
         uWobble:      { value: wobble },
         uShadowWidth: { value: shadowWidth },
-        uHueShift:    { value: hueShift },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
       },
       vertexShader,
@@ -195,8 +181,6 @@ export const tunnelEdge: Pattern = {
     material.uniforms.uRingOffset.value  = ringOffset;
     material.uniforms.uWobble.value      = wobble;
     material.uniforms.uShadowWidth.value = shadowWidth;
-    material.uniforms.uHueShift.value    = hueShift;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
   },
 

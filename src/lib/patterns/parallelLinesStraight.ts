@@ -9,7 +9,6 @@ let lineCount = 47;
 let scrollSpeed = 0.06;
 let lineWidth = 0.19;
 let colorRange = 0.75;
-let saturation = 1.0;
 let colorSpeed = 0.0;
 let rotateSpeed = 0.02;
 
@@ -34,7 +33,6 @@ const fragmentShader = /* glsl */ `
   uniform float uLineCount;
   uniform float uLineWidth;
   uniform float uColorRange;
-  uniform float uSaturation;
   uniform float uColorPhase;
   uniform float uRotAngle;
 
@@ -68,7 +66,6 @@ const fragmentShader = /* glsl */ `
     vec3 col = hsl2rgb(hue, 1.0, lit);
 
     float gray = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(vec3(gray), col, uSaturation);
 
     float pulse = 0.85 + 0.15 * sin(uTime * 2.0 + stripe * 12.0);
     col *= pulse * line;
@@ -86,7 +83,6 @@ export const parallelLinesStraight: Pattern = {
     { label: "Line Width",   type: "range", min: 0.02,max: 0.4, step: 0.01, default: 0.19, get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Colors",       type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.75, get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Saturation",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1, get: () => saturation,  set: (v) => { saturation = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
@@ -99,7 +95,6 @@ export const parallelLinesStraight: Pattern = {
         uLineCount:   { value: lineCount },
         uLineWidth:   { value: lineWidth },
         uColorRange:  { value: colorRange },
-        uSaturation:  { value: saturation },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
       },
@@ -124,7 +119,6 @@ export const parallelLinesStraight: Pattern = {
     material.uniforms.uLineCount.value   = lineCount;
     material.uniforms.uLineWidth.value   = lineWidth;
     material.uniforms.uColorRange.value  = colorRange;
-    material.uniforms.uSaturation.value  = saturation;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uRotAngle.value    = rotAngle;
   },
