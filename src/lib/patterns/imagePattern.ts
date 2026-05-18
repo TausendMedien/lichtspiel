@@ -17,19 +17,13 @@ function loadPalette(): THREE.Color[] {
   return PALETTE_DEFAULTS.map(c => new THREE.Color(c));
 }
 
-function lerpColor(a: THREE.Color, b: THREE.Color, t: number): THREE.Color {
-  return new THREE.Color(
-    a.r + t * (b.r - a.r),
-    a.g + t * (b.g - a.g),
-    a.b + t * (b.b - a.b),
-  );
-}
-
 function paletteColorAt(palette: THREE.Color[], t: number): THREE.Color {
   const idx = Math.max(0, Math.min(1, t)) * (palette.length - 1);
   const lo = Math.floor(idx);
   const hi = Math.min(lo + 1, palette.length - 1);
-  return lerpColor(palette[lo], palette[hi], idx - lo);
+  const f = idx - lo;
+  const a = palette[lo], b = palette[hi];
+  return new THREE.Color(a.r + f * (b.r - a.r), a.g + f * (b.g - a.g), a.b + f * (b.b - a.b));
 }
 
 // ─── Vertex shader ────────────────────────────────────────────────────────────
@@ -51,24 +45,23 @@ const fragmentShader = /* glsl */`
   uniform float uTime;
   uniform float uSaturation;
   uniform float uBrightness;
-  uniform vec3  uPaletteColor;   // interpolated from custom palette
-  uniform float uColorize;       // 0-1: strength of palette colorize
-  uniform vec3  uTint;           // manual tint color
-  uniform float uTintStrength;   // 0-1
-  uniform float uRotation;       // 0/1/2/3 × 90°
+  uniform vec3  uPaletteColor;
+  uniform float uColorize;
+  uniform vec3  uTint;
+  uniform float uTintStrength;
+  uniform float uRotation;       // 0/1/2/3
   uniform float uImgAspect;
   uniform float uScreenAspect;
-  uniform float uVignette;       // 0-1
-  uniform float uDrift;          // 0-1
-  uniform float uZoomBreathe;    // 0-1
-  uniform float uRipple;         // 0-1
-  uniform float uChromaticAb;    // 0-1
-  uniform float uGrain;          // 0-1
-  uniform float uEdgePulse;      // 0-1
-  uniform float uAudioLevel;     // 0-1
-  uniform vec2  uParallaxShift;  // from pose centroid
-  uniform float uPoseDistort;    // 0-1
-  uniform vec2  uJoints[8];
+  uniform float uVignette;
+  uniform float uDrift;
+  uniform float uRipple;
+  uniform float uChromaticAb;
+  uniform float uGrain;
+  uniform float uEdgePulse;
+  uniform float uAudioLevel;
+  uniform vec2  uParallaxShift;
+  uniform float uPoseDistort;
+  uniform vec2  uJoints[2];     // only wrists
 
   varying vec2 vUv;
 
@@ -76,13 +69,15 @@ const fragmentShader = /* glsl */`
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
   }
 
-  // Scale UV so the image covers the screen (no letterbox)
+  // Cover UV: image fills screen, excess is cropped (no letterbox, no stretch)
   vec2 coverUv(vec2 uv) {
     vec2 c = uv - 0.5;
     if (uScreenAspect > uImgAspect) {
-      c.y *= uScreenAspect / uImgAspect;
+      // Screen wider than image — fit to width, crop top/bottom
+      c.y *= uImgAspect / uScreenAspect;
     } else {
-      c.x *= uImgAspect / uScreenAspect;
+      // Screen taller than image — fit to height, crop left/right
+      c.x *= uScreenAspect / uImgAspect;
     }
     return c + 0.5;
   }
@@ -94,7 +89,6 @@ const fragmentShader = /* glsl */`
                   return vec2(uv.y, 1.0 - uv.x);
   }
 
-  // HSL helpers
   float hueHelper(float p, float q, float t) {
     t = mod(t, 1.0);
     if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
@@ -102,7 +96,6 @@ const fragmentShader = /* glsl */`
     if (t < 2.0/3.0)  return p + (q - p) * (2.0/3.0 - t) * 6.0;
     return p;
   }
-
   vec3 rgb2hsl(vec3 c) {
     float mx = max(c.r, max(c.g, c.b));
     float mn = min(c.r, min(c.g, c.b));
@@ -116,63 +109,53 @@ const fragmentShader = /* glsl */`
     else                h = (c.r - c.g) / d + 4.0;
     return vec3(h / 6.0, s, l);
   }
-
   vec3 hsl2rgb(vec3 c) {
     if (c.y == 0.0) return vec3(c.z);
     float q = c.z < 0.5 ? c.z * (1.0 + c.y) : c.z + c.y - c.z * c.y;
     float p = 2.0 * c.z - q;
-    return vec3(
-      hueHelper(p, q, c.x + 1.0/3.0),
-      hueHelper(p, q, c.x),
-      hueHelper(p, q, c.x - 1.0/3.0)
-    );
+    return vec3(hueHelper(p, q, c.x + 1.0/3.0), hueHelper(p, q, c.x), hueHelper(p, q, c.x - 1.0/3.0));
   }
 
   void main() {
     vec2 uv = vUv;
 
-    // 1. Cover UV
+    // 1. Cover (crop to fill screen, no stretch)
     uv = coverUv(uv);
 
-    // 2. Rotation (90° steps)
+    // 2. Rotation
     uv = rotateUv90(uv, uRotation);
 
-    // 3. Parallax (pose centroid drives a subtle UV shift)
+    // 3. Parallax (pose-driven, wrists only)
     uv += uParallaxShift;
 
-    // 4. Zoom breathe
-    float breathe = 1.0 + uZoomBreathe * 0.04 * sin(uTime * 0.35);
-    uv = (uv - 0.5) / breathe + 0.5;
-
-    // 5. Drift (slow organic warp)
+    // 4. Drift
     if (uDrift > 0.001) {
       float dx = uDrift * 0.018 * sin(uTime * 0.14 + uv.y * 2.8);
       float dy = uDrift * 0.018 * cos(uTime * 0.11 + uv.x * 3.1);
       uv += vec2(dx, dy);
     }
 
-    // 6. Ripple
+    // 5. Ripple
     if (uRipple > 0.001) {
       float r = uRipple * 0.012 * sin(uv.x * 9.0 + uTime * 1.1) * cos(uv.y * 7.0 + uTime * 0.8);
       uv += vec2(r);
     }
 
-    // 7. Pose distort (joints push UV outward)
+    // 6. Pose distort (wrists push UV outward)
     if (uPoseDistort > 0.001) {
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; i < 2; i++) {
         vec2 j = uJoints[i];
         if (j.x < 0.01 && j.y < 0.01) continue;
         vec2 diff = uv - j;
         float d2 = dot(diff, diff);
-        float push = uPoseDistort * 0.0015 / (d2 + 0.04);
+        float push = 0.002 / (d2 + 0.05);
         uv += normalize(diff) * push;
       }
     }
 
-    // Clamp so we don't sample outside [0,1]
     vec2 clampedUv = clamp(uv, 0.0, 1.0);
 
-    // 8. Chromatic aberration
+    // 7. Chromatic aberration
     vec3 col;
     if (uChromaticAb > 0.001) {
       vec2 ab = (uv - 0.5) * uChromaticAb * 0.028;
@@ -183,14 +166,14 @@ const fragmentShader = /* glsl */`
       col = texture2D(uTexture, clampedUv).rgb;
     }
 
-    // 9. Saturation
+    // 8. Saturation
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, uSaturation);
 
-    // 10. Brightness
+    // 9. Brightness
     col *= uBrightness;
 
-    // 11. Palette colorize (shift hue toward selected palette color, preserve luminance)
+    // 10. Palette colorize (hue shift toward selected custom color)
     if (uColorize > 0.001) {
       vec3 imgHsl = rgb2hsl(col);
       vec3 palHsl = rgb2hsl(uPaletteColor);
@@ -199,44 +182,46 @@ const fragmentShader = /* glsl */`
       col = hsl2rgb(vec3(newH, newS, imgHsl.z));
     }
 
-    // 12. Manual tint (color overlay)
+    // 11. Manual tint overlay
     if (uTintStrength > 0.001) {
       col = mix(col, uTint * luma * 2.0, uTintStrength);
     }
 
-    // 13. Edge pulse (Sobel-ish, pulsed by time + audio)
+    // 12. Edge pulse
     if (uEdgePulse > 0.001) {
       float px = 1.5 / 1024.0;
-      float py = 1.5 / 1024.0;
-      float lC = dot(texture2D(uTexture, clampedUv).rgb, vec3(0.299, 0.587, 0.114));
-      float lR = dot(texture2D(uTexture, clamp(clampedUv + vec2(px, 0.0), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
-      float lU = dot(texture2D(uTexture, clamp(clampedUv + vec2(0.0, py), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
-      float lL = dot(texture2D(uTexture, clamp(clampedUv - vec2(px, 0.0), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
-      float lD = dot(texture2D(uTexture, clamp(clampedUv - vec2(0.0, py), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
+      float lC = dot(texture2D(uTexture, clampedUv).rgb,                                   vec3(0.299, 0.587, 0.114));
+      float lR = dot(texture2D(uTexture, clamp(clampedUv + vec2(px,  0.0), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
+      float lU = dot(texture2D(uTexture, clamp(clampedUv + vec2(0.0, px),  0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
+      float lL = dot(texture2D(uTexture, clamp(clampedUv - vec2(px,  0.0), 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
+      float lD = dot(texture2D(uTexture, clamp(clampedUv - vec2(0.0, px),  0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
       float edge = abs(lC - lR) + abs(lC - lU) + abs(lC - lL) + abs(lC - lD);
       edge = smoothstep(0.02, 0.12, edge);
       float pulse = (0.5 + 0.5 * sin(uTime * 2.5)) * (1.0 + uAudioLevel * 2.0);
       col += edge * uEdgePulse * pulse * uPaletteColor;
     }
 
-    // 14. Mic flash (luminance-masked brightness boost)
+    // 13. Mic flash (boost bright pixels)
     if (uAudioLevel > 0.001) {
       col += uAudioLevel * luma * 0.55;
     }
 
-    // 15. Film grain
+    // 14. Film grain
     if (uGrain > 0.001) {
       float noise = rand(clampedUv + fract(uTime * 0.017)) - 0.5;
       col += noise * uGrain * 0.14;
     }
 
-    // 16. Vignette — at max, edges are pure black (projection-edge masking)
+    // 15. Vignette — at low values subtle edge softening, at 1 edges are pure black
     if (uVignette > 0.001) {
       vec2 vigUv = vUv * 2.0 - 1.0;
       float dist2 = dot(vigUv, vigUv);
-      // power ramps up with uVignette: low=gentle, high=sharp black edges
-      float power = mix(0.8, 6.0, uVignette);
-      float vig = pow(max(1.0 - dist2, 0.0), power);
+      // At low strength: gentle rolloff starting near the very edge
+      // At high strength: hard black edges (projection masking)
+      float falloff = mix(0.1, 0.9, uVignette);   // how far from center the darkening starts
+      float power   = mix(0.4, 5.0, uVignette);    // how hard the rolloff is
+      float vig = 1.0 - smoothstep(1.0 - falloff, 1.0, dist2);
+      vig = pow(max(vig, 0.0), power);
       col *= vig;
     }
 
@@ -247,22 +232,27 @@ const fragmentShader = /* glsl */`
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function makeImagePattern(id: string, name: string, src: string): Pattern {
+  // Image section
+  let imgOn        = true;
   let saturation   = 1.0;
   let brightness   = 1.0;
-  let hueShift     = 0.0;   // position in custom palette
-  let colorize     = 0.0;   // strength of palette hue colorize
+  let hueShift     = 0.0;
+  let colorize     = 0.0;
   let tintColor    = '#ffffff';
   let tintStrength = 0.0;
-  let rotation     = 0;     // 0/1/2/3
+  let rotation     = 0;
 
-  let drift        = 0.0;
-  let zoomBreathe  = 0.0;
-  let ripple       = 0.0;
-
-  let vignette     = 0.3;
+  // Style section
+  let styleOn      = true;
+  let vignette     = 0.0;
   let chromaticAb  = 0.0;
   let grain        = 0.0;
   let edgePulse    = 0.0;
+
+  // Motion section
+  let motionOn     = true;
+  let drift        = 0.0;
+  let ripple       = 0.0;
 
   let mesh: THREE.Mesh | null = null;
   let material: THREE.ShaderMaterial | null = null;
@@ -273,37 +263,37 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
   let palette: THREE.Color[] = loadPalette();
   let paletteAge   = 0;
 
-  const joints = Array.from({ length: 8 }, () => new THREE.Vector2(0, 0));
+  // Only wrists (indices 0 and 1 in poseState.persons[i])
+  const wristJoints = [new THREE.Vector2(0, 0), new THREE.Vector2(0, 0)];
 
   return {
     id,
     name,
     usesPose: true,
-    motionControlLabels: [], // no motion-camera slider boosting for image patterns
+    motionControlLabels: [],
 
     controls: [
-      // ── Image section ────────────────────────────────────────────────
-      { label: 'Image', type: 'section', get: () => true, set: () => {} },
-      { label: 'Saturation',  type: 'range', min: 0, max: 2,   step: 0.05, default: 1.0, get: () => saturation,   set: v => { saturation = v; } },
-      { label: 'Brightness',  type: 'range', min: 0, max: 2,   step: 0.05, default: 1.0, get: () => brightness,   set: v => { brightness = v; } },
-      { label: 'Hue Shift',   type: 'range', min: 0, max: 1,   step: 0.01, default: 0.0, get: () => hueShift,     set: v => { hueShift = v; } },
-      { label: 'Colorize',    type: 'range', min: 0, max: 1,   step: 0.05, default: 0.0, get: () => colorize,     set: v => { colorize = v; } },
-      { label: 'Tint',        type: 'color',                               default: '#ffffff', get: () => tintColor,    set: v => { tintColor = v; } } as never,
-      { label: 'Tint Strength', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => tintStrength, set: v => { tintStrength = v; } },
+      // ── Image ────────────────────────────────────────────────────────
+      { label: 'Image',       type: 'section', get: () => imgOn,   set: v => { imgOn = v; } },
+      { label: 'Saturation',  type: 'range', min: 0,    max: 2,  step: 0.05, default: 1.0, get: () => saturation,   set: v => { saturation = v; } },
+      { label: 'Brightness',  type: 'range', min: 0.75, max: 2,  step: 0.05, default: 1.0, get: () => brightness,   set: v => { brightness = v; } },
+      { label: 'Hue Shift',   type: 'range', min: 0,    max: 1,  step: 0.01, default: 0.0, get: () => hueShift,     set: v => { hueShift = v; } },
+      { label: 'Colorize',    type: 'range', min: 0,    max: 1,  step: 0.05, default: 0.0, get: () => colorize,     set: v => { colorize = v; } },
+      { label: 'Tint',        type: 'color',                                 default: '#ffffff', get: () => tintColor,    set: v => { tintColor = v; } } as never,
+      { label: 'Tint Strength', type: 'range', min: 0,  max: 1,  step: 0.05, default: 0.0, get: () => tintStrength, set: v => { tintStrength = v; } },
       { label: 'Rotate 90°',  type: 'button', action: () => { rotation = (rotation + 1) % 4; } },
 
-      // ── Motion section ───────────────────────────────────────────────
-      { label: 'Motion', type: 'section', get: () => true, set: () => {} },
-      { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,       set: v => { drift = v; } },
-      { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
-      { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple,      set: v => { ripple = v; } },
-
-      // ── Style section ────────────────────────────────────────────────
-      { label: 'Style', type: 'section', get: () => true, set: () => {} },
-      { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.3, get: () => vignette,   set: v => { vignette = v; } },
+      // ── Style ────────────────────────────────────────────────────────
+      { label: 'Style',       type: 'section', get: () => styleOn, set: v => { styleOn = v; } },
+      { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
-      { label: 'Film Grain',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
-      { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
+      { label: 'Film Grain',  type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
+      { label: 'Edge Pulse',  type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
+
+      // ── Motion ───────────────────────────────────────────────────────
+      { label: 'Motion',      type: 'section', get: () => motionOn, set: v => { motionOn = v; } },
+      { label: 'Drift',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,  set: v => { drift = v; } },
+      { label: 'Ripple',      type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple, set: v => { ripple = v; } },
     ],
 
     init(ctx: PatternContext) {
@@ -335,7 +325,6 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
           uScreenAspect: { value: screenAspect },
           uVignette:     { value: vignette },
           uDrift:        { value: drift },
-          uZoomBreathe:  { value: zoomBreathe },
           uRipple:       { value: ripple },
           uChromaticAb:  { value: chromaticAb },
           uGrain:        { value: grain },
@@ -343,7 +332,7 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
           uAudioLevel:   { value: 0 },
           uParallaxShift: { value: new THREE.Vector2(0, 0) },
           uPoseDistort:  { value: 0 },
-          uJoints:       { value: joints },
+          uJoints:       { value: wristJoints },
         },
         vertexShader,
         fragmentShader,
@@ -359,54 +348,57 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
     update(dt: number, elapsed: number) {
       if (!material) return;
 
-      // Refresh palette from localStorage every 2 s
       paletteAge += dt;
-      if (paletteAge > 2) {
-        palette = loadPalette();
-        paletteAge = 0;
-      }
+      if (paletteAge > 2) { palette = loadPalette(); paletteAge = 0; }
 
       const pc = paletteColorAt(palette, hueShift);
       const u = material.uniforms;
 
-      u.uTime.value          = elapsed;
-      u.uSaturation.value    = saturation;
-      u.uBrightness.value    = brightness;
+      u.uTime.value         = elapsed;
+      u.uSaturation.value   = imgOn ? saturation : 1.0;
+      u.uBrightness.value   = imgOn ? brightness : 1.0;
       u.uPaletteColor.value.set(pc.r, pc.g, pc.b);
-      u.uColorize.value      = colorize;
+      u.uColorize.value     = imgOn ? colorize : 0;
       u.uTint.value.set(tintColor);
-      u.uTintStrength.value  = tintStrength;
-      u.uRotation.value      = rotation;
-      u.uVignette.value      = vignette;
-      u.uDrift.value         = drift;
-      u.uZoomBreathe.value   = zoomBreathe;
-      u.uRipple.value        = ripple;
-      u.uChromaticAb.value   = chromaticAb;
-      u.uGrain.value         = grain;
-      u.uEdgePulse.value     = edgePulse;
+      u.uTintStrength.value = imgOn ? tintStrength : 0;
+      u.uRotation.value     = rotation;
 
-      // Audio mic flash
+      u.uVignette.value     = styleOn ? vignette : 0;
+      u.uChromaticAb.value  = styleOn ? chromaticAb : 0;
+      u.uGrain.value        = styleOn ? grain : 0;
+      u.uEdgePulse.value    = styleOn ? edgePulse : 0;
+
+      u.uDrift.value        = motionOn ? drift : 0;
+      u.uRipple.value       = motionOn ? ripple : 0;
+
       u.uAudioLevel.value = audioState.enabled ? audioState.level / 100 : 0;
 
-      // Pose: parallax tilt + distort
+      // Pose: use left + right wrist only (indices 0 and 1)
       if (poseState.active && poseState.persons.length > 0) {
         const person = poseState.persons[0];
-        let cx = 0, cy = 0;
-        for (const pt of person) { cx += pt.x; cy += pt.y; }
-        if (person.length > 0) {
-          cx /= person.length; cy /= person.length;
-          // Centroid offset from screen center drives parallax (±5% UV shift)
-          u.uParallaxShift.value.set((cx - 0.5) * 0.06, (cy - 0.5) * -0.06);
+        const lw = person[0]; // left wrist
+        const rw = person[1]; // right wrist
+
+        if (lw && rw) {
+          // Parallax from average wrist position (arms raised = parallax shift)
+          const wx = (lw.x + rw.x) / 2;
+          const wy = (lw.y + rw.y) / 2;
+          u.uParallaxShift.value.set((wx - 0.5) * 0.06, (wy - 0.5) * -0.06);
+        } else if (lw) {
+          u.uParallaxShift.value.set((lw.x - 0.5) * 0.06, (lw.y - 0.5) * -0.06);
+        } else if (rw) {
+          u.uParallaxShift.value.set((rw.x - 0.5) * 0.06, (rw.y - 0.5) * -0.06);
         }
-        // Copy up to 8 joint positions
-        for (let i = 0; i < 8; i++) {
-          const pt = person[i];
-          joints[i].set(pt ? pt.x : 0, pt ? pt.y : 0);
-        }
+
+        // Distort: wrist positions only
+        wristJoints[0].set(lw ? lw.x : 0, lw ? lw.y : 0);
+        wristJoints[1].set(rw ? rw.x : 0, rw ? rw.y : 0);
         u.uPoseDistort.value = 1.0;
       } else {
         u.uParallaxShift.value.set(0, 0);
         u.uPoseDistort.value = 0;
+        wristJoints[0].set(0, 0);
+        wristJoints[1].set(0, 0);
       }
     },
 

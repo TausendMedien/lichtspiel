@@ -123,6 +123,9 @@
     } else {
       poseLoading = true;
       poseError = null;
+      // Let the loading overlay render before the model freeze hits
+      await tick();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       try {
         await startPoseTracking();
         poseActive = true;
@@ -1046,6 +1049,16 @@
   <div class="pointer-events-none fixed inset-0 z-50 bg-white/25 transition-opacity duration-500"></div>
 {/if}
 
+<!-- ─── Pose loading overlay ────────────────────────────────────────────── -->
+{#if poseLoading}
+  <div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
+    <div class="rounded-xl border border-white/20 bg-black/70 px-6 py-4 text-center backdrop-blur-sm">
+      <div class="mb-1 text-sm font-semibold text-white">Enabling body tracking…</div>
+      <div class="text-xs text-white/50">This takes a moment on first use</div>
+    </div>
+  </div>
+{/if}
+
 <!-- ─── Recording indicator ────────────────────────────────────────────── -->
 {#if isRecording}
   <div class="pointer-events-none fixed top-4 right-4 z-50 flex items-center gap-2">
@@ -1554,7 +1567,7 @@
             >{filled ? (idx + 1) : '+'}</button>
           {/each}
         </div>
-        <div class="flex flex-col gap-2.5 overflow-y-auto overscroll-contain min-h-0">
+        <div class="flex flex-col gap-2.5 overflow-y-auto overscroll-contain min-h-0 flex-1">
           {#each controlMeta as { ctrl, groupDisabled, hidden }}
             {@const focusedRangeCtrl = sliderModeActive ? rangeControls[sliderFocusIndex] : null}
             {@const activeFocusedCtrl = rangeControls[sliderFocusIndex]}
