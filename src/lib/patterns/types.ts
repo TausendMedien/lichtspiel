@@ -27,6 +27,10 @@ export interface Pattern {
   motionControlLabels?: string[];
   /** True if this pattern actively uses body pose tracking data. */
   usesPose?: boolean;
+  /** Set by addMotionCamera wrapper — true if this pattern supports motion reactivity. */
+  motionReactive?: boolean;
+  /** Set by addAudioReactivity wrapper — true if this pattern supports audio reactivity. */
+  audioReactive?: boolean;
   init(ctx: PatternContext): void;
   /** Called only on real activation (not on overview hover preview). Start cameras here. */
   activate?(): void;

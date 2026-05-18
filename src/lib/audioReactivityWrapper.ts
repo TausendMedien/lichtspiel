@@ -7,6 +7,7 @@
 import type { Pattern, PatternControl, PatternContext } from './patterns/types';
 import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
 
+
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
 
 function getLevel(dataArray: Uint8Array, band: number): number {
@@ -25,9 +26,10 @@ function getLevel(dataArray: Uint8Array, band: number): number {
 export { BAND_OPTIONS };
 
 export function addAudioReactivity(pattern: Pattern): Pattern {
-  let smoothed     = 0;
-  let prevEnabled  = false;
-  let prevDeviceId = '';
+  let smoothed            = 0;
+  let prevEnabled         = false;
+  let prevDeviceId        = '';
+  let prevPatternEnabled  = true;
 
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
@@ -83,6 +85,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
 
   return {
     ...pattern,
+    audioReactive: true,
     // Pass through the pattern's own controls unchanged — no audio controls added
     controls: pattern.controls,
 
@@ -91,25 +94,29 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
         baseVals[i] = firstTwoRange[i].get();
         effectiveVals[i] = baseVals[i];
       }
-      prevEnabled  = audioState.enabled;
-      prevDeviceId = audioState.deviceId;
+      prevEnabled        = audioState.enabled;
+      prevDeviceId       = audioState.deviceId;
+      prevPatternEnabled = audioState.patternAudioEnabled[pattern.id] ?? true;
       pattern.init(ctx);
-      if (audioState.enabled) startAudio();
+      if (audioState.enabled && prevPatternEnabled) startAudio();
     },
 
     update(dt: number, elapsed: number) {
-      // React to global enable/device changes
-      const nowEnabled  = audioState.enabled;
-      const nowDeviceId = audioState.deviceId;
-      if (nowEnabled !== prevEnabled) {
-        prevEnabled = nowEnabled;
-        if (nowEnabled) startAudio();
+      // React to global enable/device changes and per-pattern toggle
+      const nowEnabled        = audioState.enabled;
+      const nowDeviceId       = audioState.deviceId;
+      const nowPatternEnabled = audioState.patternAudioEnabled[pattern.id] ?? true;
+      const shouldRun = nowEnabled && nowPatternEnabled;
+      const prevShouldRun = prevEnabled && prevPatternEnabled;
+      if (shouldRun !== prevShouldRun) {
+        if (shouldRun) startAudio();
         else stopAudio();
-      } else if (nowEnabled && nowDeviceId !== prevDeviceId) {
-        prevDeviceId = nowDeviceId;
+      } else if (shouldRun && nowDeviceId !== prevDeviceId) {
         startAudio();
       }
-      prevDeviceId = nowDeviceId;
+      prevEnabled        = nowEnabled;
+      prevDeviceId       = nowDeviceId;
+      prevPatternEnabled = nowPatternEnabled;
 
       // Read audio level
       if (analyser && dataArray) {

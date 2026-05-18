@@ -8,6 +8,7 @@ import type { Pattern, PatternControl, PatternContext } from "./patterns/types";
 import { MotionCamera, SpatialPatchinessDetector, showMotionOverlay } from "./motionDetector";
 import { cameraState, enumerateCameras } from "./globalCameraSettings.svelte";
 
+
 export function addMotionCamera(pattern: Pattern): Pattern {
   let smoothedMotion = 0;
   let motionCamera: MotionCamera | null = null;
@@ -16,8 +17,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   let overlay: HTMLDivElement | null = null;
 
   // Track previous global state to detect changes in update()
-  let prevEnabled  = false;
-  let prevDeviceId = '';
+  let prevEnabled        = false;
+  let prevDeviceId       = '';
+  let prevPatternEnabled = true;
 
   // ── Identify the range controls to boost ──────────────────────────────────
   type RangeCtrl = PatternControl & { type: "range" };
@@ -80,6 +82,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
 
   return {
     ...pattern,
+    motionReactive: true,
     controls: wrappedControls,
 
     init(ctx: PatternContext) {
@@ -88,30 +91,34 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         baseVals[i] = firstTwoRange[i].get();
         effectiveVals[i] = baseVals[i];
       }
-      prevEnabled  = cameraState.enabled;
-      prevDeviceId = cameraState.deviceId;
+      prevEnabled        = cameraState.enabled;
+      prevDeviceId       = cameraState.deviceId;
+      prevPatternEnabled = cameraState.patternMotionEnabled[pattern.id] ?? true;
       pattern.init(ctx);
-      if (cameraState.enabled) startCamera();
+      if (cameraState.enabled && prevPatternEnabled) startCamera();
     },
 
     activate() {
-      if (cameraState.enabled) startCamera();
+      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true)) startCamera();
       pattern.activate?.();
     },
 
     update(dt: number, elapsed: number) {
-      // React to global enable/device changes
-      const nowEnabled  = cameraState.enabled;
-      const nowDeviceId = cameraState.deviceId;
-      if (nowEnabled !== prevEnabled) {
-        prevEnabled = nowEnabled;
-        if (nowEnabled) startCamera();
+      // React to global enable/device changes and per-pattern toggle
+      const nowEnabled        = cameraState.enabled;
+      const nowDeviceId       = cameraState.deviceId;
+      const nowPatternEnabled = cameraState.patternMotionEnabled[pattern.id] ?? true;
+      const shouldRun = nowEnabled && nowPatternEnabled;
+      const prevShouldRun = prevEnabled && prevPatternEnabled;
+      if (shouldRun !== prevShouldRun) {
+        if (shouldRun) startCamera();
         else stopCamera();
-      } else if (nowEnabled && nowDeviceId !== prevDeviceId) {
-        prevDeviceId = nowDeviceId;
+      } else if (shouldRun && nowDeviceId !== prevDeviceId) {
         startCamera();
       }
-      prevDeviceId = nowDeviceId;
+      prevEnabled        = nowEnabled;
+      prevDeviceId       = nowDeviceId;
+      prevPatternEnabled = nowPatternEnabled;
 
       // Motion detection (only when motionEnabled)
       if (motionCamera && cameraState.motionEnabled) {

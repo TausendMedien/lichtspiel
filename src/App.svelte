@@ -19,8 +19,8 @@
   import { getSlots, saveSlot } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
-  import { cameraState, enumerateCameras } from "./lib/globalCameraSettings.svelte";
-  import { audioState, enumerateMicrophones } from "./lib/globalAudioSettings.svelte";
+  import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
+  import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { colorC2 } from "./lib/colorC2";
 
   const AUDIO_BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -59,6 +59,10 @@
     palette[key] = PALETTE_DEFAULTS[key];
     savePalette();
   }
+
+  // Per-pattern reactivity collapsibles
+  let motionPerPatternOpen = $state(false);
+  let audioPerPatternOpen  = $state(false);
 
   // Demo mode
   let demoActive = $state(false);
@@ -1244,6 +1248,34 @@
               <input type="range" min={0} max={100} step={1} value={cameraState.level}
                 class="w-full accent-white pointer-events-none" />
             </div>
+            <!-- Per-pattern motion toggle -->
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="flex items-center gap-1 cursor-pointer text-[10px] text-white/40 hover:text-white/60 select-none mt-0.5"
+              onclick={() => motionPerPatternOpen = !motionPerPatternOpen}
+              role="button" tabindex="0"
+            >
+              <span>Per pattern</span>
+              <span class="font-mono">{motionPerPatternOpen ? '▴' : '▾'}</span>
+            </div>
+            {#if motionPerPatternOpen}
+              <div class="max-h-40 overflow-y-auto flex flex-col gap-1 pr-1">
+                {#each patterns.filter(p => p.motionReactive) as p}
+                  {@const on = cameraState.patternMotionEnabled[p.id] ?? true}
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-[11px] text-white/60 truncate">{p.name}</span>
+                    <div
+                      class="relative h-[12px] w-[20px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {on ? 'bg-white/60' : 'bg-white/20'}"
+                      onclick={() => { cameraState.patternMotionEnabled[p.id] = !on; savePatternMotionEnabled(); }}
+                      role="switch" aria-checked={on} tabindex="0"
+                    >
+                      <div class="absolute top-[1px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {on ? 'translate-x-[9px]' : 'translate-x-[1px]'}"></div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
         </div>
       </div>
@@ -1310,6 +1342,34 @@
             <input type="range" min={0} max={100} step={1} value={audioState.level}
               class="w-full accent-white pointer-events-none" />
           </div>
+          <!-- Per-pattern audio toggle -->
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="flex items-center gap-1 cursor-pointer text-[10px] text-white/40 hover:text-white/60 select-none mt-0.5"
+            onclick={() => audioPerPatternOpen = !audioPerPatternOpen}
+            role="button" tabindex="0"
+          >
+            <span>Per pattern</span>
+            <span class="font-mono">{audioPerPatternOpen ? '▴' : '▾'}</span>
+          </div>
+          {#if audioPerPatternOpen}
+            <div class="max-h-40 overflow-y-auto flex flex-col gap-1 pr-1">
+              {#each patterns.filter(p => p.audioReactive) as p}
+                {@const on = audioState.patternAudioEnabled[p.id] ?? true}
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[11px] text-white/60 truncate">{p.name}</span>
+                  <div
+                    class="relative h-[12px] w-[20px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {on ? 'bg-white/60' : 'bg-white/20'}"
+                    onclick={() => { audioState.patternAudioEnabled[p.id] = !on; savePatternAudioEnabled(); }}
+                    role="switch" aria-checked={on} tabindex="0"
+                  >
+                    <div class="absolute top-[1px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {on ? 'translate-x-[9px]' : 'translate-x-[1px]'}"></div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       </div>
 

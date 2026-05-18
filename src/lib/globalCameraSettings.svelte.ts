@@ -2,6 +2,10 @@
 
 export type DeviceInfo = { deviceId: string; label: string };
 
+function loadPatternMotionEnabled(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem('lichtspiel-pattern-motion') ?? '{}'); } catch { return {}; }
+}
+
 export const cameraState = $state({
   enabled:        false,  // camera hardware on/off (starts the stream)
   motionEnabled:  true,   // motion detection on/off (uses stream to boost controls)
@@ -9,7 +13,12 @@ export const cameraState = $state({
   devices:        [] as DeviceInfo[],
   sensitivity:    50,
   level:          0,
+  patternMotionEnabled: loadPatternMotionEnabled() as Record<string, boolean>,
 });
+
+export function savePatternMotionEnabled(): void {
+  try { localStorage.setItem('lichtspiel-pattern-motion', JSON.stringify(cameraState.patternMotionEnabled)); } catch {}
+}
 
 export async function enumerateCameras(): Promise<void> {
   try {
