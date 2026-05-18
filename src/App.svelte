@@ -1407,34 +1407,6 @@
         </div>
       </div>
 
-      <!-- Global Colour Controls (C2) -->
-      <div>
-        <div class="mb-2 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Colour</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex flex-col gap-2">
-          {#each ([
-            { label: 'Saturation', key: 'saturation', min: 0, max: 1, step: 0.05 },
-            { label: 'Hue', key: 'hue', min: 0, max: 1, step: 0.01 },
-            { label: 'Brightness', key: 'brightness', min: 0.75, max: 2, step: 0.05 },
-          ] as const) as ctrl}
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-white/70 w-20 shrink-0">{ctrl.label}</span>
-              <input
-                type="range"
-                min={ctrl.min} max={ctrl.max} step={ctrl.step}
-                value={colorC2[ctrl.key]}
-                oninput={(e) => { colorC2[ctrl.key] = parseFloat((e.target as HTMLInputElement).value); }}
-                class="flex-1 h-1 accent-white cursor-pointer"
-              />
-              <span class="text-xs text-white/50 w-8 text-right">{colorC2[ctrl.key].toFixed(2)}</span>
-            </div>
-          {/each}
-        </div>
-      </div>
-
       <!-- Custom Colours section -->
       <div>
         <div class="mb-2 flex items-center gap-2">
@@ -1792,6 +1764,35 @@
                 {/if}
               </div>
             {/if}
+          {/each}
+          <!-- C2 global colour controls, always shown at bottom of panel -->
+          <div class="mt-1 flex items-center gap-2">
+            <div class="h-px flex-1 bg-white/20"></div>
+            <span class="text-[10px] uppercase tracking-widest text-white/40">Colour</span>
+            <div class="h-px flex-1 bg-white/20"></div>
+          </div>
+          {#each ([
+            { label: 'Saturation', key: 'saturation' as const, min: 0,    max: 1,   step: 0.05, default: 1.0 },
+            { label: 'Hue',        key: 'hue'        as const, min: 0,    max: 1,   step: 0.01, default: 0.0 },
+            { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2,   step: 0.05, default: 1.0 },
+          ]) as c2}
+            <div class="flex flex-col gap-0.5">
+              <div class="flex items-center justify-between">
+                <span
+                  class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
+                  onclick={() => { colorC2[c2.key] = c2.default; }}
+                  title="Click to reset"
+                >{c2.label}</span>
+                <span class="text-xs text-white/50">{colorC2[c2.key].toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={c2.min} max={c2.max} step={c2.step}
+                value={colorC2[c2.key]}
+                oninput={(e) => { colorC2[c2.key] = parseFloat((e.target as HTMLInputElement).value); }}
+                class="w-full accent-white cursor-pointer"
+              />
+            </div>
           {/each}
         </div>
       {/if}
