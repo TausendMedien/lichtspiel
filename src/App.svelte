@@ -67,8 +67,13 @@
   // Demo mode
   let demoActive = $state(false);
   let demoDwell = $state(30);
+  let pedalDwell = $state(180);
   let demoPatternIds = $state<Set<string>>(new Set(patterns.map(p => p.id)));
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
+  let pedalTimer: ReturnType<typeof setTimeout> | null = null;
+  let pedalLightPaintActive = $state(false);
+  let pedalPreIndex = -1;
+  let pedalDemoWasActive = false;
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
 
@@ -262,7 +267,7 @@
     return from; // all disabled or only current enabled — stay put
   }
 
-  async function crossFadeTo(n: number) {
+  async function crossFadeTo(n: number, forceRandomize = false) {
     // Capture current frame BEFORE switching so snapshot covers the transition
     snapshotUrl = canvas.toDataURL();
     snapshotFading = false;
@@ -270,7 +275,7 @@
     // Switch pattern while snapshot covers the canvas
     index = switchTo(n);
     focusedIndex = index;
-    if (demoRandomize) randomizeControls();
+    if (demoRandomize || forceRandomize) randomizeControls();
     // Let new pattern render a couple frames, then fade out snapshot
     requestAnimationFrame(() => requestAnimationFrame(() => { snapshotFading = true; }));
   }
@@ -289,15 +294,47 @@
       appState = "active";
       poke();
     }
-    saveDemoSettings(true, demoDwell, [...demoPatternIds]);
+    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) clearTimeout(demoTimer);
     scheduleNext();
   }
 
   function stopDemo() {
     demoActive = false;
-    saveDemoSettings(false, demoDwell, [...demoPatternIds]);
-    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
+    if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
+    saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds]);
+  }
+
+  function handlePedalShort() {
+    if (pedalLightPaintActive) {
+      pedalLightPaintActive = false;
+      if (pedalDemoWasActive) {
+        crossFadeTo(nextDemoIndex(index), true);
+        pedalTimer = setTimeout(() => { pedalTimer = null; scheduleNext(); }, pedalDwell * 1000);
+      } else {
+        crossFadeTo(pedalPreIndex);
+      }
+      return;
+    }
+    if (demoActive) {
+      if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
+      if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
+      crossFadeTo(nextDemoIndex(index), true);
+      pedalTimer = setTimeout(() => { pedalTimer = null; scheduleNext(); }, pedalDwell * 1000);
+    } else {
+      startRandomize(performance.now());
+    }
+  }
+
+  function handlePedalLong() {
+    pedalPreIndex = index;
+    pedalDemoWasActive = demoActive;
+    if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
+    if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
+    pedalLightPaintActive = true;
+    const lightPaintIdx = patterns.findIndex(p => p.id === 'lightPaint');
+    if (lightPaintIdx >= 0) crossFadeTo(lightPaintIdx);
   }
 
   function resetDemoTimer() {
@@ -368,6 +405,8 @@
       case "randomize":        startRandomize(performance.now()); return;
       case "resetToDefault":   resetAllControls(); return;
       case "screenshot":       applyScreenshot(); return;
+      case "pedalShort":       handlePedalShort(); return;
+      case "pedalLong":        handlePedalLong();  return;
       case "toggleRecording":  recorder?.toggle(); return;
       case "toggleCamera":     toggleCamera();        return;
       case "speedUp":          applySpeedUp();   return;
@@ -688,6 +727,7 @@
     syncCtrlVals();
     const demo = loadDemoSettings(patterns.map(p => p.id));
     demoDwell = demo.demoDwell;
+    pedalDwell = demo.pedalDwell;
     demoPatternIds = new Set(demo.demoPatternIds);
     handle = createRenderer(canvas, patterns[0]);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
@@ -1549,7 +1589,20 @@
         </div>
         <input
           type="range" min={5} max={240} step={5} value={demoDwell}
-          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
+          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
+          class="w-full accent-white cursor-pointer"
+        />
+      </div>
+
+      <!-- Pedal dwell time -->
+      <div class="mb-3">
+        <div class="flex justify-between mb-1 text-xs text-white/70">
+          <span>Pedal hold time</span>
+          <span class="font-mono text-white/40">{Math.floor(pedalDwell / 60)}:{String(pedalDwell % 60).padStart(2, '0')} min</span>
+        </div>
+        <input
+          type="range" min={10} max={600} step={10} value={pedalDwell}
+          oninput={(e) => { pedalDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); }}
           class="w-full accent-white cursor-pointer"
         />
       </div>
@@ -1603,7 +1656,7 @@
               const next = new Set(demoPatternIds);
               if (enabled) { next.delete(p.id); } else { next.add(p.id); }
               demoPatternIds = next;
-              saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]);
+              saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
             }}
           >
             <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>

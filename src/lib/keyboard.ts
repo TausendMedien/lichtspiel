@@ -22,13 +22,16 @@ export type KeyAction =
   | { type: "toggleCheatsheet" }
   | { type: "toggleOptions" }
   | { type: "undo" }
-  | { type: "togglePose" };
+  | { type: "togglePose" }
+  | { type: "pedalShort" }
+  | { type: "pedalLong" };
 
 export function attachKeyboard(
   handler: (action: KeyAction) => void,
   onRHeldChange?: (held: boolean) => void,
 ): () => void {
   let rHeld = false;
+  let pedalDownAt: number | null = null;
 
   function onKeyDown(e: KeyboardEvent) {
     // Don't fire shortcuts when typing in a text or textarea field
@@ -67,8 +70,11 @@ export function attachKeyboard(
       case "d": case "D":
         handler({ type: "demo" });
         e.preventDefault(); return;
-      case "b": case "B":
+      case "n": case "N":
         handler({ type: "resetToDefault" });
+        e.preventDefault(); return;
+      case "b": case "B":
+        pedalDownAt = performance.now();
         e.preventDefault(); return;
       case " ":
         handler({ type: "freeze" });
@@ -134,6 +140,12 @@ export function attachKeyboard(
     if (e.key === "r" || e.key === "R") {
       rHeld = false;
       onRHeldChange?.(false);
+    }
+    if ((e.key === "b" || e.key === "B") && pedalDownAt !== null) {
+      const duration = performance.now() - pedalDownAt;
+      pedalDownAt = null;
+      handler(duration < 400 ? { type: "pedalShort" } : { type: "pedalLong" });
+      e.preventDefault();
     }
   }
 
