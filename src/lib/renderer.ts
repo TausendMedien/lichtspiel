@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
-import { colorC2 } from "./colorC2";
+import { colorC2 } from "./colorC2.svelte";
 
 export interface RendererHandle {
   setPattern: (next: Pattern) => void;

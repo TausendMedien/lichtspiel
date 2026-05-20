@@ -160,8 +160,6 @@ export const particlesPalette: Pattern = {
     material = null;
     camera = null;
     accTime = 0;
-    brightness = 1.0;
-    saturation = 0.80;
     colCyan = colMagenta = colPurple = colGold = colWhite = colBlack = 1.0;
   },
 };

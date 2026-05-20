@@ -204,8 +204,6 @@ export const tunnelEdgePalette: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
-    brightness = 1.0;
-    saturation = 1.0;
     colCenter = colMid = colOuter = 1.0;
   },
 };

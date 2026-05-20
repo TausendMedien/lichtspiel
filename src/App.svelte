@@ -19,9 +19,9 @@
   import { getSlots, saveSlot } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
-  import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
-  import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
-  import { colorC2 } from "./lib/colorC2";
+  import { cameraState, enumerateCameras } from "./lib/globalCameraSettings.svelte";
+  import { audioState, enumerateMicrophones } from "./lib/globalAudioSettings.svelte";
+  import { colorC2 } from "./lib/colorC2.svelte";
 
   const AUDIO_BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
 
@@ -60,20 +60,11 @@
     savePalette();
   }
 
-  // Per-pattern reactivity collapsibles
-  let motionPerPatternOpen = $state(false);
-  let audioPerPatternOpen  = $state(false);
-
   // Demo mode
   let demoActive = $state(false);
   let demoDwell = $state(30);
-  let pedalDwell = $state(180);
   let demoPatternIds = $state<Set<string>>(new Set(patterns.map(p => p.id)));
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
-  let pedalTimer: ReturnType<typeof setTimeout> | null = null;
-  let pedalLightPaintActive = $state(false);
-  let pedalPreIndex = -1;
-  let pedalDemoWasActive = false;
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
 
@@ -117,6 +108,7 @@
   let demoRandomize     = $state(false);
   let demoFavoritesOnly = $state(false);
   let collapsedSections = $state(new Set<string>());
+  let colourCollapsed = $state(false);
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
   let isFullscreenState = $state(false);
 
@@ -267,7 +259,7 @@
     return from; // all disabled or only current enabled — stay put
   }
 
-  async function crossFadeTo(n: number, forceRandomize = false) {
+  async function crossFadeTo(n: number) {
     // Capture current frame BEFORE switching so snapshot covers the transition
     snapshotUrl = canvas.toDataURL();
     snapshotFading = false;
@@ -275,7 +267,7 @@
     // Switch pattern while snapshot covers the canvas
     index = switchTo(n);
     focusedIndex = index;
-    if (demoRandomize || forceRandomize) randomizeControls();
+    if (demoRandomize) randomizeControls();
     // Let new pattern render a couple frames, then fade out snapshot
     requestAnimationFrame(() => requestAnimationFrame(() => { snapshotFading = true; }));
   }
@@ -294,47 +286,15 @@
       appState = "active";
       poke();
     }
-    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
+    saveDemoSettings(true, demoDwell, [...demoPatternIds]);
     if (demoTimer) clearTimeout(demoTimer);
     scheduleNext();
   }
 
   function stopDemo() {
     demoActive = false;
-    if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
-    if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
-    saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds]);
-  }
-
-  function handlePedalShort() {
-    if (pedalLightPaintActive) {
-      pedalLightPaintActive = false;
-      if (pedalDemoWasActive) {
-        crossFadeTo(nextDemoIndex(index), true);
-        pedalTimer = setTimeout(() => { pedalTimer = null; scheduleNext(); }, pedalDwell * 1000);
-      } else {
-        crossFadeTo(pedalPreIndex);
-      }
-      return;
-    }
-    if (demoActive) {
-      if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
-      if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
-      crossFadeTo(nextDemoIndex(index), true);
-      pedalTimer = setTimeout(() => { pedalTimer = null; scheduleNext(); }, pedalDwell * 1000);
-    } else {
-      startRandomize(performance.now());
-    }
-  }
-
-  function handlePedalLong() {
-    pedalPreIndex = index;
-    pedalDemoWasActive = demoActive;
-    if (demoTimer)  { clearTimeout(demoTimer);  demoTimer  = null; }
-    if (pedalTimer) { clearTimeout(pedalTimer); pedalTimer = null; }
-    pedalLightPaintActive = true;
-    const lightPaintIdx = patterns.findIndex(p => p.id === 'lightPaint');
-    if (lightPaintIdx >= 0) crossFadeTo(lightPaintIdx);
+    saveDemoSettings(false, demoDwell, [...demoPatternIds]);
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
   }
 
   function resetDemoTimer() {
@@ -405,8 +365,6 @@
       case "randomize":        startRandomize(performance.now()); return;
       case "resetToDefault":   resetAllControls(); return;
       case "screenshot":       applyScreenshot(); return;
-      case "pedalShort":       handlePedalShort(); return;
-      case "pedalLong":        handlePedalLong();  return;
       case "toggleRecording":  recorder?.toggle(); return;
       case "toggleCamera":     toggleCamera();        return;
       case "speedUp":          applySpeedUp();   return;
@@ -727,7 +685,6 @@
     syncCtrlVals();
     const demo = loadDemoSettings(patterns.map(p => p.id));
     demoDwell = demo.demoDwell;
-    pedalDwell = demo.pedalDwell;
     demoPatternIds = new Set(demo.demoPatternIds);
     handle = createRenderer(canvas, patterns[0]);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
@@ -1288,34 +1245,6 @@
               <input type="range" min={0} max={100} step={1} value={cameraState.level}
                 class="w-full accent-white pointer-events-none" />
             </div>
-            <!-- Per-pattern motion toggle -->
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <div
-              class="flex items-center gap-1 cursor-pointer text-[10px] text-white/40 hover:text-white/60 select-none mt-0.5"
-              onclick={() => motionPerPatternOpen = !motionPerPatternOpen}
-              role="button" tabindex="0"
-            >
-              <span>Per pattern</span>
-              <span class="font-mono">{motionPerPatternOpen ? '▴' : '▾'}</span>
-            </div>
-            {#if motionPerPatternOpen}
-              <div class="max-h-40 overflow-y-auto flex flex-col gap-1 pr-1">
-                {#each patterns.filter(p => p.motionReactive) as p}
-                  {@const on = cameraState.patternMotionEnabled[p.id] ?? true}
-                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-[11px] text-white/60 truncate">{p.name}</span>
-                    <div
-                      class="relative h-[12px] w-[20px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {on ? 'bg-white/60' : 'bg-white/20'}"
-                      onclick={() => { cameraState.patternMotionEnabled[p.id] = !on; savePatternMotionEnabled(); }}
-                      role="switch" aria-checked={on} tabindex="0"
-                    >
-                      <div class="absolute top-[1px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {on ? 'translate-x-[9px]' : 'translate-x-[1px]'}"></div>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
           </div>
         </div>
       </div>
@@ -1382,34 +1311,6 @@
             <input type="range" min={0} max={100} step={1} value={audioState.level}
               class="w-full accent-white pointer-events-none" />
           </div>
-          <!-- Per-pattern audio toggle -->
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div
-            class="flex items-center gap-1 cursor-pointer text-[10px] text-white/40 hover:text-white/60 select-none mt-0.5"
-            onclick={() => audioPerPatternOpen = !audioPerPatternOpen}
-            role="button" tabindex="0"
-          >
-            <span>Per pattern</span>
-            <span class="font-mono">{audioPerPatternOpen ? '▴' : '▾'}</span>
-          </div>
-          {#if audioPerPatternOpen}
-            <div class="max-h-40 overflow-y-auto flex flex-col gap-1 pr-1">
-              {#each patterns.filter(p => p.audioReactive) as p}
-                {@const on = audioState.patternAudioEnabled[p.id] ?? true}
-                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] text-white/60 truncate">{p.name}</span>
-                  <div
-                    class="relative h-[12px] w-[20px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {on ? 'bg-white/60' : 'bg-white/20'}"
-                    onclick={() => { audioState.patternAudioEnabled[p.id] = !on; savePatternAudioEnabled(); }}
-                    role="switch" aria-checked={on} tabindex="0"
-                  >
-                    <div class="absolute top-[1px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {on ? 'translate-x-[9px]' : 'translate-x-[1px]'}"></div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
         </div>
       </div>
 
@@ -1589,20 +1490,7 @@
         </div>
         <input
           type="range" min={5} max={240} step={5} value={demoDwell}
-          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
-          class="w-full accent-white cursor-pointer"
-        />
-      </div>
-
-      <!-- Pedal dwell time -->
-      <div class="mb-3">
-        <div class="flex justify-between mb-1 text-xs text-white/70">
-          <span>Pedal hold time</span>
-          <span class="font-mono text-white/40">{Math.floor(pedalDwell / 60)}:{String(pedalDwell % 60).padStart(2, '0')} min</span>
-        </div>
-        <input
-          type="range" min={10} max={600} step={10} value={pedalDwell}
-          oninput={(e) => { pedalDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); }}
+          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
           class="w-full accent-white cursor-pointer"
         />
       </div>
@@ -1656,7 +1544,7 @@
               const next = new Set(demoPatternIds);
               if (enabled) { next.delete(p.id); } else { next.add(p.id); }
               demoPatternIds = next;
-              saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+              saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]);
             }}
           >
             <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>
@@ -1878,35 +1766,41 @@
               </div>
             {/if}
           {/each}
-          <!-- C2 global colour controls, always shown at bottom of panel -->
+          <!-- C2 global colour controls -->
           <div class="mt-1 flex items-center gap-2">
             <div class="h-px flex-1 bg-white/20"></div>
-            <span class="text-[10px] uppercase tracking-widest text-white/40">Colour</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <span
+              class="text-[10px] uppercase tracking-widest text-white/40 cursor-pointer hover:text-white/70 select-none transition-colors"
+              onclick={() => { colourCollapsed = !colourCollapsed; }}
+            >Colour <span class="text-[8px] transition-transform duration-200 {colourCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
             <div class="h-px flex-1 bg-white/20"></div>
           </div>
-          {#each ([
-            { label: 'Saturation', key: 'saturation' as const, min: 0,    max: 1,   step: 0.05, default: 1.0 },
-            { label: 'Hue',        key: 'hue'        as const, min: 0,    max: 1,   step: 0.01, default: 0.0 },
-            { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2,   step: 0.05, default: 1.0 },
-          ]) as c2}
-            <div class="flex flex-col gap-0.5">
-              <div class="flex items-center justify-between">
-                <span
-                  class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
-                  onclick={() => { colorC2[c2.key] = c2.default; }}
-                  title="Click to reset"
-                >{c2.label}</span>
-                <span class="text-xs text-white/50">{colorC2[c2.key].toFixed(2)}</span>
+          {#if !colourCollapsed}
+            {#each ([
+              { label: 'Saturation', key: 'saturation' as const, min: 0,    max: 1,   step: 0.05, default: 1.0 },
+              { label: 'Hue',        key: 'hue'        as const, min: 0,    max: 1,   step: 0.01, default: 0.0 },
+              { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2,   step: 0.05, default: 1.0 },
+            ]) as c2}
+              <div class="flex flex-col gap-0.5">
+                <div class="flex items-center justify-between">
+                  <span
+                    class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
+                    onclick={() => { colorC2[c2.key] = c2.default; }}
+                    title="Click to reset"
+                  >{c2.label}</span>
+                  <span class="text-xs text-white/50">{colorC2[c2.key].toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={c2.min} max={c2.max} step={c2.step}
+                  value={colorC2[c2.key]}
+                  oninput={(e) => { colorC2[c2.key] = parseFloat((e.target as HTMLInputElement).value); }}
+                  class="w-full accent-white cursor-pointer"
+                />
               </div>
-              <input
-                type="range"
-                min={c2.min} max={c2.max} step={c2.step}
-                value={colorC2[c2.key]}
-                oninput={(e) => { colorC2[c2.key] = parseFloat((e.target as HTMLInputElement).value); }}
-                class="w-full accent-white cursor-pointer"
-              />
-            </div>
-          {/each}
+            {/each}
+          {/if}
         </div>
       {/if}
       {#if patterns[index].attribution}
