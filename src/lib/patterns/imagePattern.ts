@@ -177,13 +177,11 @@ const fragmentShader = /* glsl */`
       col += noise * uGrain * 0.14;
     }
 
-    // 16. Vignette — at max, edges are pure black (projection-edge masking)
+    // 16. Vignette — darkens edges, power = slider value (0=off, 1=gentle dark edges)
     if (uVignette > 0.001) {
       vec2 vigUv = vUv * 2.0 - 1.0;
       float dist2 = dot(vigUv, vigUv);
-      // power ramps up with uVignette: low=gentle, high=sharp black edges
-      float power = mix(0.8, 6.0, uVignette);
-      float vig = pow(max(1.0 - dist2, 0.0), power);
+      float vig = pow(max(1.0 - dist2, 0.0), uVignette);
       col *= vig;
     }
 
@@ -200,7 +198,8 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
   let zoomBreathe  = 0.0;
   let ripple       = 0.0;
 
-  let vignette     = 0.3;
+  let vignette     = 0.0;
+  let motionOn     = true;
   let chromaticAb  = 0.0;
   let grain        = 0.0;
   let edgePulse    = 0.0;
@@ -226,14 +225,14 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
       { label: 'Rotate 90°',  type: 'button', action: () => { rotation = (rotation + 1) % 4; } },
 
       // ── Motion section ───────────────────────────────────────────────
-      { label: 'Motion', type: 'section', get: () => true, set: () => {} },
+      { label: 'Motion', type: 'section', get: () => motionOn, set: (v: boolean) => { motionOn = v; } },
       { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,       set: v => { drift = v; } },
       { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
       { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple,      set: v => { ripple = v; } },
 
       // ── Style section ────────────────────────────────────────────────
       { label: 'Style', type: 'section', get: () => true, set: () => {} },
-      { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.3, get: () => vignette,   set: v => { vignette = v; } },
+      { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
       { label: 'Film Grain',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
       { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
@@ -289,9 +288,9 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
       u.uTime.value          = elapsed;
       u.uRotation.value      = rotation;
       u.uVignette.value      = vignette;
-      u.uDrift.value         = drift;
-      u.uZoomBreathe.value   = zoomBreathe;
-      u.uRipple.value        = ripple;
+      u.uDrift.value         = motionOn ? drift       : 0;
+      u.uZoomBreathe.value   = motionOn ? zoomBreathe : 0;
+      u.uRipple.value        = motionOn ? ripple      : 0;
       u.uChromaticAb.value   = chromaticAb;
       u.uGrain.value         = grain;
       u.uEdgePulse.value     = edgePulse;

@@ -46,6 +46,20 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   const baseVals: number[]      = firstTwoRange.map(c => c.get());
   const effectiveVals: number[] = [...baseVals];
 
+  // Wrap the boosted controls so user drags update baseVals only;
+  // the actual pattern value is written by update() using effectiveVals.
+  const wrappedControls: PatternControl[] = (pattern.controls ?? []).map((ctrl) => {
+    const idx = firstTwoRange.indexOf(ctrl as RangeCtrl);
+    if (idx === -1) return ctrl;
+    baseVals[idx] = (ctrl as RangeCtrl).get();
+    effectiveVals[idx] = baseVals[idx];
+    return {
+      ...ctrl,
+      get: () => effectiveVals[idx],
+      set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
+    } as RangeCtrl;
+  });
+
   async function startAudio() {
     stopAudio();
     try {
@@ -86,8 +100,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   return {
     ...pattern,
     audioReactive: true,
-    // Pass through the pattern's own controls unchanged — no audio controls added
-    controls: pattern.controls,
+    controls: wrappedControls,
 
     init(ctx: PatternContext) {
       for (let i = 0; i < firstTwoRange.length; i++) {
@@ -129,13 +142,13 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       audioState.level = Math.round(smoothed * 100);
 
       // Boost first two controls
-      const scaled = smoothed * (audioState.sensitivity / 10) * (8 / 7);
+      const scaled = analyser && dataArray ? smoothed * (audioState.sensitivity / 10) * (8 / 7) : 0;
       for (let i = 0; i < firstTwoRange.length; i++) {
         const ctrl = firstTwoRange[i];
         const range = ctrl.max - ctrl.min;
         const added = Math.min(scaled * range, range);
         effectiveVals[i] = Math.min(baseVals[i] + added, ctrl.max);
-        ctrl.set(effectiveVals[i]);
+        firstTwoRange[i].set(effectiveVals[i]);
       }
 
       pattern.update(dt, elapsed);

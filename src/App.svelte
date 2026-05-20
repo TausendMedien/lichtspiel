@@ -1687,17 +1687,16 @@
                       value={ctrlVals[ctrl.label] ?? ctrl.get()}
                       onpointerdown={ctrl.readonly ? undefined : () => {
                         draggingLabel = ctrl.label;
-                        overlayHidden = true;
                       }}
                       onpointerup={ctrl.readonly ? undefined : (e) => {
                         const v = parseFloat((e.target as HTMLInputElement).value);
                         ctrl.set(v);
                         ctrlVals[ctrl.label] = v;
                         saveSettings(patterns);
-                        requestAnimationFrame(() => { draggingLabel = null; overlayHidden = false; });
+                        requestAnimationFrame(() => { draggingLabel = null; });
                       }}
                       onpointercancel={ctrl.readonly ? undefined : () => {
-                        requestAnimationFrame(() => { draggingLabel = null; overlayHidden = false; });
+                        requestAnimationFrame(() => { draggingLabel = null; });
                       }}
                       oninput={ctrl.readonly ? undefined : (e) => {
                         const v = parseFloat((e.target as HTMLInputElement).value);

@@ -157,7 +157,7 @@ export const curlOrbsBody: Pattern = {
     { label: "Orb Size",     type: "range", min: 0.01, max: 0.15, step: 0.005, default: 0.06, get: () => orbSize,  set: (v) => { orbSize = v; } },
     { label: "Colors",       type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.4,  get: () => colorRange, set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.05, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
-    { label: "Rotate",       type: "range", min: 0.0,  max: 0.5,  step: 0.01, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Rotate",       type: "range", min: 0.0,  max: 0.10, step: 0.005, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
   init(ctx: PatternContext) {
