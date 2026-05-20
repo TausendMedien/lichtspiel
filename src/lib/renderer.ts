@@ -2,6 +2,32 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
 import { colorC2 } from "./colorC2.svelte";
 
+// ── Palette hue helpers ────────────────────────────────────────────────────────
+const PALETTE_KEYS  = ['cyan','magenta','purple','gold','white','black'];
+const PALETTE_DEFS  = ['#00ffff','#ff00ff','#9900ff','#ffd700','#ffffff','#000000'];
+
+function hexToHue(hex: string): number {
+  const n = parseInt(hex.replace('#',''), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >>  8) & 255) / 255;
+  const b = ( n        & 255) / 255;
+  const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx - mn;
+  if (d < 0.0001) return 0;
+  let h = 0;
+  if      (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (mx === g) h = (b - r) / d + 2;
+  else               h = (r - g) / d + 4;
+  return h / 6;
+}
+
+function loadPaletteHues(): number[] {
+  try {
+    const stored = localStorage.getItem('pp:palette');
+    const obj = stored ? (JSON.parse(stored) as Record<string,string>) : {};
+    return PALETTE_KEYS.map((k, i) => hexToHue(obj[k] ?? PALETTE_DEFS[i]));
+  } catch { return PALETTE_DEFS.map(hexToHue); }
+}
+
 export interface RendererHandle {
   setPattern: (next: Pattern) => void;
   activateCurrentPattern: () => void;
@@ -22,6 +48,7 @@ const postFragmentShader = /* glsl */ `
   uniform float uHue;
   uniform float uSaturation;
   uniform float uBrightness;
+  uniform float uPaletteHues[6];
   varying vec2 vUv;
 
   vec3 rgb2hsl(vec3 c) {
@@ -56,17 +83,36 @@ const postFragmentShader = /* glsl */ `
                 hue2rgb(p, q, c.x - 1.0/3.0));
   }
 
+  // Interpolate across the 6 palette hue stops (0..1 input → hue 0..1 output)
+  float palHueAt(float t) {
+    float s  = clamp(t, 0.0, 1.0) * 5.0;
+    int   lo = int(s);
+    int   hi = min(lo + 1, 5);
+    float f  = fract(s);
+    float h0 = uPaletteHues[lo];
+    float h1 = uPaletteHues[hi];
+    // Shortest path around the hue circle
+    float diff = h1 - h0;
+    if (diff >  0.5) diff -= 1.0;
+    if (diff < -0.5) diff += 1.0;
+    return fract(h0 + diff * f);
+  }
+
   void main() {
     vec3 col = texture2D(uScene, vUv).rgb;
 
-    // Hue rotation
+    // Palette hue traversal: rotate all hues by delta between palette[0] and palette[uHue]
     if (uHue > 0.001) {
-      vec3 hsl = rgb2hsl(col);
-      hsl.x = fract(hsl.x + uHue);
-      col = hsl2rgb(hsl);
+      vec3  hsl   = rgb2hsl(col);
+      float delta = palHueAt(uHue) - uPaletteHues[0];
+      // Shortest-path delta
+      if (delta >  0.5) delta -= 1.0;
+      if (delta < -0.5) delta += 1.0;
+      hsl.x = fract(hsl.x + delta);
+      col   = hsl2rgb(hsl);
     }
 
-    // Saturation (0 = grayscale, 1 = full color)
+    // Saturation (0 = grayscale, 1 = full colour)
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, uSaturation);
 
@@ -101,10 +147,11 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   });
 
   const postUniforms = {
-    uScene:      { value: rt.texture },
-    uHue:        { value: 0.0 },
-    uSaturation: { value: 1.0 },
-    uBrightness: { value: 1.0 },
+    uScene:        { value: rt.texture },
+    uHue:          { value: 0.0 },
+    uSaturation:   { value: 1.0 },
+    uBrightness:   { value: 1.0 },
+    uPaletteHues:  { value: loadPaletteHues() },
   };
 
   const postMaterial = new THREE.ShaderMaterial({
@@ -157,6 +204,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   let raf = 0;
   let last = performance.now();
   const start = last;
+  let paletteAge = 0;
 
   function loop(now: number) {
     const dt = (now - last) / 1000;
@@ -168,6 +216,13 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     postUniforms.uHue.value        = colorC2.hue;
     postUniforms.uSaturation.value = colorC2.saturation;
     postUniforms.uBrightness.value = colorC2.brightness;
+
+    // Refresh palette hues from localStorage every 2 s
+    paletteAge += dt;
+    if (paletteAge > 2) {
+      postUniforms.uPaletteHues.value = loadPaletteHues();
+      paletteAge = 0;
+    }
 
     // Render scene → RT, then post → canvas
     renderer.setRenderTarget(rt);
