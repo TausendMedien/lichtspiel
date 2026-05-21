@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
-import { colorC2, colorShuffle, PERMS } from "./colorC2.svelte";
+import { colorC2, colorShuffle, getColorByIndex } from "./colorC2.svelte";
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -29,6 +29,7 @@ const postFragmentShader = /* glsl */ `
   uniform vec3  uGlow;
   uniform float uSaturation;
   uniform float uBrightness;
+  uniform float uColorEnabled;
   varying vec2 vUv;
 
   vec3 rgb2hsl(vec3 c) {
@@ -66,40 +67,37 @@ const postFragmentShader = /* glsl */ `
   void main() {
     vec3 col = texture2D(uScene, vUv).rgb;
 
-    // ── Hue warp: map source arc [0.50 cyan → 0.83 magenta] to [Haupt → Kontrast] ──
-    vec3  hsl  = rgb2hsl(col);
-    float h    = hsl.x;
-    float s    = hsl.y;
-    float l    = hsl.z;
+    // ── Hue warp (only when Apply Colors is on) ──────────────────────────────
+    if (uColorEnabled > 0.5) {
+      vec3  hsl  = rgb2hsl(col);
+      float h = hsl.x, s = hsl.y, l = hsl.z;
 
-    float srcA    = 0.50;
-    float srcSpan = 0.33;                          // 0.83 - 0.50
-    float pos     = fract(h - srcA + 1.0);         // forward distance from cyan
-    float t       = clamp(pos / srcSpan, 0.0, 1.0);
+      // Map source arc [0.50 cyan → 0.83 magenta] to [uHaupt → uKontrast]
+      float srcSpan = 0.33;
+      float pos     = fract(h - 0.5 + 1.0);
+      float t       = clamp(pos / srcSpan, 0.0, 1.0);
 
-    // Target hues from user colours (shortest-arc lerp)
-    vec3  hslA = rgb2hsl(uHaupt);
-    vec3  hslB = rgb2hsl(uKontrast);
-    float hA   = hslA.x;
-    float hB   = hslB.x;
-    float diff = hB - hA;
-    if (diff >  0.5) diff -= 1.0;
-    if (diff < -0.5) diff += 1.0;
-    float mappedHue = fract(hA + diff * t);
+      vec3  hslA = rgb2hsl(uHaupt);
+      vec3  hslB = rgb2hsl(uKontrast);
+      float diff = hslB.x - hslA.x;
+      if (diff >  0.5) diff -= 1.0;
+      if (diff < -0.5) diff += 1.0;
+      float mappedHue = fract(hslA.x + diff * t);
 
-    vec3 remapped = hsl2rgb(vec3(mappedHue, s, l));
+      vec3 remapped = hsl2rgb(vec3(mappedHue, s, l));
 
-    // ── Glow: tint the brightest pixels toward the Glow colour ──────────────────
-    float glowW = smoothstep(0.75, 1.0, l);
-    remapped = mix(remapped, uGlow, glowW * 0.75);
+      // Blend brightest pixels toward Glow colour
+      float glowW = smoothstep(0.75, 1.0, l);
+      remapped = mix(remapped, uGlow, glowW * 0.75);
 
-    col = remapped;
+      col = remapped;
+    }
 
-    // ── Saturation ───────────────────────────────────────────────────────────────
+    // ── Saturation ───────────────────────────────────────────────────────────
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, uSaturation);
 
-    // ── Brightness ───────────────────────────────────────────────────────────────
+    // ── Brightness ───────────────────────────────────────────────────────────
     col = clamp(col * uBrightness, 0.0, 1.0);
 
     gl_FragColor = vec4(col, 1.0);
@@ -122,20 +120,22 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
 
   const ctx: PatternContext = { scene, camera, renderer, size };
 
-  // ── Post-process pass ──────────────────────────────────────────────────────
+  // ── Post-process pass (MSAA render target for smoother lines) ─────────────
   let rt = new THREE.WebGLRenderTarget(1, 1, {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     format: THREE.RGBAFormat,
+    samples: 4,  // 4× MSAA — requires WebGL2 (gracefully ignored on WebGL1)
   });
 
   const postUniforms = {
-    uScene:      { value: rt.texture },
-    uHaupt:      { value: new THREE.Vector3(...hexToRgb(colorC2.main)) },
-    uKontrast:   { value: new THREE.Vector3(...hexToRgb(colorC2.contrast)) },
-    uGlow:       { value: new THREE.Vector3(...hexToRgb(colorC2.glow)) },
-    uSaturation: { value: colorC2.saturation },
-    uBrightness: { value: colorC2.brightness },
+    uScene:        { value: rt.texture },
+    uHaupt:        { value: new THREE.Vector3(...hexToRgb(colorC2.main)) },
+    uKontrast:     { value: new THREE.Vector3(...hexToRgb(colorC2.contrast)) },
+    uGlow:         { value: new THREE.Vector3(...hexToRgb(colorC2.glow)) },
+    uSaturation:   { value: colorShuffle.saturation },
+    uBrightness:   { value: colorShuffle.brightness },
+    uColorEnabled: { value: colorShuffle.enabled ? 1.0 : 0.0 },
   };
 
   const postMaterial = new THREE.ShaderMaterial({
@@ -195,17 +195,17 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     last = now;
     current.update(dt * timeScale, elapsed);
 
-    // Sync colour state into post-process uniforms every frame (with per-pattern permutation)
-    const palette = [colorC2.main, colorC2.contrast, colorC2.glow];
-    const perm = PERMS[colorShuffle.index] ?? PERMS[0];
-    const [hR, hG, hB] = hexToRgb(palette[perm[0]]);
+    // Sync per-pattern colour assignment into post-process uniforms
+    const [a0, a1, a2] = colorShuffle.assign;
+    const [hR, hG, hB] = hexToRgb(getColorByIndex(a0));
     postUniforms.uHaupt.value.set(hR, hG, hB);
-    const [kR, kG, kB] = hexToRgb(palette[perm[1]]);
+    const [kR, kG, kB] = hexToRgb(getColorByIndex(a1));
     postUniforms.uKontrast.value.set(kR, kG, kB);
-    const [gR, gG, gB] = hexToRgb(palette[perm[2]]);
+    const [gR, gG, gB] = hexToRgb(getColorByIndex(a2));
     postUniforms.uGlow.value.set(gR, gG, gB);
-    postUniforms.uSaturation.value = colorC2.saturation;
-    postUniforms.uBrightness.value = colorC2.brightness;
+    postUniforms.uSaturation.value   = colorShuffle.saturation;
+    postUniforms.uBrightness.value   = colorShuffle.brightness;
+    postUniforms.uColorEnabled.value = colorShuffle.enabled ? 1.0 : 0.0;
 
     // Render scene → RT, then post → canvas
     renderer.setRenderTarget(rt);
