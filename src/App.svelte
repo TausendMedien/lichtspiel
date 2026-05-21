@@ -21,30 +21,24 @@
   import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones } from "./lib/globalAudioSettings.svelte";
-  import { colorC2, saveColorC2, COLOR_DEFAULTS } from "./lib/colorC2.svelte";
+  import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, PERMS } from "./lib/colorC2.svelte";
 
-  // ── Shuffle colour palettes ────────────────────────────────────────────────
-  const SHUFFLE_PALETTES = [
-    { haupt: '#00ffff', kontrast: '#ff00cc', glow: '#ffffff' },  // cyan / magenta (default)
-    { haupt: '#ff4400', kontrast: '#ffaa00', glow: '#ffff88' },  // fire
-    { haupt: '#0088ff', kontrast: '#0011ff', glow: '#88ddff' },  // ocean blue
-    { haupt: '#aa00ff', kontrast: '#ff0077', glow: '#ff88ff' },  // electric violet
-    { haupt: '#00ff88', kontrast: '#00aaff', glow: '#aaffdd' },  // mint / neon
-    { haupt: '#ff6600', kontrast: '#cc0066', glow: '#ffcc44' },  // sunset
-    { haupt: '#ffcc00', kontrast: '#ff4400', glow: '#ffffff' },  // gold / ember
-    { haupt: '#ffffff', kontrast: '#8888ff', glow: '#ccccff' },  // arctic
-  ];
+  // ── Per-pattern colour shuffle ─────────────────────────────────────────────
+  const SHUFFLE_KEY = 'pp:shuffle:';
 
-  function shuffleColors() {
-    const current = SHUFFLE_PALETTES.findIndex(
-      p => p.haupt === colorC2.haupt && p.kontrast === colorC2.kontrast
-    );
-    const candidates = SHUFFLE_PALETTES.filter((_, i) => i !== current);
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    colorC2.haupt    = pick.haupt;
-    colorC2.kontrast = pick.kontrast;
-    colorC2.glow     = pick.glow;
-    saveColorC2();
+  function loadPatternShuffle(patternId: string): number {
+    try { const s = localStorage.getItem(SHUFFLE_KEY + patternId); return s !== null ? Math.min(5, Math.max(0, parseInt(s))) : 0; }
+    catch { return 0; }
+  }
+  function savePatternShuffle(patternId: string, idx: number) {
+    try { localStorage.setItem(SHUFFLE_KEY + patternId, String(idx)); } catch {}
+  }
+  function doColorShuffle() {
+    const cur = colorShuffle.index;
+    let next = Math.floor(Math.random() * PERMS.length);
+    if (PERMS.length > 1) while (next === cur) next = Math.floor(Math.random() * PERMS.length);
+    colorShuffle.index = next;
+    savePatternShuffle(patterns[index].id, next);
   }
 
   const AUDIO_BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -222,6 +216,11 @@
         ctrlVals[c.label] = v;
       }
     }
+    // Also randomize colour shuffle (per-pattern) and global sat/brightness
+    doColorShuffle();
+    colorC2.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
+    colorC2.brightness = parseFloat((0.75 + Math.random() * 1.0).toFixed(2));
+    saveColorC2();
     saveSettings(patterns);
   }
 
@@ -251,6 +250,12 @@
     activatePattern(n);
     fs.enter(document.documentElement);
   }
+
+  // Load per-pattern colour shuffle whenever the active pattern changes
+  $effect(() => {
+    const id = patterns[index]?.id;
+    if (id) colorShuffle.index = loadPatternShuffle(id);
+  });
 
   function nextDemoIndex(from: number): number {
     const count = patterns.length;
@@ -433,6 +438,10 @@
         ctrlVals[ctrl.label] = idx;
       }
     }
+    doColorShuffle();
+    colorC2.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
+    colorC2.brightness = parseFloat((0.75 + Math.random() * 1.0).toFixed(2));
+    saveColorC2();
     randomizeAnims = anims;
   }
 
@@ -1373,6 +1382,80 @@
         </div>
       </div>
 
+      <!-- Custom Colours section -->
+      <div class="mb-5">
+        <div class="mb-2 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Custom Colours</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="mb-2 flex justify-end">
+          <button
+            onclick={() => { colorC2.main = COLOR_DEFAULTS.main; colorC2.contrast = COLOR_DEFAULTS.contrast; colorC2.glow = COLOR_DEFAULTS.glow; colorC2.saturation = COLOR_DEFAULTS.saturation; colorC2.brightness = COLOR_DEFAULTS.brightness; saveColorC2(); }}
+            class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+          >Reset All</button>
+        </div>
+        <!-- 3 colour pickers with hex field -->
+        <div class="flex flex-col gap-2">
+          {#each ([
+            { key: 'main'     as const, label: 'Main'     },
+            { key: 'contrast' as const, label: 'Contrast' },
+            { key: 'glow'     as const, label: 'Glow'     },
+          ]) as cp}
+            <div class="flex items-center gap-2">
+              <input
+                type="color"
+                value={colorC2[cp.key]}
+                oninput={(e) => { colorC2[cp.key] = (e.target as HTMLInputElement).value; saveColorC2(); }}
+                class="h-7 w-10 shrink-0 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+              />
+              <span class="text-xs text-white/70 capitalize w-14 shrink-0">{cp.label}</span>
+              <input
+                type="text"
+                value={colorC2[cp.key]}
+                placeholder="#rrggbb"
+                oninput={(e) => {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  if (/^#[0-9a-fA-F]{6}$/.test(v)) { colorC2[cp.key] = v; saveColorC2(); }
+                }}
+                class="min-w-0 flex-1 rounded bg-white/10 px-2 py-0.5 font-mono text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
+              />
+              {#if colorC2[cp.key] !== COLOR_DEFAULTS[cp.key]}
+                <button
+                  onclick={() => { colorC2[cp.key] = COLOR_DEFAULTS[cp.key]; saveColorC2(); }}
+                  class="text-sm text-white/50 hover:text-white/80 border border-white/20 hover:border-white/50 rounded px-2 py-1 transition-colors cursor-pointer shrink-0"
+                >↺</button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+        <!-- Saturation + Brightness -->
+        <div class="mt-3 flex flex-col gap-2">
+          {#each ([
+            { label: 'Saturation', key: 'saturation' as const, min: 0, max: 1, step: 0.05, default: 1.0 },
+            { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2, step: 0.05, default: 1.0 },
+          ]) as c2}
+            <div class="flex flex-col gap-0.5">
+              <div class="flex items-center justify-between">
+                <span
+                  class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
+                  onclick={() => { colorC2[c2.key] = c2.default; saveColorC2(); }}
+                  title="Click to reset"
+                >{c2.label}</span>
+                <span class="text-xs text-white/50">{colorC2[c2.key].toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={c2.min} max={c2.max} step={c2.step}
+                value={colorC2[c2.key]}
+                oninput={(e) => { colorC2[c2.key] = parseFloat((e.target as HTMLInputElement).value); saveColorC2(); }}
+                class="w-full accent-white cursor-pointer"
+              />
+            </div>
+          {/each}
+        </div>
+      </div>
+
       <!-- Developer section -->
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
@@ -1725,62 +1808,10 @@
             <div class="h-px flex-1 bg-white/20"></div>
           </div>
           {#if !colourCollapsed}
-            <!-- 3 colour pickers: Haupt / Kontrast / Glow -->
-            <div class="grid grid-cols-3 gap-2 mt-1">
-              {#each ([
-                { key: 'haupt'    as const, label: 'Haupt'    },
-                { key: 'kontrast' as const, label: 'Kontrast' },
-                { key: 'glow'     as const, label: 'Glow'     },
-              ]) as cp}
-                <div class="flex flex-col items-center gap-1">
-                  <div class="relative">
-                    <input
-                      type="color"
-                      value={colorC2[cp.key]}
-                      oninput={(e) => { colorC2[cp.key] = (e.target as HTMLInputElement).value; saveColorC2(); }}
-                      class="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
-                    />
-                    {#if colorC2[cp.key] !== COLOR_DEFAULTS[cp.key]}
-                      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                      <span
-                        class="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-full bg-white/20 text-[8px] text-white/70 hover:bg-white/40 transition-colors"
-                        onclick={() => { colorC2[cp.key] = COLOR_DEFAULTS[cp.key]; saveColorC2(); }}
-                        title="Reset"
-                      >↺</span>
-                    {/if}
-                  </div>
-                  <span class="text-[10px] text-white/50">{cp.label}</span>
-                </div>
-              {/each}
-            </div>
-            <!-- Shuffle button -->
             <button
-              onclick={shuffleColors}
-              class="mt-2 w-full rounded bg-white/10 px-2 py-1 text-xs text-white/70 cursor-pointer hover:bg-white/20 hover:text-white active:bg-white/30 transition-colors"
-            >⟳ Shuffle</button>
-            <!-- Saturation + Brightness sliders -->
-            {#each ([
-              { label: 'Saturation', key: 'saturation' as const, min: 0,    max: 1,   step: 0.05, default: 1.0 },
-              { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2,   step: 0.05, default: 1.0 },
-            ]) as c2}
-              <div class="mt-1 flex flex-col gap-0.5">
-                <div class="flex items-center justify-between">
-                  <span
-                    class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
-                    onclick={() => { colorC2[c2.key] = c2.default; saveColorC2(); }}
-                    title="Click to reset"
-                  >{c2.label}</span>
-                  <span class="text-xs text-white/50">{colorC2[c2.key].toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={c2.min} max={c2.max} step={c2.step}
-                  value={colorC2[c2.key]}
-                  oninput={(e) => { colorC2[c2.key] = parseFloat((e.target as HTMLInputElement).value); saveColorC2(); }}
-                  class="w-full accent-white cursor-pointer"
-                />
-              </div>
-            {/each}
+              onclick={doColorShuffle}
+              class="mt-1 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-white/70 cursor-pointer hover:bg-white/20 hover:text-white active:bg-white/30 transition-colors"
+            >⟳ Color Shuffle</button>
           {/if}
         </div>
       {/if}

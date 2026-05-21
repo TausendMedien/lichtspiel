@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
-import { colorC2 } from "./colorC2.svelte";
+import { colorC2, colorShuffle, PERMS } from "./colorC2.svelte";
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -131,8 +131,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
 
   const postUniforms = {
     uScene:      { value: rt.texture },
-    uHaupt:      { value: new THREE.Vector3(...hexToRgb(colorC2.haupt)) },
-    uKontrast:   { value: new THREE.Vector3(...hexToRgb(colorC2.kontrast)) },
+    uHaupt:      { value: new THREE.Vector3(...hexToRgb(colorC2.main)) },
+    uKontrast:   { value: new THREE.Vector3(...hexToRgb(colorC2.contrast)) },
     uGlow:       { value: new THREE.Vector3(...hexToRgb(colorC2.glow)) },
     uSaturation: { value: colorC2.saturation },
     uBrightness: { value: colorC2.brightness },
@@ -195,12 +195,14 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     last = now;
     current.update(dt * timeScale, elapsed);
 
-    // Sync colour state into post-process uniforms every frame
-    const [hR, hG, hB] = hexToRgb(colorC2.haupt);
+    // Sync colour state into post-process uniforms every frame (with per-pattern permutation)
+    const palette = [colorC2.main, colorC2.contrast, colorC2.glow];
+    const perm = PERMS[colorShuffle.index] ?? PERMS[0];
+    const [hR, hG, hB] = hexToRgb(palette[perm[0]]);
     postUniforms.uHaupt.value.set(hR, hG, hB);
-    const [kR, kG, kB] = hexToRgb(colorC2.kontrast);
+    const [kR, kG, kB] = hexToRgb(palette[perm[1]]);
     postUniforms.uKontrast.value.set(kR, kG, kB);
-    const [gR, gG, gB] = hexToRgb(colorC2.glow);
+    const [gR, gG, gB] = hexToRgb(palette[perm[2]]);
     postUniforms.uGlow.value.set(gR, gG, gB);
     postUniforms.uSaturation.value = colorC2.saturation;
     postUniforms.uBrightness.value = colorC2.brightness;
