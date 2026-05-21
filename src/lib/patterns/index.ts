@@ -39,7 +39,7 @@ const imgTealLines     = makeImagePattern('img-tealLines',     'Teal Lines',    
 const imgOrganicWeb    = makeImagePattern('img-organicWeb',    'Organic Web',    `${_base}images/organic-web.webp`);
 const imgDotWaves      = makeImagePattern('img-dotWaves',      'Dot Waves',      `${_base}images/dot-waves.webp`);
 const imgBaroqueVines  = makeImagePattern('img-baroqueVines',  'Baroque Vines',  `${_base}images/baroque-vines.webp`);
-const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals', `${_base}images/thin-verticals.webp`);
+const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals', `${_base}images/thin-verticals.webp`, 'fitWidth');
 
 // Patterns that must NOT get the generic motion camera wrapper:
 // - lightTrail / lightPaint  (camera-based themselves)

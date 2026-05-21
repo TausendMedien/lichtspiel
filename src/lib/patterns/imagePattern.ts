@@ -33,6 +33,7 @@ const fragmentShader = /* glsl */`
   uniform vec2  uParallaxShift;  // from pose centroid
   uniform float uPoseDistort;    // 0-1
   uniform vec2  uJoints[8];
+  uniform float uFitMode;        // 0=cover, 1=fitWidth
 
   varying vec2 vUv;
 
@@ -40,14 +41,13 @@ const fragmentShader = /* glsl */`
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
   }
 
-  // Scale UV so the image covers the screen (no letterbox).
-  // When screen is wider than image: fit width, crop top/bottom
-  //   → image y shows only center strip: c.y *= imgAspect/screenAspect (<1)
-  // When image is wider than screen: fit height, crop left/right
-  //   → image x shows only center strip: c.x *= screenAspect/imgAspect (<1)
   vec2 coverUv(vec2 uv) {
     vec2 c = uv - 0.5;
-    if (uScreenAspect > uImgAspect) {
+    if (uFitMode > 0.5 && uScreenAspect < uImgAspect) {
+      // Fit width: show full image width, scale y to maintain aspect ratio.
+      // y will tile outside [0,1] — handled at sampling time with mod().
+      c.y *= uImgAspect / uScreenAspect;
+    } else if (uScreenAspect > uImgAspect) {
       c.y *= uImgAspect / uScreenAspect;
     } else {
       c.x *= uScreenAspect / uImgAspect;
@@ -137,8 +137,13 @@ const fragmentShader = /* glsl */`
       }
     }
 
-    // Clamp so we don't sample outside [0,1]
-    vec2 clampedUv = clamp(uv, 0.0, 1.0);
+    // Clamp (or tile y in fitWidth mode) to stay within [0,1]
+    vec2 clampedUv;
+    if (uFitMode > 0.5) {
+      clampedUv = vec2(clamp(uv.x, 0.0, 1.0), mod(uv.y, 1.0));
+    } else {
+      clampedUv = clamp(uv, 0.0, 1.0);
+    }
 
     // 8. Chromatic aberration
     vec3 col;
@@ -189,7 +194,7 @@ const fragmentShader = /* glsl */`
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-export function makeImagePattern(id: string, name: string, src: string): Pattern {
+export function makeImagePattern(id: string, name: string, src: string, fitMode: 'cover' | 'fitWidth' = 'cover'): Pattern {
   let rotation     = 0;     // 0/1/2/3
 
   let drift        = 0.0;
@@ -266,6 +271,7 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
           uParallaxShift: { value: new THREE.Vector2(0, 0) },
           uPoseDistort:  { value: 0 },
           uJoints:       { value: joints },
+          uFitMode:      { value: fitMode === 'fitWidth' ? 1.0 : 0.0 },
         },
         vertexShader,
         fragmentShader,
