@@ -41,13 +41,17 @@ const fragmentShader = /* glsl */`
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
   }
 
-  // Scale UV so the image covers the screen (no letterbox)
+  // Scale UV so the image covers the screen (no letterbox).
+  // When screen is wider than image: fit width, crop top/bottom
+  //   → image y shows only center strip: c.y *= imgAspect/screenAspect (<1)
+  // When image is wider than screen: fit height, crop left/right
+  //   → image x shows only center strip: c.x *= screenAspect/imgAspect (<1)
   vec2 coverUv(vec2 uv) {
     vec2 c = uv - 0.5;
     if (uScreenAspect > uImgAspect) {
-      c.y *= uScreenAspect / uImgAspect;
+      c.y *= uImgAspect / uScreenAspect;
     } else {
-      c.x *= uImgAspect / uScreenAspect;
+      c.x *= uScreenAspect / uImgAspect;
     }
     return c + 0.5;
   }
@@ -233,7 +237,7 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
 
       // ── Style section ────────────────────────────────────────────────
       { label: 'Style', type: 'section', get: () => true, set: () => {} },
-      { label: 'Vignette',    type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
+      { label: 'Vignette',    type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
       { label: 'Film Grain',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
       { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
