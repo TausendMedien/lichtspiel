@@ -5,9 +5,9 @@ import type { Pattern, PatternContext } from "./types";
 // A second glow-points pass adds per-particle blur and size variation like Particle Field.
 
 let lineCount  = 1000;
-let flowSpeed  = 0.1;
+let flowSpeed  = 0.3;
 let colorRange = 1.0;
-let tailLength = 4.0;
+let tailLength = 6.0;
 let lineWidth  = 4.0;  // pixels
 
 let lineMesh:   THREE.Mesh   | null = null;
@@ -229,12 +229,13 @@ export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
   controls: [
-    { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.1,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
+    { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.3,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
-    { label: "Line Width",  type: "range", min: 0.5,  max: 6.0,  step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
-    { label: "Tail Length", type: "range", min: 0.1,  max: 12.0, step: 0.1,  default: 4.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
+    { label: "Line Width",  type: "range", min: 1.5,  max: 14.0, step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
+    { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
     { label: "Colors",      type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1.0,  get: () => colorRange, set: (v) => { colorRange = v; } },
   ],
+  colorDefaults: { saturation: 0.9, brightness: 1.8 },
 
   init(ctx: PatternContext) {
     camera   = ctx.camera;

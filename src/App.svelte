@@ -32,21 +32,31 @@
   // ── Per-pattern colour state ───────────────────────────────────────────────
   const PCOLOR_KEY = 'pp:pcolor:';
 
+  function patternColorDefaults(patternId: string) {
+    const pat = patterns.find(p => p.id === patternId);
+    return {
+      enabled:    !NO_COLOR_IDS.has(patternId),
+      saturation: pat?.colorDefaults?.saturation ?? 1.0,
+      brightness: pat?.colorDefaults?.brightness ?? 1.0,
+      assign:     [0, 1, 2] as [number, number, number],
+    };
+  }
+
   function loadPatternColor(patternId: string) {
-    const defaultEnabled = !NO_COLOR_IDS.has(patternId);
+    const def = patternColorDefaults(patternId);
     try {
       const s = localStorage.getItem(PCOLOR_KEY + patternId);
       if (s) {
         const p = JSON.parse(s);
         return {
-          enabled:    typeof p.enabled === 'boolean' ? p.enabled : defaultEnabled,
-          saturation: typeof p.sat === 'number' ? p.sat : 1.0,
-          brightness: typeof p.bri === 'number' ? p.bri : 1.0,
-          assign:     (Array.isArray(p.assign) && p.assign.length === 3 ? p.assign : [0, 1, 2]) as [number, number, number],
+          enabled:    typeof p.enabled === 'boolean' ? p.enabled : def.enabled,
+          saturation: typeof p.sat === 'number' ? p.sat : def.saturation,
+          brightness: typeof p.bri === 'number' ? p.bri : def.brightness,
+          assign:     (Array.isArray(p.assign) && p.assign.length === 3 ? p.assign : def.assign) as [number, number, number],
         };
       }
     } catch {}
-    return { enabled: defaultEnabled, saturation: 1.0, brightness: 1.0, assign: [0, 1, 2] as [number, number, number] };
+    return def;
   }
 
   function savePatternColor(patternId: string) {
@@ -237,7 +247,17 @@
         ctrlVals[c.label] = c.default;
       }
     }
+    resetAllColorState();
     saveSettings(patterns);
+  }
+
+  function resetAllColorState() {
+    const def = patternColorDefaults(patterns[index].id);
+    colorShuffle.enabled    = def.enabled;
+    colorShuffle.saturation = def.saturation;
+    colorShuffle.brightness = def.brightness;
+    colorShuffle.assign     = [0, 1, 2];
+    savePatternColor(patterns[index].id);
   }
 
   function randomizeControls() {
@@ -250,7 +270,6 @@
         ctrlVals[c.label] = v;
       }
     }
-    // Also randomize per-pattern colour shuffle + sat/brightness
     doColorShuffle();
     colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
     colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
@@ -591,6 +610,9 @@
       if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
       snap[ctrl.label] = ctrl.get();
     }
+    // Include per-pattern colour state (toggle + assignment, not colour values)
+    snap['__colorEnabled'] = colorShuffle.enabled;
+    snap['__colorAssign']  = colorShuffle.assign.join(',');
     return snap;
   }
 
@@ -616,6 +638,15 @@
         ctrlVals[ctrl.label] = ctrl.get() as number | string;
       }
     }
+    // Restore per-pattern colour state
+    if (typeof snap['__colorEnabled'] === 'boolean') colorShuffle.enabled = snap['__colorEnabled'];
+    if (typeof snap['__colorAssign'] === 'string') {
+      const parts = String(snap['__colorAssign']).split(',').map(Number);
+      if (parts.length === 3 && parts.every(n => n >= 0 && n <= 5)) {
+        colorShuffle.assign = parts as [number, number, number];
+      }
+    }
+    savePatternColor(patterns[index].id);
     randomizeAnims = anims;
     saveSettings(patterns);
   }
@@ -1158,9 +1189,9 @@
             ["Speed +/−",            "↑ ↓",               "D-Pad ↑ ↓"],
             ["Switch slider",        "R (hold) + ↑↓",     "R-Stick ↑↓"],
             ["Adjust slider",        "R (hold) + ←→",     "R-Stick ←→"],
-            ["Reset controls",       "B  (South)",        "× / A"],
+            ["Reset controls",       "A",                 "× / A"],
             ["Freeze toggle",        "Space / Start",     "Options / Start"],
-            ["Randomize",            "A",                 "○ / B"],
+            ["Randomize",            "B",                 "○ / B"],
             ["Blackout toggle",      "X",                 "△ / Y"],
             ["Hide / show HUD",      "Y",                 "□ / X"],
             ["Screenshot",           "L  ·  2 (R2)",      "R2 / RT"],
@@ -1657,6 +1688,7 @@
         <div class="mb-2 shrink-0 flex items-center justify-between gap-2">
           <span class="text-xs uppercase tracking-widest text-white/50">Controls</span>
           <div class="flex gap-1">
+            <button onclick={applyUndo} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Undo</button>
             <button onclick={resetAllControls} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Default</button>
             <button onclick={() => { poke(); startRandomize(performance.now()); }} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Randomize</button>
           </div>
@@ -1934,32 +1966,35 @@
             <button
               class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
               onclick={() => { fs.enter(document.documentElement); }}
+              title="Toggle fullscreen (F)"
             >
-              {isFullscreenState ? "Exit ⛶" : "⛶ Fullscreen"}
+              {isFullscreenState ? "Exit ⛶" : "⛶ Fullscreen (F)"}
             </button>
           {/if}
           <button
             class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {demoActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
             onclick={() => { demoActive ? stopDemo() : demoVisible = true; }}
+            title="Demo / kiosk mode (D)"
           >
-            {demoActive ? "● Demo" : "Demo"}
+            {demoActive ? "● Demo (D)" : "Demo (D)"}
           </button>
           <button
             class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
             onclick={() => { optionsVisible = true; }}
             title="Options (O)"
-          >⚙ Options</button>
+          >⚙ Options (O)</button>
           <button
             class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
             onclick={() => { cheatsheetVisible = true; }}
             title="About / Controls (M)"
-          >? About</button>
+          >? About (M)</button>
         </div>
       </div>
       <div class="mt-3 flex gap-1.5">
         <button
-          class="pointer-events-auto flex-1 rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
+          class="pointer-events-auto flex-1 rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20 whitespace-nowrap min-w-[7rem]"
           onclick={() => { focusedIndex = index; appState = "overview"; }}
+          title="Back to pattern grid"
         >
           ← Patterns
         </button>
@@ -1986,26 +2021,26 @@
               {poseDebug ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-300' : 'border-white/15 bg-white/[0.07] text-white/50 hover:border-white/40'}"
             onclick={() => { poseDebug = !poseDebug; }}
             title="Toggle landmark debug overlay"
-          >⊹</button>
+          ><span class="text-sm leading-none">⊹</span></button>
         {/if}
         <button
           class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {copiedLink ? 'border-green-400/50 bg-green-400/10 text-green-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'}"
           onclick={copyShare}
           title="Copy shareable link"
-        >{copiedLink ? '✓ Copied!' : '⛓'}</button>
+        >{#if copiedLink}✓ Copied!{:else}<span class="text-sm leading-none">⛓</span>{/if}</button>
         {#if screenshotsEnabled}
           <button
             class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
             onclick={applyScreenshot}
             title="Screenshot"
-          >📷</button>
+          ><span class="text-sm leading-none">📷</span></button>
         {/if}
         {#if recordingsEnabled}
           <button
             class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
             onclick={() => recorder?.toggle()}
             title="Record video"
-          >{isRecording ? '⏹' : '⏺'}</button>
+          ><span class="text-sm leading-none">{isRecording ? '⏹' : '⏺'}</span></button>
         {/if}
       </div>
       <div class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-white/70">
@@ -2018,14 +2053,14 @@
           <span>speed +/−</span>
           <kbd class="rounded bg-white/10 px-1.5 font-mono">Space</kbd>
           <span>freeze</span>
-          <kbd class="rounded bg-white/10 px-1.5 font-mono">B</kbd>
+          <kbd class="rounded bg-white/10 px-1.5 font-mono">A</kbd>
           <span>reset controls</span>
-          <kbd class="rounded bg-white/10 px-1.5 font-mono">A / X</kbd>
-          <span>randomize / blackout</span>
+          <kbd class="rounded bg-white/10 px-1.5 font-mono">B</kbd>
+          <span>randomize</span>
+          <kbd class="rounded bg-white/10 px-1.5 font-mono">X</kbd>
+          <span>blackout</span>
           <kbd class="rounded bg-white/10 px-1.5 font-mono">L</kbd>
           <span>screenshot</span>
-          <kbd class="rounded bg-white/10 px-1.5 font-mono">R + ←→</kbd>
-          <span>adjust slider</span>
           <kbd class="rounded bg-white/10 px-1.5 font-mono">M</kbd>
           <span>all shortcuts</span>
         {/if}

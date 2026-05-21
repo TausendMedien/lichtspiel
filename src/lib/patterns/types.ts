@@ -31,6 +31,8 @@ export interface Pattern {
   motionReactive?: boolean;
   /** Set by addAudioReactivity wrapper — true if this pattern supports audio reactivity. */
   audioReactive?: boolean;
+  /** Default saturation and brightness for the per-pattern colour state. */
+  colorDefaults?: { saturation?: number; brightness?: number };
   init(ctx: PatternContext): void;
   /** Called only on real activation (not on overview hover preview). Start cameras here. */
   activate?(): void;
