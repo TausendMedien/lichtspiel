@@ -177,11 +177,12 @@ const fragmentShader = /* glsl */`
       col += noise * uGrain * 0.14;
     }
 
-    // 16. Vignette — darkens edges, power = slider value (0=off, 1=gentle dark edges)
+    // 16. Vignette — Gaussian falloff; higher slider = extends further from corners inward.
+    // Uses dist^4 so corners darken much faster than edges (rectangular feel).
     if (uVignette > 0.001) {
-      vec2 vigUv = vUv * 2.0 - 1.0;
-      float dist2 = dot(vigUv, vigUv);
-      float vig = pow(max(1.0 - dist2, 0.0), uVignette);
+      vec2 uv = (vUv - 0.5) * 2.0;   // center 0, edges ±1, corners ±√2
+      float d2 = dot(uv, uv);         // 0→center, 1→mid-edge, 2→corner
+      float vig = exp(-d2 * d2 * uVignette);
       col *= vig;
     }
 

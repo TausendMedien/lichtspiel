@@ -30,6 +30,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
 
   const baseVals: number[]      = firstTwoRange.map((c) => c.get());
   const effectiveVals: number[] = [...baseVals];
+  const lastWritten: number[]   = [...baseVals]; // track last value written to raw pattern
 
   // Wrap the boosted controls so user drags update baseVals only;
   // the actual pattern value is written by update() using effectiveVals.
@@ -90,6 +91,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       for (let i = 0; i < firstTwoRange.length; i++) {
         baseVals[i] = firstTwoRange[i].get();
         effectiveVals[i] = baseVals[i];
+        lastWritten[i] = baseVals[i];
       }
       prevEnabled        = cameraState.enabled;
       prevDeviceId       = cameraState.deviceId;
@@ -143,7 +145,10 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         const range = ctrl.max - ctrl.min;
         const added = Math.min(scaledMotion * range, range);
         effectiveVals[i] = Math.min(baseVals[i] + added, ctrl.max);
-        ctrl.set(effectiveVals[i]);
+        if (effectiveVals[i] !== lastWritten[i]) {
+          lastWritten[i] = effectiveVals[i];
+          ctrl.set(effectiveVals[i]);
+        }
       }
 
       pattern.update(dt, elapsed);
