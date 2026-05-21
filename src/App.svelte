@@ -148,6 +148,8 @@
   let demoRandomize     = $state(false);
   let demoFavoritesOnly = $state(false);
   let collapsedSections = $state(new Set<string>());
+  const _perPatternCollapsed = new Map<string, Set<string>>();
+  const _perPatternColourCollapsed = new Map<string, boolean>();
   let colourCollapsed = $state(false);
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
   let isFullscreenState = $state(false);
@@ -230,7 +232,19 @@
   }
 
   // Re-sync whenever the active pattern changes.
-  $effect(() => { const _ = index; syncCtrlVals(); });
+  $effect(() => {
+    const _ = index;
+    syncCtrlVals();
+    const pat = patterns[index];
+    if (pat) {
+      collapsedSections = _perPatternCollapsed.has(pat.id)
+        ? new Set(_perPatternCollapsed.get(pat.id))
+        : new Set(pat.defaultCollapsedSections ?? []);
+      colourCollapsed = _perPatternColourCollapsed.has(pat.id)
+        ? _perPatternColourCollapsed.get(pat.id)!
+        : pat.id.startsWith('img-');
+    }
+  });
   $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); });
 
   function resetCtrl(ctrl: PatternControl & { type: "range" }) {
@@ -241,11 +255,23 @@
   }
 
   function resetAllControls() {
-    for (const c of patterns[index]?.controls ?? []) {
+    const pat = patterns[index];
+    for (const c of pat?.controls ?? []) {
       if (c.type === 'range' && c.default !== undefined && !c.readonly) {
         c.set(c.default);
         ctrlVals[c.label] = c.default;
+      } else if (c.type === 'section' && pat?.defaultCollapsedSections?.includes(c.label)) {
+        c.set(false);
+        ctrlVals[c.label] = 0;
       }
+    }
+    if (pat) {
+      const defaultCollapsed = new Set(pat.defaultCollapsedSections ?? []);
+      _perPatternCollapsed.set(pat.id, defaultCollapsed);
+      collapsedSections = defaultCollapsed;
+      const defaultColourCollapsed = pat.id.startsWith('img-');
+      _perPatternColourCollapsed.set(pat.id, defaultColourCollapsed);
+      colourCollapsed = defaultColourCollapsed;
     }
     resetAllColorState();
     saveSettings(patterns);
@@ -258,6 +284,9 @@
     colorShuffle.brightness = def.brightness;
     colorShuffle.assign     = [0, 1, 2];
     savePatternColor(patterns[index].id);
+    // Reset palette to the three base colours
+    Object.assign(colorC2, COLOR_DEFAULTS);
+    saveColorC2();
   }
 
   function randomizeControls() {
@@ -610,9 +639,21 @@
       if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
       snap[ctrl.label] = ctrl.get();
     }
-    // Include per-pattern colour state (toggle + assignment, not colour values)
+    // Per-pattern colour state
     snap['__colorEnabled'] = colorShuffle.enabled;
     snap['__colorAssign']  = colorShuffle.assign.join(',');
+    snap['__colorSat']     = colorShuffle.saturation;
+    snap['__colorBri']     = colorShuffle.brightness;
+    // Palette colour values
+    snap['__c2Main']     = colorC2.main;
+    snap['__c2Contrast'] = colorC2.contrast;
+    snap['__c2Glow']     = colorC2.glow;
+    snap['__c2Extra1']   = colorC2.extra1;
+    snap['__c2Extra2']   = colorC2.extra2;
+    snap['__c2Extra3']   = colorC2.extra3;
+    snap['__c2Extra1on'] = colorC2.extra1on;
+    snap['__c2Extra2on'] = colorC2.extra2on;
+    snap['__c2Extra3on'] = colorC2.extra3on;
     return snap;
   }
 
@@ -646,7 +687,21 @@
         colorShuffle.assign = parts as [number, number, number];
       }
     }
+    if (typeof snap['__colorSat'] === 'number') colorShuffle.saturation = snap['__colorSat'];
+    if (typeof snap['__colorBri'] === 'number') colorShuffle.brightness  = snap['__colorBri'];
     savePatternColor(patterns[index].id);
+    // Restore palette colour values
+    const hexRe = /^#[0-9a-fA-F]{6}$/;
+    if (typeof snap['__c2Main']     === 'string' && hexRe.test(snap['__c2Main']     as string)) colorC2.main     = snap['__c2Main']     as string;
+    if (typeof snap['__c2Contrast'] === 'string' && hexRe.test(snap['__c2Contrast'] as string)) colorC2.contrast = snap['__c2Contrast'] as string;
+    if (typeof snap['__c2Glow']     === 'string' && hexRe.test(snap['__c2Glow']     as string)) colorC2.glow     = snap['__c2Glow']     as string;
+    if (typeof snap['__c2Extra1']   === 'string' && hexRe.test(snap['__c2Extra1']   as string)) colorC2.extra1   = snap['__c2Extra1']   as string;
+    if (typeof snap['__c2Extra2']   === 'string' && hexRe.test(snap['__c2Extra2']   as string)) colorC2.extra2   = snap['__c2Extra2']   as string;
+    if (typeof snap['__c2Extra3']   === 'string' && hexRe.test(snap['__c2Extra3']   as string)) colorC2.extra3   = snap['__c2Extra3']   as string;
+    if (typeof snap['__c2Extra1on'] === 'boolean') colorC2.extra1on = snap['__c2Extra1on'] as boolean;
+    if (typeof snap['__c2Extra2on'] === 'boolean') colorC2.extra2on = snap['__c2Extra2on'] as boolean;
+    if (typeof snap['__c2Extra3on'] === 'boolean') colorC2.extra3on = snap['__c2Extra3on'] as boolean;
+    saveColorC2();
     randomizeAnims = anims;
     saveSettings(patterns);
   }
@@ -1730,7 +1785,7 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span
                   class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
-                  onclick={() => { const s = new Set(collapsedSections); isCollapsed ? s.delete(ctrl.label) : s.add(ctrl.label); collapsedSections = s; }}
+                  onclick={() => { const s = new Set(collapsedSections); isCollapsed ? s.delete(ctrl.label) : s.add(ctrl.label); collapsedSections = s; _perPatternCollapsed.set(patterns[index].id, s); }}
                 >{ctrl.label} <span class="text-[8px] transition-transform duration-200 {isCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
@@ -1867,7 +1922,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <span
               class="text-[10px] uppercase tracking-widest text-white/40 cursor-pointer hover:text-white/70 select-none transition-colors"
-              onclick={() => { colourCollapsed = !colourCollapsed; }}
+              onclick={() => { colourCollapsed = !colourCollapsed; _perPatternColourCollapsed.set(patterns[index].id, colourCollapsed); }}
             >Colour <span class="text-[8px] transition-transform duration-200 {colourCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
             <div class="h-px flex-1 bg-white/20"></div>
           </div>
