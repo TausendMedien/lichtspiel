@@ -33,6 +33,8 @@ export interface Pattern {
   audioReactive?: boolean;
   /** Default saturation and brightness for the per-pattern colour state. */
   colorDefaults?: { saturation?: number; brightness?: number };
+  /** Section labels that should be collapsed by default (no saved state). */
+  defaultCollapsedSections?: string[];
   init(ctx: PatternContext): void;
   /** Called only on real activation (not on overview hover preview). Start cameras here. */
   activate?(): void;

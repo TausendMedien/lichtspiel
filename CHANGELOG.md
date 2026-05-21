@@ -1,68 +1,45 @@
 # Changelog
 
-## Color System C2 (2026-05)
+## v0.3.260521-xxxx — Static Images Defaults
 
-Three global sliders — **Saturation**, **Hue**, and **Brightness** — now control color across all patterns via a post-process pass in the renderer. Individual per-pattern Saturation, Brightness, Hue Shift, Colorize, Tint, and Tint Strength sliders have been removed. The previous state is tagged `color-system-c1` in git for per-pattern rollback.
-
-- Saturation 0 = fully grayscale, 1 = full palette color
-- Hue 0–1 rotates all pattern hues up to 360°
-- Brightness 0.75–2.0 scales luminance
+Film Grain removed (broken). Static Images now default to all controls at minimum, Motion and Style sections collapsed and off, Colour section collapsed. Bug fix: Style section toggle was always-on and could not be turned off.
 
 ---
 
-## Static Images + Interactive Shader (2026-05)
+## v0.3.260521-1430 — Color System
 
-Five artwork images added as a new pattern category. Each runs through the same image-pattern engine with Drift, Zoom Breathe, Ripple, Chromatic Aberration, Film Grain, Edge Pulse, and audio reactivity. An interactive GLSL shader pattern was also added.
-
----
-
-## Presets + MIDI + Demo Mode (2026-05)
-
-- Bundled preset defaults shipped with the app so the first run starts with sensible values
-- MIDI toggle in Options (enables/disables MIDI controller input)
-- Demo modal for kiosk / unattended display
-- Developer "Copy Defaults" button exports current control values as TypeScript
+Three global color pickers (Main, Contrast, Glow) replace the old hue/palette system. Per-pattern **Color Shuffle** randomly reassigns palette slots. Per-pattern Saturation and Brightness sliders. **Apply Colors** toggle. MSAA anti-aliasing. Preset slots now save color state. Default reset targets base colors only.
 
 ---
 
-## Pose Tracking: Body Patterns (2026-04)
+## v0.3.260519-0908 — USB Foot Pedal
 
-MediaPipe pose tracking added. Four spatial patterns (Particle Field, Particle Lines, Wavy Sphere, Flow Lines) react to detected body position. A global **T** key toggles pose tracking. Per-pattern controls filter pose behavior. Debug overlay shows skeleton.
-
----
-
-## Custom Palette + Palette Pattern Variants (2026-04)
-
-Six-slot color palette (Cyan, Magenta, Purple, Gold, White, Dark) added to Options. Colors persist in localStorage. Two palette-first pattern variants added: **Particle Field — Palette** and **Tunnel — Edge Palette**.
+Short and long press mapped to demo-jump and light-paint mode toggle.
 
 ---
 
-## 8 Interactive Features (2026-04)
+## v0.3.260518-0057 — Static Images · Presets · MIDI · iOS
 
-Added in one batch:
-- **Audio reactivity** — mic input drives pattern brightness/pulse
-- **URL sharing** — encode current pattern + control state as a share link
-- **Preset slots** — save and restore up to 4 named snapshots
-- **3D Typography** — text overlay rendered in Three.js
-- **MIDI scaffold** — MIDI controller input routing
-- **Undo** — step back through control changes
-- **Favorites** — star patterns for quick access
-- **Overview** — grid of all patterns with thumbnails
+Five artwork images added as a pattern category with shared motion engine: Drift, Zoom Breathe, Ripple, Chromatic Aberration, Edge Pulse, audio reactivity. Interactive GLSL shader pattern added. Bundled preset defaults ship with the app. MIDI controller toggle in Options. Demo modal for kiosk display. Developer "Copy Defaults" export. iOS fixes: screenshot, Photos save, version label.
 
 ---
 
-## Gamepad Support (2026-03)
+## v0.3.260515-0519 — Body Pose Tracking
 
-Right stick controls the focused slider; left stick navigates patterns. DualShock and generic gamepad layouts supported. L1 shows the keyboard reference panel.
-
----
-
-## Particle Lines Overhaul + Wavy Sphere Dissolve (2026-03)
-
-Particle Lines rebuilt with fat screen-space quads for pixel-accurate line width and a glow-point pass per line head. Wavy Sphere gained a dissolve / reformation animation.
+MediaPipe pose tracking. Four spatial patterns (Particle Field, Particle Lines, Wavy Sphere, Flow Lines) react to detected body position. Global **T** key toggles tracking. Debug skeleton overlay. Per-pattern audio and motion reactivity toggles.
 
 ---
 
-## Initial Patterns (2026-02 and earlier)
+## v0.2 — Gamepad · 8 Interactive Features
 
-Core pattern library: Particle Field, Flow Dots, Flow Lines, Tunnel (smooth + edge variants), Baroque Swirls, Shader Gradient, Hyper Mix, Pearl Flow, 3D Lines, Curl Orbs, Crystal Gem, Dot Rain, Parallel Lines. Svelte 5 + Three.js + Tailwind v4 stack. GitHub Pages deployment.
+Gamepad support: right stick controls the focused slider, left stick cycles patterns, L1 shows the keyboard reference. DualShock and generic layouts supported.
+
+Eight features added in one batch: audio reactivity, URL sharing, preset slots, 3D Typography, MIDI scaffold, undo, favorites, pattern overview grid.
+
+---
+
+## v0.1 — Initial Patterns · Particle Lines Overhaul
+
+Core pattern library: Particle Field, Flow Dots, Flow Lines, Tunnel, Baroque Swirls, Shader Gradient, Hyper Mix, Pearl Flow, 3D Lines, Curl Orbs, Crystal Gem, Dot Rain, Parallel Lines. Svelte 5 + Three.js + Tailwind v4 stack. GitHub Pages deployment.
+
+Particle Lines rebuilt with fat screen-space quads for pixel-accurate line width and a glow-point pass per line head. Wavy Sphere gained a dissolve/reformation animation.

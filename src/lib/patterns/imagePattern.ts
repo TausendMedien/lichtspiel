@@ -28,7 +28,6 @@ const fragmentShader = /* glsl */`
   uniform float uZoomBreathe;    // 0-1
   uniform float uRipple;         // 0-1
   uniform float uChromaticAb;    // 0-1
-  uniform float uGrain;          // 0-1
   uniform float uEdgePulse;      // 0-1
   uniform float uAudioLevel;     // 0-1
   uniform vec2  uParallaxShift;  // from pose centroid
@@ -175,13 +174,7 @@ const fragmentShader = /* glsl */`
       col += uAudioLevel * luma * 0.55;
     }
 
-    // 15. Film grain
-    if (uGrain > 0.001) {
-      float noise = rand(clampedUv + fract(uTime * 0.017)) - 0.5;
-      col += noise * uGrain * 0.14;
-    }
-
-    // 16. Vignette — Gaussian falloff; higher slider = extends further from corners inward.
+    // 15. Vignette — Gaussian falloff; higher slider = extends further from corners inward.
     // Uses dist^4 so corners darken much faster than edges (rectangular feel).
     if (uVignette > 0.001) {
       vec2 uv = (vUv - 0.5) * 2.0;   // center 0, edges ±1, corners ±√2
@@ -204,9 +197,9 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
   let ripple       = 0.0;
 
   let vignette     = 0.0;
-  let motionOn     = true;
+  let motionOn     = false;
+  let styleOn      = false;
   let chromaticAb  = 0.0;
-  let grain        = 0.0;
   let edgePulse    = 0.0;
 
   let mesh: THREE.Mesh | null = null;
@@ -222,7 +215,9 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
     id,
     name,
     usesPose: true,
-    motionControlLabels: [], // no motion-camera slider boosting for image patterns
+    motionControlLabels: [],
+    colorDefaults: { saturation: 1.0, brightness: 1.20 },
+    defaultCollapsedSections: ['Motion', 'Style'],
 
     controls: [
       // ── Image section ────────────────────────────────────────────────
@@ -236,10 +231,9 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
       { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple,      set: v => { ripple = v; } },
 
       // ── Style section ────────────────────────────────────────────────
-      { label: 'Style', type: 'section', get: () => true, set: () => {} },
-      { label: 'Vignette',    type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
+      { label: 'Style', type: 'section', get: () => styleOn, set: (v: boolean) => { styleOn = v; } },
+      { label: 'Vignette',     type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
-      { label: 'Film Grain',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => grain,      set: v => { grain = v; } },
       { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
     ],
 
@@ -267,7 +261,6 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
           uZoomBreathe:  { value: zoomBreathe },
           uRipple:       { value: ripple },
           uChromaticAb:  { value: chromaticAb },
-          uGrain:        { value: grain },
           uEdgePulse:    { value: edgePulse },
           uAudioLevel:   { value: 0 },
           uParallaxShift: { value: new THREE.Vector2(0, 0) },
@@ -292,13 +285,12 @@ export function makeImagePattern(id: string, name: string, src: string): Pattern
 
       u.uTime.value          = elapsed;
       u.uRotation.value      = rotation;
-      u.uVignette.value      = vignette;
-      u.uDrift.value         = motionOn ? drift       : 0;
-      u.uZoomBreathe.value   = motionOn ? zoomBreathe : 0;
-      u.uRipple.value        = motionOn ? ripple      : 0;
-      u.uChromaticAb.value   = chromaticAb;
-      u.uGrain.value         = grain;
-      u.uEdgePulse.value     = edgePulse;
+      u.uVignette.value      = styleOn  ? vignette    : 0;
+      u.uDrift.value         = motionOn ? drift        : 0;
+      u.uZoomBreathe.value   = motionOn ? zoomBreathe  : 0;
+      u.uRipple.value        = motionOn ? ripple       : 0;
+      u.uChromaticAb.value   = styleOn  ? chromaticAb : 0;
+      u.uEdgePulse.value     = styleOn  ? edgePulse   : 0;
 
       // Audio mic flash
       u.uAudioLevel.value = audioState.enabled ? audioState.level / 100 : 0;
