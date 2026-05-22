@@ -187,6 +187,22 @@ const fragmentShader = /* glsl */`
   }
 `;
 
+// ─── Texture cache (module-level, survives dispose) ───────────────────────────
+
+const _textureCache = new Map<string, { tex: THREE.Texture; aspect: number }>();
+
+function prewarmTexture(src: string): void {
+  if (_textureCache.has(src)) return;
+  const entry: { tex: THREE.Texture; aspect: number } = { tex: null as unknown as THREE.Texture, aspect: 1.0 };
+  const loader = new THREE.TextureLoader();
+  entry.tex = loader.load(src, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    if (tex.image) entry.aspect = tex.image.width / tex.image.height;
+  });
+  entry.tex.colorSpace = THREE.SRGBColorSpace;
+  _textureCache.set(src, entry);
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function makeImagePattern(id: string, name: string, src: string, fitMode: 'cover' | 'fitWidth' = 'cover'): Pattern {
@@ -211,7 +227,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
   const joints = Array.from({ length: 8 }, () => new THREE.Vector2(0, 0));
 
-  return {
+  const pattern = {
     id,
     name,
     usesPose: true,
@@ -240,13 +256,10 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     init(ctx: PatternContext) {
       screenAspect = ctx.size.width / Math.max(1, ctx.size.height);
 
-      const loader = new THREE.TextureLoader();
-      texture = loader.load(src, (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        if (tex.image) imgAspect = tex.image.width / tex.image.height;
-        if (material) material.uniforms.uImgAspect.value = imgAspect;
-      });
-      texture.colorSpace = THREE.SRGBColorSpace;
+      // Use pre-warmed texture from cache — avoids black flash on switch
+      const cached = _textureCache.get(src) ?? (() => { prewarmTexture(src); return _textureCache.get(src)!; })();
+      texture = cached.tex;
+      imgAspect = cached.aspect;
 
       geometry = new THREE.PlaneGeometry(2, 2);
       material = new THREE.ShaderMaterial({
@@ -286,6 +299,13 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
       u.uTime.value          = elapsed;
       u.uRotation.value      = rotation;
+
+      // Sync aspect ratio once texture finishes loading (if it was still loading at init time)
+      const cached = _textureCache.get(src);
+      if (cached && cached.aspect !== imgAspect) {
+        imgAspect = cached.aspect;
+        u.uImgAspect.value = imgAspect;
+      }
       u.uVignette.value      = styleOn  ? vignette    : 0;
       u.uDrift.value         = motionOn ? drift        : 0;
       u.uZoomBreathe.value   = motionOn ? zoomBreathe  : 0;
@@ -326,8 +346,13 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     dispose() {
       geometry?.dispose();
       material?.dispose();
-      texture?.dispose();
+      // texture stays in _textureCache — do not dispose it
       mesh = null; geometry = null; material = null; texture = null;
     },
   };
+
+  // Pre-warm texture immediately when pattern object is created (app startup)
+  prewarmTexture(src);
+
+  return pattern;
 }
