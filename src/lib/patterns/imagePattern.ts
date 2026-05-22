@@ -207,6 +207,7 @@ function prewarmTexture(src: string): void {
 
 export function makeImagePattern(id: string, name: string, src: string, fitMode: 'cover' | 'fitWidth' = 'cover'): Pattern {
   let rotation     = 0;     // 0/1/2/3
+  let imageOn      = true;
 
   let drift        = 0.0;
   let zoomBreathe  = 0.0;
@@ -237,7 +238,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
     controls: [
       // ── Image section ────────────────────────────────────────────────
-      { label: 'Image', type: 'section', get: () => true, set: () => {} },
+      { label: 'Image', type: 'section', get: () => imageOn, set: (v: boolean) => { imageOn = v; } },
       { label: 'Rotate 90°',  type: 'button', action: () => { rotation = (rotation + 1) % 4; } },
 
       // ── Motion section ───────────────────────────────────────────────

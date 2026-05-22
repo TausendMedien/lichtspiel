@@ -1725,7 +1725,7 @@
     inert={!hudVisible || overlayHidden}
     onpointerdown={() => poke()}
     class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-auto"
-    style="max-height: calc(100dvh - {hudPanelHeight + 40}px)"
+    style="max-height: {isTouch ? `calc(100dvh - ${hudPanelHeight + 40}px)` : 'calc(100dvh - 2rem)'}"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
   >
