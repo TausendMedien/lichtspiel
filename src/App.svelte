@@ -95,6 +95,7 @@
   let index = $state(0);
   let focusedIndex = $state(0);
   let hudVisible = $state(true);
+  let hudPanelHeight = $state(0);
   let hudTimer: ReturnType<typeof setTimeout> | null = null;
   let isTouch = $state(false);
   let isIosStandalone = $state(false);
@@ -1718,8 +1719,9 @@
 {#if appState !== "overview"}
   <div
     data-no-swipe
-    class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48"
-    style="max-height: calc(100dvh - 2rem)"
+    inert={!hudVisible || overlayHidden}
+    class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-hidden"
+    style="max-height: calc(100dvh - {hudPanelHeight + 40}px)"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
   >
@@ -1978,6 +1980,8 @@
 {#if appState !== "overview"}
   <div
     data-no-swipe
+    inert={!hudVisible || overlayHidden}
+    bind:clientHeight={hudPanelHeight}
     class="pointer-events-none fixed top-4 left-4 z-10 select-none transition-opacity duration-500"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
