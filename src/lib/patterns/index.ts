@@ -1,6 +1,5 @@
 import type { Pattern } from "./types";
 import { lines3d } from "./lines3d";
-import { particles } from "./particles";
 import { particlesBody } from "./particlesBody";
 import { particleLines } from "./particleLines";
 import { tunnel } from "./tunnel";
@@ -9,20 +8,13 @@ import { shaderGradient } from "./shaderGradient";
 import { parallelLinesStraight } from "./parallelLinesStraight";
 import { parallelLinesWave } from "./parallelLinesWave";
 import { hyperMix } from "./hyperMix";
-import { dotRain } from "./dotRain";
-import { dotRainBody } from "./dotRainBody";
 import { flowLines } from "./flowLines";
-import { pearlFlow } from "./pearlFlow";
-import { curlOrbs } from "./curlOrbs";
 import { curlOrbsBody } from "./curlOrbsBody";
-import { flowDots } from "./flowDots";
-import { baroqueSwirls } from "./baroqueSwirls";
 import { baroqueSwirlsBody } from "./baroqueSwirlsBody";
 import { lightTrail } from "./light-trail";
 import { lightPaint } from "./light-paint";
 import { warpedSurfaces } from "./warpedSurfaces";
 import { wavySphere } from "./wavySphere";
-import { plasmaSphere } from "./plasmaSphere";
 import { crystalGem } from "./crystalGem";
 import { asciiSwirls } from "./asciiSwirls";
 import { particlesPalette } from "./particlesPalette";
@@ -53,32 +45,22 @@ const NO_AUDIO = new Set(['lightTrail', 'lightPaint', 'typography3d',
   'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals']);
 
 const rawPatterns: Pattern[] = [
-  particles,
+  hyperMix,
   particlesBody,
   particleLines,
   parallelLinesStraight,
   parallelLinesWave,
   flowLines,
-  curlOrbs,
   curlOrbsBody,
   tunnel,
   tunnelEdge,
-  baroqueSwirls,
   baroqueSwirlsBody,
   shaderGradient,
   warpedSurfaces,
-  hyperMix,
   lines3d,
   asciiSwirls,
-  dotRain,
-  dotRainBody,
-  pearlFlow,
-  flowDots,
   wavySphere,
-  plasmaSphere,
   crystalGem,
-  particlesPalette,
-  tunnelEdgePalette,
   typography3d,
   lightTrail,
   lightPaint,
@@ -87,6 +69,9 @@ const rawPatterns: Pattern[] = [
   imgDotWaves,
   imgBaroqueVines,
   imgThinVerticals,
+  // ── Experimental ──────────────────────────────────────────────────────────
+  particlesPalette,
+  tunnelEdgePalette,
 ];
 
 export const patterns: Pattern[] = rawPatterns

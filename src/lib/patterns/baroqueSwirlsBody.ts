@@ -116,10 +116,9 @@ const fragmentShader = /* glsl */ `
 export const baroqueSwirlsBody: Pattern = {
   id: "baroqueSwirlsBody",
   usesPose: true,
-  name: "Baroque Swirls Body",
+  name: "Baroque Swirls",
   controls: [
-    { label: "Body Tracking",  type: "toggle", get: () => bodyTracking, set: (v) => { bodyTracking = v; } },
-    { label: "Body Warp",      type: "range", min: 0.0, max: 2.0, step: 0.05, default: 0.5, get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
+    { label: "Body Warp",      type: "range", min: 0.0, max: 2.0, step: 0.05, default: 0.5, interactive: 'pose' as const, get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
     { label: "Band Count",     type: "range", min: 2,   max: 20,  step: 1, default: 13,    get: () => bandCount,   set: (v) => { bandCount = v; } },
     { label: "Flow Speed",     type: "range", min: 0.0, max: 0.3, step: 0.005, default: 0, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Warp Amount",    type: "range", min: 0.0, max: 3.0, step: 0.05, default: 1.4, get: () => warpAmount,  set: (v) => { warpAmount = v; } },

@@ -89,12 +89,11 @@ const fragmentShader = /* glsl */ `
 export const particlesBody: Pattern = {
   id: "particlesBody",
   usesPose: true,
-  name: "Particle Field Body",
+  name: "Particle Field",
   controls: [
-    { label: "Body Tracking",    type: "toggle", get: () => bodyTracking,    set: (v) => { bodyTracking = v; } },
     { label: "Point Size",       type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,       set: (v) => { pointSize = v; } },
     { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
-    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 0.4, get: () => attractStrength, set: (v) => { attractStrength = v; } },
+    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 0.4, interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
     { label: "Colors",           type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,   get: () => colorRange,      set: (v) => { colorRange = v; } },
     { label: "Colors v2",        type: "range", min: 0.0, max: 3.0,  step: 0.05, default: 1,   get: () => colorRange2,     set: (v) => { colorRange2 = v; } },
   ],

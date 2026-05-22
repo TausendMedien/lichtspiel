@@ -207,14 +207,14 @@ function prewarmTexture(src: string): void {
 
 export function makeImagePattern(id: string, name: string, src: string, fitMode: 'cover' | 'fitWidth' = 'cover'): Pattern {
   let rotation     = 0;     // 0/1/2/3
-  let imageOn      = true;
+  let imageOn      = false;
 
-  let drift        = 0.0;
-  let zoomBreathe  = 0.0;
-  let ripple       = 0.0;
+  let drift        = 0.15;
+  let zoomBreathe  = 0.15;
+  let ripple       = 0.05;
 
   let vignette     = 0.0;
-  let motionOn     = false;
+  let motionOn     = true;
   let styleOn      = false;
   let chromaticAb  = 0.0;
   let edgePulse    = 0.0;
@@ -234,7 +234,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     usesPose: true,
     motionControlLabels: [],
     colorDefaults: { saturation: 1.0, brightness: 1.20 },
-    defaultCollapsedSections: ['Motion', 'Style'],
+    defaultCollapsedSections: ['Image', 'Motion', 'Style'],
 
     controls: [
       // ── Image section ────────────────────────────────────────────────
@@ -243,9 +243,9 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
       // ── Motion section ───────────────────────────────────────────────
       { label: 'Motion', type: 'section', get: () => motionOn, set: (v: boolean) => { motionOn = v; } },
-      { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => drift,       set: v => { drift = v; } },
-      { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
-      { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => ripple,      set: v => { ripple = v; } },
+      { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => drift,       set: v => { drift = v; } },
+      { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
+      { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.05, get: () => ripple,      set: v => { ripple = v; } },
 
       // ── Style section ────────────────────────────────────────────────
       { label: 'Style', type: 'section', get: () => styleOn, set: (v: boolean) => { styleOn = v; } },

@@ -146,9 +146,8 @@ const fragmentShader = /* glsl */ `
 export const curlOrbsBody: Pattern = {
   id: "curlOrbsBody",
   usesPose: true,
-  name: "Curl Orbs Body",
+  name: "Curl Orbs",
   controls: [
-    { label: "Body Tracking", type: "toggle", get: () => bodyTracking, set: (v) => { bodyTracking = v; } },
     { label: "Line Count",   type: "range", min: 10,   max: 100,  step: 1, default: 45,    get: () => lineCount,   set: (v) => { lineCount = v; } },
     { label: "Line Width",   type: "range", min: 0.05, max: 0.9,  step: 0.01, default: 0.37, get: () => lineWidth,  set: (v) => { lineWidth = v; } },
     { label: "Flow Scale",   type: "range", min: 0.5,  max: 5.0,  step: 0.1, default: 3.1,  get: () => flowScale,  set: (v) => { flowScale = v; } },

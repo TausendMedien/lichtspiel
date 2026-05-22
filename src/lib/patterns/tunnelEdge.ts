@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -16,6 +17,9 @@ let colorDrift = 0.2;
 
 let colorPhase = 0;
 let accTime    = 0;
+
+const _colorA = new THREE.Color();
+const _colorB = new THREE.Color();
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -37,25 +41,20 @@ const fragmentShader = /* glsl */ `
   uniform float uWobble;
   uniform float uShadowWidth;
   uniform float uColorPhase;
+  uniform vec3  uColorA;
+  uniform vec3  uColorB;
 
   const float PI = 3.14159265358979;
-
-  vec3 hsl2rgb(float h, float s, float l) {
-    vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-    return l + s * (rgb - 0.5) * (1.0 - abs(2.0 * l - 1.0));
-  }
 
   vec2 rot2d(vec2 v, float a) {
     float c = cos(a), s = sin(a);
     return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
   }
 
-  // Distance metric whose iso-curves are regular N-gons.
-  // Equivalent to max-over-all-face-projections, computed analytically.
   float ngonDist(vec2 p, float n) {
     float a     = 2.0 * PI / n;
     float angle = atan(p.y, p.x);
-    float sector = floor(angle / a + 0.5) * a;   // nearest face-normal angle
+    float sector = floor(angle / a + 0.5) * a;
     return length(p) * cos(angle - sector);
   }
 
@@ -63,46 +62,36 @@ const fragmentShader = /* glsl */ `
     float aspect = uResolution.x / max(uResolution.y, 1.0);
     vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
 
-    // Global rotation: PI/n aligns flat faces outward (diamond for n=4) + time spin
     float globalAngle = PI / uEdges + uTime * uRotSpeed;
     vec2 ruv = rot2d(uv, globalAngle);
 
-    // ── Base N-gon distance (determines ring shape & stripe) ──────────────────
-    // Ring shape is always a clean N-gon — no seams or distortion.
     float d0    = ngonDist(ruv, uEdges);
     float depth = 1.0 / max(d0, 0.001);
 
-    // Wobble: radial breathing between rings
     float wobbleOff = uWobble * sin(depth * 6.0 - uTime * 2.5) * 0.12;
 
     float stripeRaw = (depth + wobbleOff) * uRingCount * 0.04 - uTime * 0.05;
-    float stripe    = fract(stripeRaw);   // 0 = inner edge, 1 = outer edge
+    float stripe    = fract(stripeRaw);
     float ringIdx   = floor(stripeRaw);
 
-    // ── Per-ring rotation: rotate the face-shading frame per ring ────────────
-    // The ring shape itself stays an intact N-gon (from d0 above).
-    // Only the face-lighting direction is rotated for each ring, which gives
-    // the visual impression that successive rings are turned relative to each other.
     float ringAngle = ringIdx * uRingOffset;
     vec2 rruv = rot2d(ruv, ringAngle);
 
-    // Face normal of the rotated N-gon at this pixel (nearest face)
     float a          = 2.0 * PI / uEdges;
     float faceAngle  = atan(rruv.y, rruv.x);
     float sector     = floor(faceAngle / a + 0.5) * a;
     vec2  faceNormal = vec2(cos(sector), sin(sector));
 
-    // Fixed light direction (upper-right in rotated UV space)
     vec2  lightDir   = normalize(vec2(0.85, -0.45));
     float shade      = 0.65 + 0.50 * dot(faceNormal, lightDir);
 
-    // ── Global colour gradient (outer = warm coral, mid = magenta, centre = dark) ──
+    // ── Custom colour gradient: colorA (inner) → colorB (outer) ───────────
     float colorT = clamp(d0 * 2.2, 0.0, 1.0);
-    float ph     = uColorPhase;
+    float blend  = 0.5 + 0.5 * sin(uColorPhase * 6.28318);
 
-    vec3 colorCenter = hsl2rgb(mod(0.820 + ph * 0.03, 1.0), 0.50, 0.12);
-    vec3 colorMid    = hsl2rgb(mod(0.900 + ph * 0.02, 1.0), 1.00, 0.55);
-    vec3 colorOuter  = hsl2rgb(mod(0.030 + ph * 0.01, 1.0), 0.90, 0.68);
+    vec3 colorCenter = uColorA * 0.15;
+    vec3 colorMid    = mix(uColorA, uColorB, blend);
+    vec3 colorOuter  = uColorB;
 
     vec3 col;
     if (colorT < 0.5) {
@@ -111,18 +100,12 @@ const fragmentShader = /* glsl */ `
       col = mix(colorMid,   colorOuter, (colorT - 0.5) * 2.0);
     }
 
-    // ── Soft shadow bevel at inner edge ───────────────────────────────────────
     float shadow = smoothstep(0.0, uShadowWidth, stripe);
     col *= mix(0.08, 1.0, shadow);
-
-    // ── Face shading (3-D depth per ring face, rotated per ring) ─────────────
     col *= shade;
-
-    // ── Subtle brightness lift toward outer edge ──────────────────────────────
     col *= (0.78 + 0.28 * stripe);
     col  = clamp(col, 0.0, 1.0);
 
-    // ── Density fade at centre (fwidth-based) ────────────────────────────────
     float rawFw = length(vec2(dFdx(stripeRaw), dFdy(stripeRaw)));
     float fade  = 1.0 - smoothstep(0.8, 1.8, rawFw);
     col = mix(colorCenter, col, fade);
@@ -147,6 +130,8 @@ export const tunnelEdge: Pattern = {
   ],
 
   init(ctx: PatternContext) {
+    _colorA.set(colorC2.main);
+    _colorB.set(colorC2.contrast);
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -159,6 +144,8 @@ export const tunnelEdge: Pattern = {
         uWobble:      { value: wobble },
         uShadowWidth: { value: shadowWidth },
         uColorPhase:  { value: colorPhase },
+        uColorA:      { value: new THREE.Vector3(_colorA.r, _colorA.g, _colorA.b) },
+        uColorB:      { value: new THREE.Vector3(_colorB.r, _colorB.g, _colorB.b) },
       },
       vertexShader,
       fragmentShader,
@@ -174,6 +161,8 @@ export const tunnelEdge: Pattern = {
     if (!material) return;
     accTime    += dt * speed;
     colorPhase += dt * colorDrift * 0.1;
+    _colorA.set(colorC2.main);
+    _colorB.set(colorC2.contrast);
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uRotSpeed.value    = rotSpeed;
     material.uniforms.uRingCount.value   = ringCount;
@@ -182,6 +171,8 @@ export const tunnelEdge: Pattern = {
     material.uniforms.uWobble.value      = wobble;
     material.uniforms.uShadowWidth.value = shadowWidth;
     material.uniforms.uColorPhase.value  = colorPhase;
+    material.uniforms.uColorA.value.set(_colorA.r, _colorA.g, _colorA.b);
+    material.uniforms.uColorB.value.set(_colorB.r, _colorB.g, _colorB.b);
   },
 
   resize(width: number, height: number) {
@@ -195,5 +186,6 @@ export const tunnelEdge: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
+    colorPhase = 0;
   },
 };

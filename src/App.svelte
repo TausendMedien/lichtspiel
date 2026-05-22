@@ -29,6 +29,11 @@
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
   ]);
 
+  // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
+  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette']);
+  const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
+  let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
+
   // ── Per-pattern colour state ───────────────────────────────────────────────
   const PCOLOR_KEY = 'pp:pcolor:';
 
@@ -152,6 +157,14 @@
   const _perPatternCollapsed = new Map<string, Set<string>>();
   const _perPatternColourCollapsed = new Map<string, boolean>();
   let colourCollapsed = $state(false);
+  // Pattern group (collapsable wrapper for all pattern controls)
+  const _perPatternGroupCollapsed = new Map<string, boolean>();
+  let patternGroupCollapsed = $state(true);
+  // Interactive section per-pattern state
+  const _perPatternInteractiveOn = new Map<string, boolean>();
+  const _perPatternInteractiveCollapsed = new Map<string, boolean>();
+  let interactiveOn = $state(false);
+  let interactiveCollapsed = $state(true);
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
   let isFullscreenState = $state(false);
 
@@ -198,11 +211,14 @@
   const isFreezing = $derived(freezeAnim ? freezeAnim.to === 0 : timeScaleMirror === 0);
 
   const rangeControls = $derived(
-    (patterns[index]?.controls ?? []).filter(c => c.type === 'range') as
+    (patterns[index]?.controls ?? []).filter(c => c.type === 'range' && !(c as any).interactive) as
       (import('./lib/patterns/types').PatternControl & { type: 'range' })[]
   );
 
   const patternUsesPose = $derived(!!patterns[index]?.usesPose);
+  const patternIsInteractive = $derived(
+    !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose)
+  );
 
   // Reset slider focus when pattern changes
   $effect(() => { const _ = index; sliderFocusIndex = 0; });
@@ -244,6 +260,15 @@
       colourCollapsed = _perPatternColourCollapsed.has(pat.id)
         ? _perPatternColourCollapsed.get(pat.id)!
         : pat.id.startsWith('img-');
+      patternGroupCollapsed = _perPatternGroupCollapsed.has(pat.id)
+        ? _perPatternGroupCollapsed.get(pat.id)!
+        : true;
+      interactiveOn = _perPatternInteractiveOn.has(pat.id)
+        ? _perPatternInteractiveOn.get(pat.id)!
+        : false;
+      interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
+        ? _perPatternInteractiveCollapsed.get(pat.id)!
+        : true;
     }
   });
   $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); });
@@ -273,6 +298,12 @@
       const defaultColourCollapsed = pat.id.startsWith('img-');
       _perPatternColourCollapsed.set(pat.id, defaultColourCollapsed);
       colourCollapsed = defaultColourCollapsed;
+      _perPatternGroupCollapsed.set(pat.id, true);
+      patternGroupCollapsed = true;
+      _perPatternInteractiveOn.set(pat.id, false);
+      interactiveOn = false;
+      _perPatternInteractiveCollapsed.set(pat.id, true);
+      interactiveCollapsed = true;
     }
     resetAllColorState();
     saveSettings(patterns);
@@ -345,6 +376,16 @@
       colorShuffle.assign     = s.assign;
     }
   });
+
+  function nextVisibleIndex(from: number, delta: 1 | -1): number {
+    const len = patterns.length;
+    let n = ((from + delta) % len + len) % len;
+    let tries = 0;
+    while (tries++ < len && EXPERIMENTAL_IDS.has(patterns[n].id) && !experimentalEnabled) {
+      n = ((n + delta) % len + len) % len;
+    }
+    return n;
+  }
 
   function nextDemoIndex(from: number): number {
     const count = patterns.length;
@@ -457,12 +498,12 @@
     // Global actions for active + preview
     switch (action.type) {
       case "freeze":           applyFreeze();    return;
-      case "blackout":         blackout = !blackout; return;
+      case "blackout":         blackout = !blackout; poke(); return;
       case "randomize":        startRandomize(performance.now()); return;
       case "resetToDefault":   resetAllControls(); return;
       case "screenshot":       applyScreenshot(); return;
       case "toggleRecording":  recorder?.toggle(); return;
-      case "toggleCamera":     toggleCamera();        return;
+      case "toggleCamera":     toggleCamera(); poke(); return;
       case "speedUp":          applySpeedUp();   return;
       case "speedDown":        applySpeedDown(); return;
       case "focusUp":          sliderFocusIndex = Math.max(0, sliderFocusIndex - 1); return;
@@ -473,24 +514,24 @@
         if (hudVisible && !overlayHidden) { overlayHidden = true; }
         else { overlayHidden = false; poke(); }
         return;
-      case "toggleCheatsheet": cheatsheetVisible = !cheatsheetVisible; return;
-      case "toggleOptions":    optionsVisible = !optionsVisible; return;
+      case "toggleCheatsheet": cheatsheetVisible = !cheatsheetVisible; poke(); return;
+      case "toggleOptions":    optionsVisible = !optionsVisible; poke(); return;
       case "undo":             applyUndo(); return;
     }
 
     if (appState === "active") {
       switch (action.type) {
         case "next":
-          index = switchTo(index + 1); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
         case "prev":
-          index = switchTo(index - 1); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
         case "jump":
           if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
           break;
         case "fullscreen":
           fs.toggle(document.documentElement); hudVisible = false; break;
         case "demo":
-          demoVisible = !demoVisible; break;
+          demoVisible = !demoVisible; poke(); break;
         case "escape":
           focusedIndex = index; appState = "overview"; overlayHidden = false; break;
       }
@@ -498,16 +539,16 @@
       // preview
       switch (action.type) {
         case "next":
-          index = switchTo(index + 1); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
         case "prev":
-          index = switchTo(index - 1); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
         case "jump":
           if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
           break;
         case "fullscreen":
           fs.enter(document.documentElement); appState = "active"; hudVisible = false; break;
         case "demo":
-          demoVisible = !demoVisible; break;
+          demoVisible = !demoVisible; poke(); break;
         case "escape":
           focusedIndex = index; appState = "overview"; overlayHidden = false; break;
       }
@@ -782,9 +823,9 @@
 
     switch (action.type) {
       case "next":
-        index = switchTo(index + 1); focusedIndex = index; resetDemoTimer(); break;
+        index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; resetDemoTimer(); break;
       case "prev":
-        index = switchTo(index - 1); focusedIndex = index; resetDemoTimer(); break;
+        index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; resetDemoTimer(); break;
       case "speedUp":          applySpeedUp();   break;
       case "speedDown":        applySpeedDown(); break;
       case "freeze":           applyFreeze();    break;
@@ -823,7 +864,9 @@
     syncCtrlVals();
     const demo = loadDemoSettings(patterns.map(p => p.id));
     demoDwell = demo.demoDwell;
-    demoPatternIds = new Set(demo.demoPatternIds);
+    // Exclude experimental patterns from demo by default when experimental is off
+    const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
+    demoPatternIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     if (demo.demoActive) startDemo();
@@ -1017,7 +1060,6 @@
       }
     });
     if (!isTouch) window.addEventListener("mousemove", poke);
-    window.addEventListener("keydown", poke);
 
     return () => {
       cancelAnimationFrame(liveRaf);
@@ -1028,7 +1070,6 @@
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       if (!isTouch) window.removeEventListener("mousemove", poke);
-      window.removeEventListener("keydown", poke);
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
       recorder?.dispose();
@@ -1140,8 +1181,35 @@
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
+          {#if p.id === 'particlesPalette' && !showFavoritesOnly && !showPoseOnly}
+            <div class="col-span-3 mt-2 flex items-center gap-2">
+              <div class="h-px flex-1 bg-white/20"></div>
+              <span class="text-[10px] uppercase tracking-widest text-white/40">Experimental</span>
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+              <div
+                class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {experimentalEnabled ? 'bg-white/60' : 'bg-white/20'}"
+                onclick={() => {
+                  experimentalEnabled = !experimentalEnabled;
+                  localStorage.setItem(EXPERIMENTAL_KEY, String(experimentalEnabled));
+                  if (!experimentalEnabled) {
+                    const next = new Set(demoPatternIds);
+                    EXPERIMENTAL_IDS.forEach(id => next.delete(id));
+                    demoPatternIds = next;
+                    saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]);
+                  }
+                }}
+                role="switch"
+                aria-checked={experimentalEnabled}
+                tabindex="0"
+              >
+                <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {experimentalEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+              </div>
+              <div class="h-px flex-1 bg-white/20"></div>
+            </div>
+          {/if}
           <button
             class="relative flex flex-col gap-1 rounded-xl border px-3 py-3 text-left transition-all duration-150 cursor-pointer
+              {EXPERIMENTAL_IDS.has(p.id) && !experimentalEnabled ? 'opacity-35' : ''}
               {focusedIndex === i
                 ? 'border-white bg-white/10 shadow-[0_0_28px_rgba(255,255,255,0.12)]'
                 : 'border-white/15 bg-white/[0.04] hover:border-white/40 hover:bg-white/[0.07]'}"
@@ -1291,158 +1359,6 @@
           class="cursor-pointer rounded px-2 py-0.5 text-xs text-white/50 hover:text-white/80 transition-colors"
           onclick={() => { optionsVisible = false; }}
         >✕</button>
-      </div>
-
-      <!-- Camera Controls section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Camera Controls</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex flex-col gap-2.5">
-          <!-- Camera on/off toggle -->
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-white/70">Camera</span>
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <div
-              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled ? 'bg-white/60' : 'bg-white/20'}"
-              onclick={() => {
-                cameraState.enabled = !cameraState.enabled;
-                if (cameraState.enabled) {
-                  enumerateCameras();
-                } else if (poseActive) {
-                  // Turning camera off also stops pose tracking
-                  stopPoseTracking(); poseActive = false; poseError = null;
-                }
-              }}
-              role="switch"
-              aria-checked={cameraState.enabled}
-              tabindex="0"
-            >
-              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-            </div>
-          </div>
-          <!-- Camera Selection -->
-          <div>
-            <div class="mb-1 text-xs text-white/70">Camera Selection</div>
-            {#if cameraState.devices.length > 0}
-              <select
-                value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
-                onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = cameraState.devices[i]?.deviceId ?? ''; }}
-                class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-              >
-                {#each cameraState.devices as d, i}
-                  <option value={i}>{d.label}</option>
-                {/each}
-              </select>
-            {:else}
-              <button
-                onclick={() => enumerateCameras()}
-                class="text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
-              >Detect cameras</button>
-            {/if}
-          </div>
-          <!-- Motion Detection sub-section with its own toggle -->
-          <div class="mt-1 flex items-center gap-2">
-            <div class="h-px flex-1 bg-white/10"></div>
-            <span class="text-[10px] uppercase tracking-widest text-white/30">Motion Detection</span>
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <div
-              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'bg-white/60' : 'bg-white/20'}"
-              onclick={() => { cameraState.motionEnabled = !cameraState.motionEnabled; }}
-              role="switch"
-              aria-checked={cameraState.motionEnabled}
-              tabindex="0"
-            >
-              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.motionEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-            </div>
-            <div class="h-px flex-1 bg-white/10"></div>
-          </div>
-          <div class="{cameraState.enabled && cameraState.motionEnabled ? '' : 'opacity-40 pointer-events-none'} flex flex-col gap-2.5">
-            <div>
-              <div class="flex justify-between mb-1 text-xs text-white/70">
-                <span>Sensitivity</span>
-                <span class="font-mono text-white/40">{cameraState.sensitivity}</span>
-              </div>
-              <input type="range" min={0} max={100} step={1} bind:value={cameraState.sensitivity}
-                class="w-full accent-white cursor-pointer" />
-            </div>
-            <div>
-              <div class="flex justify-between mb-1 text-xs text-white/70">
-                <span>Level</span>
-                <span class="font-mono text-white/40">{cameraState.level}</span>
-              </div>
-              <input type="range" min={0} max={100} step={1} value={cameraState.level}
-                class="w-full accent-white pointer-events-none" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Audio section -->
-      <div class="mb-5">
-        <div class="mb-2 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Audio Reactivity</span>
-          <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">experimental</span>
-          <div
-            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {audioState.enabled ? 'bg-white/60' : 'bg-white/20'}"
-            onclick={() => { audioState.enabled = !audioState.enabled; if (audioState.enabled) enumerateMicrophones(); }}
-            role="switch"
-            aria-checked={audioState.enabled}
-            tabindex="0"
-          >
-            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {audioState.enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-          </div>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex flex-col gap-2.5 {audioState.enabled ? '' : 'opacity-40 pointer-events-none'}">
-          <div>
-            <div class="mb-1 text-xs text-white/70">Microphone</div>
-            {#if audioState.devices.length > 0}
-              <select
-                value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
-                onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
-                class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-              >
-                {#each audioState.devices as d, i}
-                  <option value={i}>{d.label}</option>
-                {/each}
-              </select>
-            {:else}
-              <div class="text-xs text-white/30">No microphones found</div>
-            {/if}
-          </div>
-          <div>
-            <div class="flex justify-between mb-1 text-xs text-white/70">
-              <span>Audio Sensitivity</span>
-              <span class="font-mono text-white/40">{audioState.sensitivity}</span>
-            </div>
-            <input type="range" min={0} max={100} step={1} bind:value={audioState.sensitivity}
-              class="w-full accent-white cursor-pointer" />
-          </div>
-          <div>
-            <div class="mb-1 text-xs text-white/70">Frequency Band</div>
-            <select
-              value={audioState.bandIndex}
-              onchange={(e) => { audioState.bandIndex = parseInt((e.target as HTMLSelectElement).value); }}
-              class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-            >
-              {#each AUDIO_BAND_OPTIONS as band, i}
-                <option value={i}>{band}</option>
-              {/each}
-            </select>
-          </div>
-          <div>
-            <div class="flex justify-between mb-1 text-xs text-white/70">
-              <span>Audio Level</span>
-              <span class="font-mono text-white/40">{audioState.level}</span>
-            </div>
-            <input type="range" min={0} max={100} step={1} value={audioState.level}
-              class="w-full accent-white pointer-events-none" />
-          </div>
-        </div>
       </div>
 
       <!-- MIDI section -->
@@ -1690,6 +1606,13 @@
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
+          {#if p.id === 'particlesPalette'}
+            <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
+              <div class="h-px flex-1 bg-white/20"></div>
+              <span class="text-[10px] uppercase tracking-widest text-white/40">Experimental</span>
+              <div class="h-px flex-1 bg-white/20"></div>
+            </div>
+          {/if}
           {@const enabled = demoPatternIds.has(p.id)}
           <button
             class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
@@ -1742,16 +1665,18 @@
             const groupDisabled = !sectionOn && ctrl.type !== 'section' && ctrl.type !== 'separator';
             const inSection = (ctrl.type !== 'section' && ctrl.type !== 'separator') ? currentSection : null;
             const hidden = inSection !== null && collapsedSections.has(inSection);
-            return { ctrl, groupDisabled, hidden };
+            // Skip controls that belong to the Interactive section
+            const isInteractive = ctrl.type === 'range' && !!(ctrl as any).interactive;
+            return { ctrl, groupDisabled, hidden, isInteractive };
           });
         })()}
-        <!-- Pattern controls -->
+        <!-- Pattern controls header -->
         <div class="mb-2 shrink-0 flex items-center justify-between gap-2">
           <span class="text-xs uppercase tracking-widest text-white/50">Controls</span>
           <div class="flex gap-1">
             <button onclick={applyUndo} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Undo</button>
             <button onclick={resetAllControls} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Default</button>
-            <button onclick={() => { poke(); startRandomize(performance.now()); }} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Randomize</button>
+            <button onclick={() => { startRandomize(performance.now()); }} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Randomize</button>
           </div>
         </div>
         <!-- Preset slots: empty=click to save, filled=click to restore / long-press to update -->
@@ -1771,8 +1696,25 @@
             >{filled ? (idx + 1) : '+'}</button>
           {/each}
         </div>
+
+        <!-- ── Pattern group (collapsable, no toggle) ────────────────────── -->
+        <div class="mt-1 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/20"></div>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <span
+            class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
+            onclick={() => {
+              patternGroupCollapsed = !patternGroupCollapsed;
+              _perPatternGroupCollapsed.set(patterns[index].id, patternGroupCollapsed);
+            }}
+          >Pattern <span class="text-[8px] transition-transform duration-200 {patternGroupCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
+          <div class="h-px flex-1 bg-white/20"></div>
+        </div>
+
+        {#if !patternGroupCollapsed}
         <div class="flex flex-col gap-2.5">
-          {#each controlMeta as { ctrl, groupDisabled, hidden }}
+          {#each controlMeta as { ctrl, groupDisabled, hidden, isInteractive }}
+            {#if isInteractive}{:else}
             {@const focusedRangeCtrl = sliderModeActive ? rangeControls[sliderFocusIndex] : null}
             {@const activeFocusedCtrl = rangeControls[sliderFocusIndex]}
             {#if ctrl.type === "separator"}
@@ -1921,8 +1863,11 @@
                 {/if}
               </div>
             {/if}
+            {/if}
           {/each}
-          <!-- C2 global colour controls -->
+        </div>
+        {/if}
+        <!-- C2 global colour controls -->
           <div class="mt-1 flex items-center gap-2">
             <div class="h-px flex-1 bg-white/20"></div>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -1969,7 +1914,205 @@
               </div>
             {/each}
           {/if}
-        </div>
+
+        <!-- ── Interactive section ─────────────────────────────────────── -->
+        {#if patternIsInteractive}
+          <div class="mt-1 flex items-center gap-2">
+            <div class="h-px flex-1 bg-white/20"></div>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <span
+              class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
+              onclick={() => {
+                interactiveCollapsed = !interactiveCollapsed;
+                _perPatternInteractiveCollapsed.set(patterns[index].id, interactiveCollapsed);
+              }}
+            >Interactive <span class="text-[8px] transition-transform duration-200 {interactiveCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {interactiveOn ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => {
+                interactiveOn = !interactiveOn;
+                _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
+              }}
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {interactiveOn ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+            <div class="h-px flex-1 bg-white/20"></div>
+          </div>
+
+          {#if !interactiveCollapsed && interactiveOn}
+            <div class="flex flex-col gap-2.5 mt-1">
+
+              <!-- Camera selection (for motion/pose patterns) -->
+              {#if patterns[index].motionReactive || patterns[index].usesPose}
+                <div>
+                  <div class="mb-1 text-xs text-white/70">Camera</div>
+                  {#if cameraState.devices.length > 0}
+                    <select
+                      value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
+                      onchange={(e) => {
+                        const i = parseInt((e.target as HTMLSelectElement).value);
+                        cameraState.deviceId = cameraState.devices[i]?.deviceId ?? '';
+                      }}
+                      class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                    >
+                      {#each cameraState.devices as d, i}
+                        <option value={i}>{d.label}</option>
+                      {/each}
+                    </select>
+                  {:else}
+                    <button
+                      onclick={() => enumerateCameras()}
+                      class="text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                    >Detect cameras</button>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Motion Detection -->
+              {#if patterns[index].motionReactive}
+                <div class="flex items-center justify-between text-xs text-white/70">
+                  <span class="flex items-center gap-1.5">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
+                    onclick={() => {
+                      const next = !cameraState.motionEnabled;
+                      cameraState.motionEnabled = next;
+                      if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); }
+                    }}
+                  >
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+                {#if cameraState.enabled && cameraState.motionEnabled}
+                  <div class="flex flex-col gap-1.5 pl-1">
+                    <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Sensitivity</span>
+                        <span class="font-mono text-white/40">{cameraState.sensitivity}</span>
+                      </div>
+                      <input type="range" min={0} max={100} step={1} bind:value={cameraState.sensitivity}
+                        class="w-full accent-white cursor-pointer" />
+                    </div>
+                    <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Level</span>
+                        <span class="font-mono text-white/40">{cameraState.level}</span>
+                      </div>
+                      <input type="range" min={0} max={100} step={1} value={cameraState.level}
+                        class="w-full accent-white pointer-events-none" />
+                    </div>
+                  </div>
+                {/if}
+              {/if}
+
+              <!-- Pose -->
+              {#if patterns[index].usesPose}
+                <div class="flex items-center justify-between text-xs text-white/70">
+                  <span>Pose / Body</span>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {poseActive ? 'bg-white/70' : 'bg-white/20'}"
+                    onclick={togglePoseTracking}
+                  >
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {poseActive ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+                {#if poseLoading}
+                  <div class="text-xs text-white/40">⟳ Loading pose model…</div>
+                {:else if poseError}
+                  <div class="text-xs text-red-400/80">{poseError}</div>
+                {:else if poseActive && posePersonCount > 0}
+                  <div class="text-xs text-green-400/70">◉ {posePersonCount} person{posePersonCount > 1 ? 's' : ''} detected</div>
+                {/if}
+                {#if poseActive}
+                  {@const poseControls = (patterns[index].controls ?? []).filter(c => c.type === 'range' && (c as any).interactive === 'pose')}
+                  {#each poseControls as ctrl}
+                    {@const c = ctrl as (typeof ctrl & { type: 'range' })}
+                    <div class="flex flex-col gap-1">
+                      <div class="flex justify-between text-xs text-white/70">
+                        <span class="cursor-pointer hover:text-white transition-colors select-none"
+                          onclick={() => { if (c.default !== undefined) { c.set(c.default); ctrlVals[c.label] = c.default; saveSettings(patterns); } }}
+                          title="Click to reset"
+                        >{c.label}</span>
+                        <span class="font-mono text-white/40">{Number(ctrlVals[c.label] ?? c.get()).toFixed(c.step < 0.1 ? 2 : c.step < 1 ? 1 : 0)}</span>
+                      </div>
+                      <input type="range" min={c.min} max={c.max} step={c.step}
+                        value={ctrlVals[c.label] ?? c.get()}
+                        oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); c.set(v); ctrlVals[c.label] = v; saveSettings(patterns); }}
+                        class="w-full accent-white cursor-pointer" />
+                    </div>
+                  {/each}
+                {/if}
+              {/if}
+
+              <!-- Audio Reactivity -->
+              {#if patterns[index].audioReactive}
+                <div class="flex items-center justify-between text-xs text-white/70">
+                  <span class="flex items-center gap-1.5">Audio <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {audioState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+                    onclick={() => { audioState.enabled = !audioState.enabled; if (audioState.enabled) enumerateMicrophones(); }}
+                  >
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {audioState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+                {#if audioState.enabled}
+                  <div class="flex flex-col gap-1.5 pl-1">
+                    <div>
+                      <div class="mb-1 text-xs text-white/70">Microphone</div>
+                      {#if audioState.devices.length > 0}
+                        <select
+                          value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
+                          onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
+                          class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                        >
+                          {#each audioState.devices as d, i}
+                            <option value={i}>{d.label}</option>
+                          {/each}
+                        </select>
+                      {:else}
+                        <div class="text-xs text-white/30">No microphones found</div>
+                      {/if}
+                    </div>
+                    <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Sensitivity</span>
+                        <span class="font-mono text-white/40">{audioState.sensitivity}</span>
+                      </div>
+                      <input type="range" min={0} max={100} step={1} bind:value={audioState.sensitivity}
+                        class="w-full accent-white cursor-pointer" />
+                    </div>
+                    <div>
+                      <div class="mb-1 text-xs text-white/70">Frequency Band</div>
+                      <select
+                        value={audioState.bandIndex}
+                        onchange={(e) => { audioState.bandIndex = parseInt((e.target as HTMLSelectElement).value); }}
+                        class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                      >
+                        {#each AUDIO_BAND_OPTIONS as band, i}
+                          <option value={i}>{band}</option>
+                        {/each}
+                      </select>
+                    </div>
+                    <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Level</span>
+                        <span class="font-mono text-white/40">{audioState.level}</span>
+                      </div>
+                      <input type="range" min={0} max={100} step={1} value={audioState.level}
+                        class="w-full accent-white pointer-events-none" />
+                    </div>
+                  </div>
+                {/if}
+              {/if}
+
+            </div>
+          {/if}
+        {/if}
+
       {/if}
       {#if patterns[index].attribution}
         <div class="mt-3 pt-2 border-t border-white/10 text-[10px] text-white/25 leading-snug">
@@ -2061,31 +2204,6 @@
         >
           ← Patterns
         </button>
-        <button
-          class="pointer-events-auto flex-1 rounded-md border px-3 py-1.5 text-xs transition-colors active:bg-white/20
-            {poseActive ? 'border-green-400/50 bg-green-400/10 text-green-300' : poseError ? 'border-red-400/40 bg-red-400/10 text-red-300' : patternUsesPose ? 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15' : 'border-white/10 bg-white/[0.03] text-white/30 hover:border-white/20 hover:bg-white/[0.06]'}"
-          onclick={togglePoseTracking}
-          title={poseError ?? (poseActive ? "Stop body tracking (T)" : patternUsesPose ? "Start body tracking (T)" : "This pattern doesn't use pose tracking")}
-          disabled={poseLoading}
-        >
-          {#if poseLoading}
-            ⟳ Pose…
-          {:else if poseActive}
-            ◉ Pose {posePersonCount > 0 ? `(${posePersonCount})` : ''}
-          {:else if poseError}
-            ✕ Pose
-          {:else}
-            ◎ Pose
-          {/if}
-        </button>
-        {#if poseActive}
-          <button
-            class="pointer-events-auto rounded-md border px-2 py-1.5 text-xs transition-colors active:bg-white/20
-              {poseDebug ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-300' : 'border-white/15 bg-white/[0.07] text-white/50 hover:border-white/40'}"
-            onclick={() => { poseDebug = !poseDebug; }}
-            title="Toggle landmark debug overlay"
-          ><span class="text-sm leading-none">⊹</span></button>
-        {/if}
         <button
           class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {copiedLink ? 'border-green-400/50 bg-green-400/10 text-green-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'}"
           onclick={copyShare}
