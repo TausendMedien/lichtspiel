@@ -137,13 +137,8 @@ const fragmentShader = /* glsl */`
       }
     }
 
-    // Clamp (or tile y in fitWidth mode) to stay within [0,1]
-    vec2 clampedUv;
-    if (uFitMode > 0.5) {
-      clampedUv = vec2(clamp(uv.x, 0.0, 1.0), mod(uv.y, 1.0));
-    } else {
-      clampedUv = clamp(uv, 0.0, 1.0);
-    }
+    // Clamp so we don't sample outside [0,1]
+    vec2 clampedUv = clamp(uv, 0.0, 1.0);
 
     // 8. Chromatic aberration
     vec3 col;
