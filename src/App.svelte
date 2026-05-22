@@ -1210,7 +1210,8 @@
 {#if cheatsheetVisible}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+    data-no-swipe
+    class="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-8"
     onclick={() => { cheatsheetVisible = false; }}
   >
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -1275,6 +1276,7 @@
 {#if optionsVisible}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
+    data-no-swipe
     class="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-8"
     onclick={() => { optionsVisible = false; }}
   >
@@ -1611,6 +1613,7 @@
 {#if demoVisible}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
+    data-no-swipe
     class="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-8"
     onclick={() => { demoVisible = false; }}
   >
@@ -1720,12 +1723,13 @@
   <div
     data-no-swipe
     inert={!hudVisible || overlayHidden}
-    class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-hidden"
+    onpointerdown={() => poke()}
+    class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-auto"
     style="max-height: calc(100dvh - {hudPanelHeight + 40}px)"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
   >
-    <div class="flex max-h-full flex-col overflow-hidden rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+    <div class="flex flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
       {#if patterns[index].controls?.length}
         {@const controlMeta = (() => {
           let sectionOn = true;
@@ -1767,7 +1771,7 @@
             >{filled ? (idx + 1) : '+'}</button>
           {/each}
         </div>
-        <div class="flex flex-col gap-2.5 overflow-y-auto overscroll-contain min-h-0 flex-1">
+        <div class="flex flex-col gap-2.5">
           {#each controlMeta as { ctrl, groupDisabled, hidden }}
             {@const focusedRangeCtrl = sliderModeActive ? rangeControls[sliderFocusIndex] : null}
             {@const activeFocusedCtrl = rangeControls[sliderFocusIndex]}
