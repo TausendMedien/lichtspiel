@@ -233,7 +233,6 @@ export const particleLines: Pattern = {
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
     { label: "Line Width",  type: "range", min: 1.5,  max: 14.0, step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
     { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
-    { label: "Colors",      type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 1.0,  get: () => colorRange, set: (v) => { colorRange = v; } },
   ],
   colorDefaults: { saturation: 0.9, brightness: 1.8 },
 

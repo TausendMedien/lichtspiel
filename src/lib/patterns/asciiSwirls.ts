@@ -270,29 +270,26 @@ export const asciiSwirls: Pattern = {
       get: () => charSet,
       set: (v) => { charSet = v; rebuildCharTex(); }
     },
-    { label: "Color Mode",  type: "select", options: ["Source", "Magenta/Teal", "Cyan/Amber", "Amber/Violet"],
-      get: () => colorMode, set: (v) => { colorMode = v; }
-    },
     { label: "Swirl Speed", type: "range", min: 0.0, max: 0.3,  step: 0.005, default: 0.05, get: () => swirlSpeed, set: (v) => { swirlSpeed = v; } },
     { label: "Warp Amount", type: "range", min: 0.0, max: 3.0,  step: 0.05,  default: 1.4,  get: () => warpAmount, set: (v) => { warpAmount = v; } },
     { label: "Band Count",  type: "range", min: 2,   max: 20,   step: 1,     default: 13,   get: () => bandCount,  set: (v) => { bandCount = v; } },
+    // Camera controls — shown in Interactive > Camera section
     {
-      label: "Camera Mode",
-      type:  "section",
+      label: "Camera",
+      type: "toggle",
+      interactive: 'camera' as const,
       get: () => cameraMode,
-      set: (v) => {
-        cameraMode = !!v;
-        if (cameraMode) { enableAsciiCamera(); } else { disableAsciiCamera(); }
-      },
+      set: (v) => { cameraMode = !!v; if (cameraMode) { enableAsciiCamera(); } else { disableAsciiCamera(); } },
     },
     {
       label: "Cam Blend",
       type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5,
-      disabled: () => !cameraMode,
+      interactive: 'camera' as const,
       get: () => camBlend,
       set: (v) => { camBlend = v; },
     },
   ],
+  usesCameraBlend: true,
 
   init(ctx: PatternContext) {
     renderer3  = ctx.renderer;

@@ -217,7 +217,7 @@
 
   const patternUsesPose = $derived(!!patterns[index]?.usesPose);
   const patternIsInteractive = $derived(
-    !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose)
+    !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose || patterns[index]?.usesCameraBlend)
   );
 
   // Reset slider focus when pattern changes
@@ -286,24 +286,7 @@
       if (c.type === 'range' && c.default !== undefined && !c.readonly) {
         c.set(c.default);
         ctrlVals[c.label] = c.default;
-      } else if (c.type === 'section' && pat?.defaultCollapsedSections?.includes(c.label)) {
-        c.set(false);
-        ctrlVals[c.label] = 0;
       }
-    }
-    if (pat) {
-      const defaultCollapsed = new Set(pat.defaultCollapsedSections ?? []);
-      _perPatternCollapsed.set(pat.id, defaultCollapsed);
-      collapsedSections = defaultCollapsed;
-      const defaultColourCollapsed = pat.id.startsWith('img-');
-      _perPatternColourCollapsed.set(pat.id, defaultColourCollapsed);
-      colourCollapsed = defaultColourCollapsed;
-      _perPatternGroupCollapsed.set(pat.id, true);
-      patternGroupCollapsed = true;
-      _perPatternInteractiveOn.set(pat.id, false);
-      interactiveOn = false;
-      _perPatternInteractiveCollapsed.set(pat.id, true);
-      interactiveCollapsed = true;
     }
     resetAllColorState();
     saveSettings(patterns);
@@ -391,7 +374,8 @@
     const count = patterns.length;
     for (let i = 1; i <= count; i++) {
       const next = (from + i) % count;
-      if (demoPatternIds.has(patterns[next].id)) return next;
+      const id = patterns[next].id;
+      if (demoPatternIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
     }
     return from; // all disabled or only current enabled — stay put
   }
@@ -1726,15 +1710,10 @@
               </div>
             {:else if ctrl.type === "section"}
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
-              {@const isCollapsed = collapsedSections.has(ctrl.label)}
-              <!-- Section header with integrated mini toggle + collapse chevron -->
+              <!-- Section header with integrated mini toggle (no individual collapse) -->
               <div class="mt-1 flex items-center gap-2">
                 <div class="h-px flex-1 bg-white/20"></div>
-                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                <span
-                  class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
-                  onclick={() => { const s = new Set(collapsedSections); isCollapsed ? s.delete(ctrl.label) : s.add(ctrl.label); collapsedSections = s; _perPatternCollapsed.set(patterns[index].id, s); }}
-                >{ctrl.label} <span class="text-[8px] transition-transform duration-200 {isCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
+                <span class="text-[10px] uppercase tracking-widest text-white/40 flex items-center gap-1 select-none">{ctrl.label}</span>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
                   class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/60' : 'bg-white/20'}"
@@ -1894,25 +1873,35 @@
                 class="mt-1.5 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-white/70 cursor-pointer hover:bg-white/20 hover:text-white active:bg-white/30 transition-colors"
               >⟳ Color Shuffle</button>
             {/if}
-            <!-- Per-pattern Saturation + Brightness -->
-            {#each ([
-              { label: 'Saturation', key: 'saturation' as const, min: 0, max: 1, step: 0.05, default: 1.0 },
-              { label: 'Brightness', key: 'brightness' as const, min: 0.75, max: 2, step: 0.05, default: 1.0 },
-            ]) as c2}
-              <div class="mt-1 flex flex-col gap-0.5">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
-                    onclick={() => { colorShuffle[c2.key] = c2.default; savePatternColor(patterns[index].id); }}
-                    title="Click to reset"
-                  >{c2.label}</span>
-                  <span class="text-xs text-white/50">{colorShuffle[c2.key].toFixed(2)}</span>
-                </div>
-                <input type="range" min={c2.min} max={c2.max} step={c2.step}
-                  value={colorShuffle[c2.key]}
-                  oninput={(e) => { colorShuffle[c2.key] = parseFloat((e.target as HTMLInputElement).value); savePatternColor(patterns[index].id); }}
-                  class="w-full accent-white cursor-pointer" />
+            <!-- Colors v2 + Brightness -->
+            <div class="mt-1 flex flex-col gap-0.5">
+              <div class="flex items-center justify-between">
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
+                  onclick={() => { colorC2.colorsV2 = 3.0; saveColorC2(); }}
+                  title="Click to reset"
+                >Colors v2</span>
+                <span class="text-xs text-white/50">{colorC2.colorsV2.toFixed(1)}</span>
               </div>
-            {/each}
+              <input type="range" min={0} max={6} step={0.1}
+                value={colorC2.colorsV2}
+                oninput={(e) => { colorC2.colorsV2 = parseFloat((e.target as HTMLInputElement).value); saveColorC2(); }}
+                class="w-full accent-white cursor-pointer" />
+            </div>
+            <div class="mt-1 flex flex-col gap-0.5">
+              <div class="flex items-center justify-between">
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
+                  onclick={() => { colorShuffle.brightness = 1.0; savePatternColor(patterns[index].id); }}
+                  title="Click to reset"
+                >Brightness</span>
+                <span class="text-xs text-white/50">{colorShuffle.brightness.toFixed(2)}</span>
+              </div>
+              <input type="range" min={0.75} max={2} step={0.05}
+                value={colorShuffle.brightness}
+                oninput={(e) => { colorShuffle.brightness = parseFloat((e.target as HTMLInputElement).value); savePatternColor(patterns[index].id); }}
+                class="w-full accent-white cursor-pointer" />
+            </div>
           {/if}
 
         <!-- ── Interactive section ─────────────────────────────────────── -->
@@ -1940,11 +1929,11 @@
             <div class="h-px flex-1 bg-white/20"></div>
           </div>
 
-          {#if !interactiveCollapsed && interactiveOn}
+          {#if !interactiveCollapsed}
             <div class="flex flex-col gap-2.5 mt-1">
 
-              <!-- Camera selection (for motion/pose patterns) -->
-              {#if patterns[index].motionReactive || patterns[index].usesPose}
+              <!-- Camera selection (for motion/pose/blend patterns) -->
+              {#if patterns[index].motionReactive || patterns[index].usesPose || patterns[index].usesCameraBlend}
                 <div>
                   <div class="mb-1 text-xs text-white/70">Camera</div>
                   {#if cameraState.devices.length > 0}
@@ -1965,6 +1954,38 @@
                       onclick={() => enumerateCameras()}
                       class="text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
                     >Detect cameras</button>
+                  {/if}
+                  <!-- Camera blend controls (ASCII Swirls) -->
+                  {#if patterns[index].usesCameraBlend}
+                    {@const camControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'camera')}
+                    <div class="mt-2 flex flex-col gap-2">
+                      {#each camControls as ctrl}
+                        {#if ctrl.type === 'toggle'}
+                          {@const isOn = !!(ctrlVals[ctrl.label] ?? ctrl.get())}
+                          <div class="flex items-center justify-between text-xs text-white/70">
+                            <span>{ctrl.label}</span>
+                            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                            <div
+                              class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
+                              onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); enumerateCameras(); }}
+                            >
+                              <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                            </div>
+                          </div>
+                        {:else if ctrl.type === 'range'}
+                          <div class="flex flex-col gap-0.5">
+                            <div class="flex justify-between text-xs text-white/70">
+                              <span>{ctrl.label}</span>
+                              <span class="font-mono text-white/40">{Number(ctrlVals[ctrl.label] ?? ctrl.get()).toFixed(2)}</span>
+                            </div>
+                            <input type="range" min={ctrl.min} max={ctrl.max} step={ctrl.step}
+                              value={ctrlVals[ctrl.label] ?? ctrl.get()}
+                              oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns); }}
+                              class="w-full accent-white cursor-pointer" />
+                          </div>
+                        {/if}
+                      {/each}
+                    </div>
                   {/if}
                 </div>
               {/if}

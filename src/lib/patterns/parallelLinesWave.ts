@@ -89,7 +89,6 @@ export const parallelLinesWave: Pattern = {
     { label: "Scroll Speed",    type: "range", min: 0.02,max: 1.0,  step: 0.01, default: 0.02,  get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
     { label: "Line Width",      type: "range", min: 0.02,max: 0.4,  step: 0.01, default: 0.14,  get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Wave Amplitude",  type: "range", min: 0.0, max: 0.15, step: 0.005, default: 0.015, get: () => waveAmp,     set: (v) => { waveAmp = v; } },
-    { label: "Colors",          type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0.65,  get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Wave Speed",      type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 1,  get: () => waveSpeed,   set: (v) => { waveSpeed = v; } },
     { label: "Color Speed",     type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,  get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",          type: "range", min: 0.0, max: 0.5,  step: 0.01, default: 0.02,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },

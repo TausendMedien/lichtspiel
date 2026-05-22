@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
+import { colorC2 } from "../colorC2.svelte";
 
 const COUNT = 50000;
 
@@ -94,8 +95,6 @@ export const particlesBody: Pattern = {
     { label: "Point Size",       type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,       set: (v) => { pointSize = v; } },
     { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
     { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 0.4, interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
-    { label: "Colors",           type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,   get: () => colorRange,      set: (v) => { colorRange = v; } },
-    { label: "Colors v2",        type: "range", min: 0.0, max: 3.0,  step: 0.05, default: 1,   get: () => colorRange2,     set: (v) => { colorRange2 = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -167,7 +166,7 @@ export const particlesBody: Pattern = {
     material.uniforms.uTime.value             = accTime;
     material.uniforms.uSize.value             = pointSize;
     material.uniforms.uColorRange.value       = colorRange;
-    material.uniforms.uColorRange2.value      = colorRange2;
+    material.uniforms.uColorRange2.value      = colorC2.colorsV2;
     material.uniforms.uAttractorCount.value   = count;
     material.uniforms.uAttractStrength.value  = attractStrength;
   },

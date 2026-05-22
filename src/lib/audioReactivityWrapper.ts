@@ -55,7 +55,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     effectiveVals[idx] = baseVals[idx];
     return {
       ...ctrl,
-      get: () => effectiveVals[idx],
+      // Delegate get() to underlying so motion-boosted value shows in slider
+      get: () => (ctrl as RangeCtrl).get(),
       set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
     } as RangeCtrl;
   });
@@ -72,7 +73,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       audioCtx = new AudioContext();
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.smoothingTimeConstant = 0.4;
       dataArray = new Uint8Array(analyser.frequencyBinCount);
       source = audioCtx.createMediaStreamSource(stream);
       source.connect(analyser);
@@ -136,8 +137,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
         analyser.getByteFrequencyData(dataArray);
         const raw = getLevel(dataArray, audioState.bandIndex);
         smoothed = raw > smoothed
-          ? 0.85 * smoothed + 0.15 * raw
-          : 0.97 * smoothed + 0.03 * raw;
+          ? 0.3 * smoothed + 0.7 * raw
+          : 0.7 * smoothed + 0.3 * raw;
       }
       audioState.level = Math.round(smoothed * 100);
 

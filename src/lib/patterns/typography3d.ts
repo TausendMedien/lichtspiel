@@ -10,10 +10,10 @@ let textGroup: THREE.Group | null = null;
 let animTime = 0;
 
 let textStr    = "Burn";
-let textSize   = 1.0;
-let textDepth  = 0.75;
-let rotSpeed   = 3.0;
-let floatSpeed = 0.1;
+let textSize   = 0.82;
+let textDepth  = 0.6;
+let rotSpeed   = 0.6;
+let floatSpeed = 0.4;
 let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
 
@@ -121,17 +121,17 @@ export const typography3d: Pattern = {
   controls: [
     { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
       set: v => { textStr = v; scheduleRebuild(); } },
-    { label: "Size",          type: "range", min: 0.2, max: 2.0, step: 0.05, default: 1.0,
+    { label: "Size",          type: "range", min: 0.2, max: 2.0, step: 0.05, default: 0.82,
       get: () => textSize,   set: v => { textSize = v; scheduleRebuild(); } },
-    { label: "Depth",         type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.75,
+    { label: "Depth",         type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.6,
       get: () => textDepth,  set: v => { textDepth = v; scheduleRebuild(); } },
-    { label: "Rotate Speed",  type: "range", min: 0.0, max: 5.0, step: 0.1, default: 3.0,
+    { label: "Rotate Speed",  type: "range", min: 0.0, max: 5.0, step: 0.1, default: 0.6,
       get: () => rotSpeed,   set: v => { rotSpeed = v; rotLocked = false; } },
     { label: "⊙ Face Camera", type: "button", action: () => {
         rotSpeed = 0; rotLocked = true;
         if (textGroup) textGroup.rotation.set(0, 0, 0);
       } },
-    { label: "Float Speed",   type: "range", min: 0.0, max: 1.0, step: 0.01, default: 0.1,
+    { label: "Float Speed",   type: "range", min: 0.0, max: 1.0, step: 0.01, default: 0.4,
       get: () => floatSpeed, set: v => { floatSpeed = v; } },
     { label: "Style",         type: "select", options: ["Solid", "Wireframe", "Neon"],
       get: () => styleIndex, set: v => { styleIndex = v; buildText(); } },

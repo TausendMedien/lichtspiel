@@ -8,9 +8,9 @@ export interface PatternContext {
 }
 
 export type PatternControl =
-  | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose'; get(): number; set(v: number): void }
+  | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose' | 'camera'; get(): number; set(v: number): void }
   | { label: string; type: "select"; options: string[] | (() => string[]); disabled?: () => boolean; get(): number; set(v: number): void }
-  | { label: string; type: "toggle"; disabled?: () => boolean; get(): boolean; set(v: boolean): void }
+  | { label: string; type: "toggle"; disabled?: () => boolean; interactive?: 'camera'; get(): boolean; set(v: boolean): void }
   /** Section header with an integrated on/off toggle. Controls below are dimmed while off. */
   | { label: string; type: "section"; get(): boolean; set(v: boolean): void }
   | { label: string; type: "separator" }
@@ -31,6 +31,8 @@ export interface Pattern {
   motionReactive?: boolean;
   /** Set by addAudioReactivity wrapper — true if this pattern supports audio reactivity. */
   audioReactive?: boolean;
+  /** True if this pattern blends a camera feed into its visuals (ASCII Swirls). */
+  usesCameraBlend?: boolean;
   /** Default saturation and brightness for the per-pattern colour state. */
   colorDefaults?: { saturation?: number; brightness?: number };
   /** Section labels that should be collapsed by default (no saved state). */

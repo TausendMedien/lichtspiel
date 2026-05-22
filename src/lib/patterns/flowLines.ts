@@ -110,7 +110,6 @@ export const flowLines: Pattern = {
     { label: "Flow Speed",   type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Warp Amount",  type: "range", min: 0.0, max: 3.0, step: 0.05, default: 0.5, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
     { label: "Line Width",   type: "range", min: 0.1, max: 0.9, step: 0.01, default: 0.45, get: () => lineWidth,   set: (v) => { lineWidth = v; } },
-    { label: "Colors",       type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.6, get: () => colorRange,  set: (v) => { colorRange = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.01, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],

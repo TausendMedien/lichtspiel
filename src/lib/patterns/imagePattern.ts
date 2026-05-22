@@ -234,7 +234,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     usesPose: true,
     motionControlLabels: [],
     colorDefaults: { saturation: 1.0, brightness: 1.20 },
-    defaultCollapsedSections: ['Image', 'Motion', 'Style'],
+    defaultCollapsedSections: [],
 
     controls: [
       // ── Image section ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ export const COLOR_DEFAULTS = {
   extra1on: false,
   extra2on: false,
   extra3on: false,
+  colorsV2: 3.0,
 } as const;
 
 function loadColors() {
@@ -30,6 +31,7 @@ function loadColors() {
       extra1on: !!p.extra1on,
       extra2on: !!p.extra2on,
       extra3on: !!p.extra3on,
+      colorsV2: typeof p.colorsV2 === 'number' ? p.colorsV2 : COLOR_DEFAULTS.colorsV2,
     };
   } catch {
     return { ...COLOR_DEFAULTS };

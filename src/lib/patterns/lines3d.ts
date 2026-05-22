@@ -49,14 +49,12 @@ function buildBasePoints(seed: number): THREE.Vector3[] {
 export const lines3d: Pattern = {
   id: "lines3d",
   name: "3D Lines",
-  motionControlLabels: ["Rotation Speed", "Wobble", "Colors", "Saturation", "Opacity"],
+  motionControlLabels: ["Rotation Speed", "Wobble", "Opacity"],
   controls: [
     { label: "Rotation Speed", type: "range", min: 0,   max: 0.5,  step: 0.01,  default: 0.05,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
     { label: "Wobble",         type: "range", min: 0,   max: 4.0,  step: 0.05,  default: 0.3,   get: () => wobble,        set: (v) => { wobble = v; } },
     { label: "Thickness",      type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.025, get: () => thickness,    set: (v) => { thickness = v; } },
     { label: "Glow",           type: "range", min: 0,   max: 1.0,  step: 0.05,  default: 0.45,  get: () => glow,          set: (v) => { glow = v; } },
-    { label: "Colors",         type: "range", min: 0.0, max: 1.0,  step: 0.05,  default: 1,     get: () => colorRange,    set: (v) => { colorRange = v; } },
-    { label: "Saturation",     type: "range", min: 0.0, max: 1.0,  step: 0.05,  default: 1,     get: () => saturation,    set: (v) => { saturation = v; } },
     { label: "Opacity",        type: "range", min: 0.0, max: 1.0,  step: 0.05,  default: 0.6,   get: () => opacity,       set: (v) => { opacity = v; } },
   ],
 
