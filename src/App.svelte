@@ -1015,7 +1015,7 @@
         syncCtrlVals();
       }
     });
-    window.addEventListener("mousemove", poke);
+    if (!isTouch) window.addEventListener("mousemove", poke);
     window.addEventListener("keydown", poke);
 
     return () => {
@@ -1026,7 +1026,7 @@
       detachTouch();
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
-      window.removeEventListener("mousemove", poke);
+      if (!isTouch) window.removeEventListener("mousemove", poke);
       window.removeEventListener("keydown", poke);
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
