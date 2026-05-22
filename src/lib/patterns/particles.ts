@@ -60,7 +60,7 @@ const fragmentShader = /* glsl */ `
 
     float sat2    = clamp(uColorRange2, 0.0, 1.0);
     float spread2 = max(0.0, uColorRange2 - 1.0) / 2.0;
-    float hue     = 0.5 + fract(vSeed * (uColorRange + spread2)) * 0.33;
+    float hue     = 0.5 + fract(vSeed * spread2) * 0.33;
     vec3 col      = hsl2rgb(hue, sat2, 0.6);
 
     gl_FragColor = vec4(col, alpha);
