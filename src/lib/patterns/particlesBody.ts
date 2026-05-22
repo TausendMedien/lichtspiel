@@ -4,9 +4,10 @@ import { poseState } from "../pose";
 
 const COUNT = 50000;
 
-let pointSize    = 7.0;
+let pointSize    = 3.0;
 let flowSpeed    = 0.2;
 let colorRange   = 1.0;
+let colorRange2  = 1.0;
 let attractStrength = 0.4;
 let bodyTracking = true;
 
@@ -62,6 +63,7 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   uniform float uColorRange;
+  uniform float uColorRange2;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -75,9 +77,10 @@ const fragmentShader = /* glsl */ `
     if (d > 0.5) discard;
     float alpha = smoothstep(0.5, 0.0, d);
 
-    float hue = 0.5 + fract(vSeed * uColorRange) * 0.33;
-    vec3 col = hsl2rgb(hue, 1.0, 0.6);
-    float gray = dot(col, vec3(0.299, 0.587, 0.114));
+    float sat2    = clamp(uColorRange2, 0.0, 1.0);
+    float spread2 = max(0.0, uColorRange2 - 1.0) / 2.0;
+    float hue     = 0.5 + fract(vSeed * (uColorRange + spread2)) * 0.33;
+    vec3 col      = hsl2rgb(hue, sat2, 0.6);
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -89,10 +92,11 @@ export const particlesBody: Pattern = {
   name: "Particle Field Body",
   controls: [
     { label: "Body Tracking",    type: "toggle", get: () => bodyTracking,    set: (v) => { bodyTracking = v; } },
-    { label: "Point Size",       type: "range", min: 0.3, max: 10.0, step: 0.1, default: 7,   get: () => pointSize,       set: (v) => { pointSize = v; } },
-    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,  step: 0.1, default: 0.2, get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
+    { label: "Point Size",       type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,       set: (v) => { pointSize = v; } },
+    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
     { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 0.4, get: () => attractStrength, set: (v) => { attractStrength = v; } },
-    { label: "Colors",           type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,  get: () => colorRange,      set: (v) => { colorRange = v; } },
+    { label: "Colors",           type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,   get: () => colorRange,      set: (v) => { colorRange = v; } },
+    { label: "Colors v2",        type: "range", min: 0.0, max: 3.0,  step: 0.05, default: 1,   get: () => colorRange2,     set: (v) => { colorRange2 = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -119,12 +123,13 @@ export const particlesBody: Pattern = {
 
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:           { value: 0 },
-        uSize:           { value: pointSize },
-        uColorRange:     { value: colorRange },
-        uAttractors:     { value: attractors },
-        uAttractorCount: { value: 0 },
-        uAttractStrength:{ value: attractStrength },
+        uTime:            { value: 0 },
+        uSize:            { value: pointSize },
+        uColorRange:      { value: colorRange },
+        uColorRange2:     { value: colorRange2 },
+        uAttractors:      { value: attractors },
+        uAttractorCount:  { value: 0 },
+        uAttractStrength: { value: attractStrength },
       },
       vertexShader,
       fragmentShader,
@@ -160,11 +165,12 @@ export const particlesBody: Pattern = {
       }
     }
 
-    material.uniforms.uTime.value            = accTime;
-    material.uniforms.uSize.value            = pointSize;
-    material.uniforms.uColorRange.value      = colorRange;
-    material.uniforms.uAttractorCount.value  = count;
-    material.uniforms.uAttractStrength.value = attractStrength;
+    material.uniforms.uTime.value             = accTime;
+    material.uniforms.uSize.value             = pointSize;
+    material.uniforms.uColorRange.value       = colorRange;
+    material.uniforms.uColorRange2.value      = colorRange2;
+    material.uniforms.uAttractorCount.value   = count;
+    material.uniforms.uAttractStrength.value  = attractStrength;
   },
 
   resize(_w: number, _h: number) {

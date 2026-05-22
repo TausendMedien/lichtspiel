@@ -3,7 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 
 const COUNT = 50000;
 
-let pointSize  = 7.0;
+let pointSize  = 3.0;
 let flowSpeed  = 0.2;
 
 // Per-color brightness multipliers (0–1)
@@ -83,7 +83,7 @@ export const particlesPalette: Pattern = {
   id: "particlesPalette",
   name: "Particle Field — Palette",
   controls: [
-    { label: "Point Size",  type: "range", min: 0.3, max: 10.0, step: 0.1,  default: 7,   get: () => pointSize,  set: (v) => { pointSize = v; } },
+    { label: "Point Size",  type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,  set: (v) => { pointSize = v; } },
     { label: "Flow Speed",  type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,  set: (v) => { flowSpeed = v; } },
     { label: "separator", type: "separator" },
     { label: "Cyan",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colCyan,    set: (v) => { colCyan = v; } },
