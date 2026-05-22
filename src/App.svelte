@@ -2082,7 +2082,7 @@
           class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {copiedLink ? 'border-green-400/50 bg-green-400/10 text-green-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'}"
           onclick={copyShare}
           title="Copy shareable link"
-        >{#if copiedLink}✓ Copied!{:else}<span class="text-sm leading-none">⛓</span>{/if}</button>
+        >{#if copiedLink}✓ Copied!{:else}<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122.88 122.88" class="inline-block h-[1em] w-[1em] fill-current align-[-0.1em]"><path d="M60.54,34.07A7.65,7.65,0,0,1,49.72,23.25l13-12.95a35.38,35.38,0,0,1,49.91,0l.07.08a35.37,35.37,0,0,1-.07,49.83l-13,12.95A7.65,7.65,0,0,1,88.81,62.34l13-13a20.08,20.08,0,0,0,0-28.23l-.11-.11a20.08,20.08,0,0,0-28.2.07l-12.95,13Zm14,3.16A7.65,7.65,0,0,1,85.31,48.05L48.05,85.31A7.65,7.65,0,0,1,37.23,74.5L74.5,37.23ZM62.1,89.05A7.65,7.65,0,0,1,72.91,99.87l-12.7,12.71a35.37,35.37,0,0,1-49.76.14l-.28-.27a35.38,35.38,0,0,1,.13-49.78L23,50A7.65,7.65,0,1,1,33.83,60.78L21.12,73.49a20.09,20.09,0,0,0,0,28.25l0,0a20.07,20.07,0,0,0,28.27,0L62.1,89.05Z"/></svg>{/if}</button>
         {#if screenshotsEnabled}
           <button
             class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
