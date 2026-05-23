@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -117,7 +118,8 @@ const fragmentShader = /* glsl */ `
 export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
-  motionControlLabels: ["Speed", "Wobble"],
+  motionControlLabels: [],           // motion drives colorC2.colorsV2, not these controls
+  audioControlLabels:  ["Shadow Width"],
   controls: [
     { label: "Speed",        type: "range", min: -20,   max: 20,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
     { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, get: () => rotSpeed,     set: (v) => { rotSpeed = v; } },
@@ -163,6 +165,10 @@ export const tunnelEdge: Pattern = {
     colorPhase += dt * colorDrift * 0.1;
     _colorA.set(colorC2.main);
     _colorB.set(colorC2.contrast);
+    // Motion → Colors v2: no movement = 3, full movement = 0
+    if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnelEdge'] ?? true)) {
+      colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);
+    }
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uRotSpeed.value    = rotSpeed;
     material.uniforms.uRingCount.value   = ringCount;
