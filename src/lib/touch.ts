@@ -56,6 +56,9 @@ export function attachTouch(handler: (action: KeyAction) => void): () => void {
       e.preventDefault();
       lastTapTime = 0; // reset double-tap tracking after a swipe
       handler({ type: deltaX < 0 ? "next" : "prev" });
+    } else if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) {
+      // Single tap — notify so HUD can be shown (without making swipes show HUD)
+      handler({ type: "tap" });
     }
   }
 

@@ -8,7 +8,7 @@ export interface PatternContext {
 }
 
 export type PatternControl =
-  | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose' | 'camera'; audioWeight?: number; get(): number; set(v: number): void }
+  | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose' | 'camera' | 'internal'; audioWeight?: number; get(): number; set(v: number): void }
   | { label: string; type: "select"; options: string[] | (() => string[]); disabled?: () => boolean; get(): number; set(v: number): void }
   | { label: string; type: "toggle"; disabled?: () => boolean; interactive?: 'camera'; get(): boolean; set(v: boolean): void }
   /** Section header with an integrated on/off toggle. Controls below are dimmed while off. */

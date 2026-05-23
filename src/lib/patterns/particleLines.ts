@@ -232,11 +232,17 @@ function buildGeometry() {
 export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
+  motionControlLabels: ["Flow Speed", "Line Width"],
+  audioControlLabels:  ["Line Width", "Colors v2"],
   controls: [
     { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.3,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
     { label: "Line Width",  type: "range", min: 1.5,  max: 14.0, step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
     { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
+    // Hidden control — used by audio wrapper only, not shown in UI
+    { label: "Colors v2", type: "range", min: 0, max: 3, step: 0.1, default: 3,
+      interactive: 'internal' as const,
+      get: () => colorC2.colorsV2, set: (v) => { colorC2.colorsV2 = v; } },
   ],
   colorDefaults: { saturation: 0.9, brightness: 1.8 },
 

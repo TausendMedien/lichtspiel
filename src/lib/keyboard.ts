@@ -22,7 +22,8 @@ export type KeyAction =
   | { type: "toggleCheatsheet" }
   | { type: "toggleOptions" }
   | { type: "undo" }
-  | { type: "togglePose" };
+  | { type: "togglePose" }
+  | { type: "tap" };
 
 export function attachKeyboard(
   handler: (action: KeyAction) => void,

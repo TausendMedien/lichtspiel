@@ -269,6 +269,13 @@
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
         : true;
+      // Enforce camera/audio/pose based on the incoming pattern's interactive state
+      if (!interactiveOn) {
+        cameraState.motionEnabled = false;
+        cameraState.enabled = false;
+        audioState.enabled = false;
+        if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+      }
     }
   });
   $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); });
@@ -484,6 +491,7 @@
 
     // Global actions for active + preview
     switch (action.type) {
+      case "tap":              poke(); return;
       case "freeze":           applyFreeze();    return;
       case "blackout":         blackout = !blackout; poke(); return;
       case "randomize":        startRandomize(performance.now()); return;
@@ -1079,9 +1087,9 @@
       if (hudVisible && !overlayHidden) {
         hudVisible = false;
         if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
-      } else {
-        poke();
       }
+      // HUD is shown on tap (handled via "tap" action), not here,
+      // so that swipes do not accidentally reveal the HUD.
     }
   }}
 ></canvas>
@@ -2140,7 +2148,7 @@
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
-                        <span>Level</span>
+                        <span>Level <span class="text-white/30 text-[10px]">(always active)</span></span>
                         <span class="font-mono text-white/40">{audioState.level}</span>
                       </div>
                       <input type="range" min={0} max={100} step={1} value={audioState.level}
@@ -2150,7 +2158,9 @@
                       <label class="flex items-center gap-1.5 cursor-pointer select-none">
                         <input type="checkbox" bind:checked={audioState.beatMode}
                           class="accent-white cursor-pointer" />
-                        <span class="text-xs text-white/60">Beat mode</span>
+                        <span class="text-xs {audioState.beatMode ? 'text-white/80' : 'text-white/40'}">
+                          {audioState.beatMode ? 'Beat drives controls' : 'Level drives controls'}
+                        </span>
                       </label>
                     </div>
                     <div class="flex flex-col gap-1.5 pt-0.5">
