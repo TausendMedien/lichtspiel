@@ -15,7 +15,8 @@ export const audioState = $state({
   level:       0,
   beat:            0,     // 0–100 transient beat pulse, decays between hits
   beatMode:        false, // false=level-driven, true=beat-driven
-  beatSensitivity: 1.5,  // BeatDetector ODF threshold multiplier, 1.0–3.0
+  beatSensitivity: 1.5,  // detector threshold multiplier
+  beatAlgorithm:   'energy' as 'flux' | 'energy', // 'flux'=spectral flux, 'energy'=energy ratio
   patternAudioEnabled: loadPatternAudioEnabled() as Record<string, boolean>,
 });
 

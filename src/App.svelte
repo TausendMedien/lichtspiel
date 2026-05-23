@@ -2156,6 +2156,17 @@
                       </label>
                     </div>
                     <div>
+                      <div class="mb-1 text-xs text-white/70">Beat Algorithm</div>
+                      <select
+                        value={audioState.beatAlgorithm}
+                        onchange={(e) => { audioState.beatAlgorithm = (e.target as HTMLSelectElement).value as 'flux' | 'energy'; }}
+                        class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                      >
+                        <option value="energy">Energy Ratio (bass band, music)</option>
+                        <option value="flux">Spectral Flux (multi-band)</option>
+                      </select>
+                    </div>
+                    <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
                         <span>Beat Threshold</span>
                         <span class="font-mono text-white/40">{audioState.beatSensitivity.toFixed(1)}</span>
