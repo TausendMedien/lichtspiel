@@ -126,8 +126,11 @@ const compositeFragmentShader = /* glsl */ `
     vec3 painting = trail / (trail + 1.0);
 
     vec3 out_ = mix(painting, live, uGhost);
-    float _luma = dot(out_, vec3(0.299, 0.587, 0.114));
-    out_ = mix(uMainColor * _luma, out_, uColorsV2 / 3.0);
+    vec3 _orig_o = out_;
+    float _luma = dot(_orig_o, vec3(0.299, 0.587, 0.114));
+    float _ph1 = clamp(uColorsV2, 0.0, 1.0);
+    float _ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
+    out_ = mix(mix(vec3(_luma), uMainColor * (0.2 + _luma * 0.8), _ph1), _orig_o, _ph2);
     gl_FragColor = vec4(out_, 1.0);
   }
 `;

@@ -91,8 +91,11 @@ const fragmentShader = /* glsl */ `
     float rim = 1.0 - abs(dot(vNorm, vec3(0.0, 0.0, 1.0)));
     col = mix(col, vec3(0.02, 0.04, 0.08), rim * rim * 0.4);
 
-    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
+    vec3 _orig = col;
+    float _luma = dot(_orig, vec3(0.299, 0.587, 0.114));
+    float _ph1 = clamp(uColorsV2, 0.0, 1.0);
+    float _ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
+    col = mix(mix(vec3(_luma), uMainColor * (0.2 + _luma * 0.8), _ph1), _orig, _ph2);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;

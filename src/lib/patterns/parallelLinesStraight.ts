@@ -61,9 +61,11 @@ const fragmentShader = /* glsl */ `
 
     // Smooth cyberpunk hue: sin oscillation between cyan (0.50) and magenta (0.83)
     // Uses sin() instead of fract() → no sudden colour jumps at wrap-around.
-    float hue = 0.665 + sin(uColorPhase + uv.x * uColorRange * 3.14159) * 0.165;
+    float _sat    = clamp(uColorRange, 0.0, 1.0);
+    float _spread = max(0.0, uColorRange - 1.0) / 2.0;
+    float hue = 0.665 + sin(uColorPhase + uv.x * _spread * 3.14159) * 0.165;
     float lit = 0.55 + 0.15 * sin(uTime * 0.4 + uv.y * 2.0);
-    vec3 col = hsl2rgb(hue, 1.0, lit);
+    vec3 col = hsl2rgb(hue, _sat, lit);
 
     float gray = dot(col, vec3(0.299, 0.587, 0.114));
 

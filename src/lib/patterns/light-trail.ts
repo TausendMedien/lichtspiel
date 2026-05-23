@@ -117,8 +117,11 @@ const compositeFragmentShader = /* glsl */ `
     // Reinhard tone-map the accumulated trail so values above 1.0 (from HalfFloat
     // accumulation) compress gracefully rather than hard-clipping to white.
     vec3 toned = trail.rgb / (trail.rgb + 1.0);
-    float _luma = dot(toned, vec3(0.299, 0.587, 0.114));
-    toned = mix(uMainColor * _luma, toned, uColorsV2 / 3.0);
+    vec3 _orig_t = toned;
+    float _luma = dot(_orig_t, vec3(0.299, 0.587, 0.114));
+    float _ph1 = clamp(uColorsV2, 0.0, 1.0);
+    float _ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
+    toned = mix(mix(vec3(_luma), uMainColor * (0.2 + _luma * 0.8), _ph1), _orig_t, _ph2);
     gl_FragColor = vec4(clamp(bg + toned, 0.0, 1.0), 1.0);
   }
 `;

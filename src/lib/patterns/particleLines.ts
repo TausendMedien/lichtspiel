@@ -91,8 +91,10 @@ const lineFragShader = /* glsl */ `
   }
 
   void main() {
-    float hue = 0.5 + fract(vSeed * uColorRange) * 0.33;
-    vec3  col = hsl2rgb(hue, 1.0, 0.6);
+    float _sat    = clamp(uColorRange, 0.0, 1.0);
+    float _spread = max(0.0, uColorRange - 1.0) / 2.0;
+    float hue = 0.5 + fract(vSeed * _spread) * 0.33;
+    vec3  col = hsl2rgb(hue, _sat, 0.6);
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -134,8 +136,10 @@ const glowFragShader = /* glsl */ `
     if (d > 0.5) discard;
     float alpha = smoothstep(0.5, 0.0, d) * 0.45;
 
-    float hue = 0.5 + fract(vSeed * uColorRange) * 0.33;
-    vec3  col = hsl2rgb(hue, 1.0, 0.7);
+    float _sat    = clamp(uColorRange, 0.0, 1.0);
+    float _spread = max(0.0, uColorRange - 1.0) / 2.0;
+    float hue = 0.5 + fract(vSeed * _spread) * 0.33;
+    vec3  col = hsl2rgb(hue, _sat, 0.7);
     gl_FragColor = vec4(col, alpha);
   }
 `;

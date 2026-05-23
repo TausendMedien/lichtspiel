@@ -31,12 +31,14 @@ function hexToColor(hex: string): THREE.Color {
 
 function buildText() {
   if (!scene || !fontCache) return;
-  const primaryColor = colorC2.main;
-  const glowColor    = '#' + new THREE.Color().lerpColors(
-    new THREE.Color(colorC2.main),
-    new THREE.Color(colorC2.contrast),
-    colorC2.colorsV2 / 3.0
-  ).getHexString();
+  const _ph1 = Math.min(1.0, colorC2.colorsV2);
+  const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+  const _cW  = new THREE.Color(1, 1, 1);
+  const _cM  = new THREE.Color(colorC2.main);
+  const _cPrimary = new THREE.Color().lerpColors(_cW, _cM, _ph1);
+  const _cGlow    = new THREE.Color().lerpColors(_cPrimary, new THREE.Color(colorC2.contrast), _ph2);
+  const primaryColor = '#' + _cPrimary.getHexString();
+  const glowColor    = '#' + _cGlow.getHexString();
   _lastPrimary  = colorC2.main;
   _lastGlow     = colorC2.contrast;
   _lastColorsV2 = colorC2.colorsV2;

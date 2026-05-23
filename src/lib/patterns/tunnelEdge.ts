@@ -21,6 +21,9 @@ let accTime    = 0;
 
 const _colorA = new THREE.Color();
 const _colorB = new THREE.Color();
+const _cWhite = new THREE.Color(1, 1, 1);
+const _cFade  = new THREE.Color();
+const _cTemp  = new THREE.Color();
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -132,8 +135,9 @@ export const tunnelEdge: Pattern = {
   ],
 
   init(ctx: PatternContext) {
-    _colorA.set(colorC2.main);
-    _colorB.set(colorC2.contrast);
+    _cFade.lerpColors(_cWhite, new THREE.Color(colorC2.main), Math.min(1.0, colorC2.colorsV2));
+    _colorA.copy(_cFade);
+    _colorB.lerpColors(_cFade, new THREE.Color(colorC2.contrast), Math.max(0, colorC2.colorsV2 - 1) / 2);
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -163,8 +167,13 @@ export const tunnelEdge: Pattern = {
     if (!material) return;
     accTime    += dt * speed;
     colorPhase += dt * colorDrift * 0.1;
-    _colorA.set(colorC2.main);
-    _colorB.lerpColors(new THREE.Color(colorC2.main), new THREE.Color(colorC2.contrast), colorC2.colorsV2 / 3.0);
+    _cTemp.set(colorC2.main);
+    const _ph1 = Math.min(1.0, colorC2.colorsV2);
+    const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+    _cFade.lerpColors(_cWhite, _cTemp, _ph1);
+    _colorA.copy(_cFade);
+    _cTemp.set(colorC2.contrast);
+    _colorB.lerpColors(_cFade, _cTemp, _ph2);
     // Motion → Colors v2: no movement = 3, full movement = 0
     if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnelEdge'] ?? true)) {
       colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);

@@ -71,12 +71,14 @@ export const lines3d: Pattern = {
       const seed       = i * 0.91;
       const basePoints = buildBasePoints(seed);
       const curve      = new THREE.CatmullRomCurve3(basePoints, true, "centripetal");
-      const hue        = 0.5 + (i / NUM_LINES * (colorC2.colorsV2 / 3.0)) * 0.5;
+      const _sat2    = Math.min(1.0, colorC2.colorsV2);
+      const _spread2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+      const hue      = 0.5 + (i / NUM_LINES * _spread2) * 0.5;
 
       const geometry = new THREE.TubeGeometry(curve, TUBE_SEGMENTS, thickness, 8, true);
       const L = Math.max(0.12, 0.5 - opacity * 0.32);
       const material = new THREE.MeshBasicMaterial({
-        color:      new THREE.Color().setHSL(hue, saturation, L),
+        color:      new THREE.Color().setHSL(hue, _sat2, L),
         transparent: true,
         opacity,
         blending:   THREE.AdditiveBlending,
@@ -88,7 +90,7 @@ export const lines3d: Pattern = {
       // Wider glow tube — additive blending creates bloom where lines intersect
       const glowGeometry = new THREE.TubeGeometry(curve, GLOW_SEGMENTS, thickness * 2.8, 6, true);
       const glowMaterial = new THREE.MeshBasicMaterial({
-        color:      new THREE.Color().setHSL(hue, saturation * 0.85, Math.max(0.15, 0.55 - glow * 0.3)),
+        color:      new THREE.Color().setHSL(hue, _sat2 * 0.85, Math.max(0.15, 0.55 - glow * 0.3)),
         transparent: true,
         opacity:    glow * 0.18,
         blending:   THREE.AdditiveBlending,
@@ -111,13 +113,15 @@ export const lines3d: Pattern = {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const hue  = 0.5 + (i / NUM_LINES * (colorC2.colorsV2 / 3.0)) * 0.5;
+      const _sat2    = Math.min(1.0, colorC2.colorsV2);
+      const _spread2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+      const hue      = 0.5 + (i / NUM_LINES * _spread2) * 0.5;
 
       const L = Math.max(0.12, 0.5 - opacity * 0.32);
-      line.material.color.setHSL(hue, saturation, L);
+      line.material.color.setHSL(hue, _sat2, L);
       line.material.opacity = opacity;
 
-      line.glowMaterial.color.setHSL(hue, saturation * 0.85, Math.max(0.15, 0.55 - glow * 0.3));
+      line.glowMaterial.color.setHSL(hue, _sat2 * 0.85, Math.max(0.15, 0.55 - glow * 0.3));
       line.glowMaterial.opacity = glow * 0.18;
 
       const animated = line.basePoints.map((p, idx) => {

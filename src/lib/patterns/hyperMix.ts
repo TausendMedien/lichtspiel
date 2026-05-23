@@ -5,6 +5,8 @@ import { colorC2 } from "../colorC2.svelte";
 const BASE_COUNT = 40000;
 const _c1 = new THREE.Color();
 const _c2 = new THREE.Color();
+const _cWhite = new THREE.Color(1, 1, 1);
+const _cFade  = new THREE.Color();
 
 const params = {
   speed: 0.03,
@@ -284,8 +286,11 @@ export const hyperMix: Pattern = {
     material.uniforms.uCountScale.value = Math.min(1.0, BASE_COUNT / params.pointCount);
     _c1.set(colorC2.main);
     _c2.set(colorC2.contrast);
-    material.uniforms.uColor1.value.copy(_c1);
-    material.uniforms.uColor2.value.lerpColors(_c1, _c2, colorC2.colorsV2 / 3.0);
+    const _ph1 = Math.min(1.0, colorC2.colorsV2);
+    const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+    _cFade.lerpColors(_cWhite, _c1, _ph1);
+    material.uniforms.uColor1.value.copy(_cFade);
+    material.uniforms.uColor2.value.lerpColors(_cFade, _c2, _ph2);
   },
 
   resize() {},

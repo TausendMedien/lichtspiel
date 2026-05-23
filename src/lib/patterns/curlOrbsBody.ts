@@ -108,8 +108,10 @@ const fragmentShader = /* glsl */ `
     float lw   = clamp(uLineWidth * 0.5, aa * 2.0, 0.48);
     float line = smoothstep(0.0, aa, band) * smoothstep(lw, lw - aa, band);
 
-    float hue    = 0.5 + sin(uColorPhase + phi * uColorRange * 6.28) * 0.08;
-    vec3 lineCol = mix(hsl2rgb(hue, 1.0, 0.65), vec3(1.0), 0.45);
+    float _sat    = clamp(uColorRange, 0.0, 1.0);
+    float _spread = max(0.0, uColorRange - 1.0) / 2.0;
+    float hue    = 0.5 + sin(uColorPhase + phi * _spread * 6.28) * 0.08;
+    vec3 lineCol = mix(hsl2rgb(hue, _sat, 0.65), vec3(1.0), 0.45);
     vec3 bgCol   = mix(vec3(0.0, 0.025, 0.04), vec3(0.0, 0.07, 0.11), phi * 0.6 + 0.2);
     vec3 col     = bgCol + lineCol * line;
 

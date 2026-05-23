@@ -88,11 +88,13 @@ const fragmentShader = /* glsl */ `
     float line = smoothstep(0.0, aa, stripe) * smoothstep(lw, lw - aa, stripe);
 
     // Palette: cyan (0.50) → blue (0.66) → magenta (0.83) → pink (0.92)
-    float hue = 0.62 + sin(uColorPhase + psi * uColorRange * 3.14159
+    float _sat    = clamp(uColorRange, 0.0, 1.0);
+    float _spread = max(0.0, uColorRange - 1.0) / 2.0;
+    float hue = 0.62 + sin(uColorPhase + psi * _spread * 3.14159
                            + length(p) * 2.0) * 0.22;
     float dist = length(p);
     float lit  = 0.25 + 0.55 * line + 0.1 * exp(-dist * 3.0);
-    vec3 col = hsl2rgb(hue, 1.0, clamp(lit, 0.0, 1.0)) * line;
+    vec3 col = hsl2rgb(hue, _sat, clamp(lit, 0.0, 1.0)) * line;
 
     // Soft center glow (cyan-white)
     float glow = exp(-dist * 5.0) * 0.6;
