@@ -10,9 +10,11 @@ export const audioState = $state({
   enabled:    false,
   deviceId:   '',
   devices:    [] as DeviceInfo[],
-  sensitivity: 10,
+  sensitivity: 30,
   bandIndex:   0,   // 0=Bass 1=Mid 2=High 3=Full
   level:       0,
+  beat:        0,   // 0–100 transient beat pulse, decays between hits
+  beatMode:    false, // false=level-driven, true=beat-driven
   patternAudioEnabled: loadPatternAudioEnabled() as Record<string, boolean>,
 });
 

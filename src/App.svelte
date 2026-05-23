@@ -2138,6 +2138,16 @@
                       <input type="range" min={0} max={100} step={1} value={audioState.level}
                         class="w-full accent-white pointer-events-none" />
                     </div>
+                    <div class="flex items-center gap-2 pt-0.5">
+                      <span class="text-xs text-white/50">Beat</span>
+                      <div class="h-2 w-2 rounded-full flex-shrink-0"
+                        style="background: rgba(255,255,255,{audioState.beat / 100})"></div>
+                      <label class="ml-auto flex items-center gap-1.5 cursor-pointer select-none">
+                        <input type="checkbox" bind:checked={audioState.beatMode}
+                          class="accent-white cursor-pointer" />
+                        <span class="text-xs text-white/60">Beat mode</span>
+                      </label>
+                    </div>
                   </div>
                 {/if}
               {/if}

@@ -1,8 +1,9 @@
 // Audio reactivity wrapper.
-// Wraps any Pattern and boosts the first two range controls in proportion to
-// detected audio level. Audio settings (enable, microphone, sensitivity, band)
-// come from the global Options menu via globalAudioSettings.svelte.ts — no
-// controls are added to the pattern's own controls list.
+// Wraps any Pattern and boosts selected range controls in proportion to
+// detected audio level or beat pulse. Audio settings (enable, microphone,
+// sensitivity, band, beat mode) come from the global Options menu via
+// globalAudioSettings.svelte.ts — no controls are added to the pattern's
+// own controls list.
 
 import type { Pattern, PatternControl, PatternContext } from './patterns/types';
 import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
@@ -25,11 +26,24 @@ function getLevel(dataArray: Uint8Array, band: number): number {
 
 export { BAND_OPTIONS };
 
+// Beat detection constants
+const BEAT_HISTORY = 43;   // ~1.4s window at 30fps
+const BEAT_THRESHOLD = 1.5; // local energy must be this × average to count as a beat
+const BEAT_MIN_LEVEL = 0.10; // ignore beats in near-silence
+const BEAT_COOLDOWN_FRAMES = 8; // ~250ms lockout between beats
+const BEAT_DECAY = 0.82;   // beat pulse half-life ≈ 8 frames
+
 export function addAudioReactivity(pattern: Pattern): Pattern {
   let smoothed            = 0;
   let prevEnabled         = false;
   let prevDeviceId        = '';
   let prevPatternEnabled  = true;
+
+  // Beat detection state
+  const energyHist = new Float32Array(BEAT_HISTORY);
+  let histIdx      = 0;
+  let beatPulse    = 0;
+  let beatCooldown = 0;
 
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
@@ -39,23 +53,26 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
 
   type RangeCtrl = PatternControl & { type: 'range' };
   const allRangeControls = (pattern.controls ?? []).filter((c): c is RangeCtrl => c.type === 'range');
-  const firstTwoRange = pattern.motionControlLabels
-    ? allRangeControls.filter(c => pattern.motionControlLabels!.includes(c.label))
-    : allRangeControls.slice(0, 2);
 
-  const baseVals: number[]      = firstTwoRange.map(c => c.get());
+  // Prefer explicit audioControlLabels, then motionControlLabels, then first two
+  const audioTargets = pattern.audioControlLabels
+    ? allRangeControls.filter(c => pattern.audioControlLabels!.includes(c.label))
+    : pattern.motionControlLabels
+      ? allRangeControls.filter(c => pattern.motionControlLabels!.includes(c.label))
+      : allRangeControls.slice(0, 2);
+
+  const baseVals: number[]      = audioTargets.map(c => c.get());
   const effectiveVals: number[] = [...baseVals];
 
   // Wrap the boosted controls so user drags update baseVals only;
   // the actual pattern value is written by update() using effectiveVals.
   const wrappedControls: PatternControl[] = (pattern.controls ?? []).map((ctrl) => {
-    const idx = firstTwoRange.indexOf(ctrl as RangeCtrl);
+    const idx = audioTargets.indexOf(ctrl as RangeCtrl);
     if (idx === -1) return ctrl;
     baseVals[idx] = (ctrl as RangeCtrl).get();
     effectiveVals[idx] = baseVals[idx];
     return {
       ...ctrl,
-      // Delegate get() to underlying so motion-boosted value shows in slider
       get: () => (ctrl as RangeCtrl).get(),
       set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
     } as RangeCtrl;
@@ -91,10 +108,12 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     stream?.getTracks().forEach(t => t.stop());
     source = null; analyser = null; audioCtx = null; stream = null; dataArray = null;
     smoothed = 0;
+    beatPulse = 0;
     audioState.level = 0;
-    for (let i = 0; i < firstTwoRange.length; i++) {
+    audioState.beat  = 0;
+    for (let i = 0; i < audioTargets.length; i++) {
       effectiveVals[i] = baseVals[i];
-      firstTwoRange[i].set(baseVals[i]);
+      audioTargets[i].set(baseVals[i]);
     }
   }
 
@@ -104,8 +123,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     controls: wrappedControls,
 
     init(ctx: PatternContext) {
-      for (let i = 0; i < firstTwoRange.length; i++) {
-        baseVals[i] = firstTwoRange[i].get();
+      for (let i = 0; i < audioTargets.length; i++) {
+        baseVals[i] = audioTargets[i].get();
         effectiveVals[i] = baseVals[i];
       }
       prevEnabled        = audioState.enabled;
@@ -133,23 +152,45 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       prevPatternEnabled = nowPatternEnabled;
 
       // Read audio level
+      let raw = 0;
       if (analyser && dataArray) {
         analyser.getByteFrequencyData(dataArray);
-        const raw = getLevel(dataArray, audioState.bandIndex);
+        raw = getLevel(dataArray, audioState.bandIndex);
         smoothed = raw > smoothed
           ? 0.3 * smoothed + 0.7 * raw
           : 0.7 * smoothed + 0.3 * raw;
       }
       audioState.level = Math.round(smoothed * 100);
 
-      // Boost first two controls
-      const scaled = analyser && dataArray ? smoothed * (audioState.sensitivity / 10) * (8 / 7) : 0;
-      for (let i = 0; i < firstTwoRange.length; i++) {
-        const ctrl = firstTwoRange[i];
+      // Beat detection: compare instantaneous energy to rolling average
+      if (analyser && dataArray) {
+        const rawEnergy = raw * raw;
+        energyHist[histIdx] = rawEnergy;
+        histIdx = (histIdx + 1) % BEAT_HISTORY;
+        let avgEnergy = 0;
+        for (let i = 0; i < BEAT_HISTORY; i++) avgEnergy += energyHist[i];
+        avgEnergy /= BEAT_HISTORY;
+        const isBeat = rawEnergy > avgEnergy * BEAT_THRESHOLD && raw > BEAT_MIN_LEVEL && beatCooldown <= 0;
+        beatPulse = isBeat ? 1.0 : beatPulse * BEAT_DECAY;
+        if (isBeat) beatCooldown = BEAT_COOLDOWN_FRAMES;
+        if (beatCooldown > 0) beatCooldown--;
+      } else {
+        beatPulse = beatPulse * BEAT_DECAY;
+      }
+      audioState.beat = Math.round(beatPulse * 100);
+
+      // Choose signal: beat pulse (sharp transient) or smoothed level (sustained)
+      const signal = (analyser && dataArray) ? (audioState.beatMode ? beatPulse : smoothed) : 0;
+
+      // Boost controls — respecting per-control audioWeight (default 1.0)
+      const scaled = signal * (audioState.sensitivity / 100);
+      for (let i = 0; i < audioTargets.length; i++) {
+        const ctrl = audioTargets[i];
         const range = ctrl.max - ctrl.min;
-        const added = Math.min(scaled * range, range);
+        const weight = (ctrl as RangeCtrl & { audioWeight?: number }).audioWeight ?? 1.0;
+        const added = Math.min(scaled * range * weight, range * weight);
         effectiveVals[i] = Math.min(baseVals[i] + added, ctrl.max);
-        firstTwoRange[i].set(effectiveVals[i]);
+        audioTargets[i].set(effectiveVals[i]);
       }
 
       pattern.update(dt, elapsed);
@@ -159,7 +200,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
 
     dispose() {
       stopAudio();
-      for (let i = 0; i < firstTwoRange.length; i++) firstTwoRange[i].set(baseVals[i]);
+      for (let i = 0; i < audioTargets.length; i++) audioTargets[i].set(baseVals[i]);
       pattern.dispose();
     },
   };

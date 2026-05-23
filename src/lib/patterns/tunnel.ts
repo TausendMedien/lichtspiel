@@ -92,7 +92,7 @@ export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
   controls: [
-    { label: "Speed",       type: "range", min: -100, max: 100, step: 1, default: 10,    get: () => speed,         set: (v) => { speed = v; } },
+    { label: "Speed",       type: "range", min: -100, max: 100, step: 1, default: 10,    audioWeight: 0.3, get: () => speed,         set: (v) => { speed = v; } },
     { label: "Wobble",      type: "range", min: 0,    max: 1.0, step: 0.05, default: 0, get: () => wobble,        set: (v) => { wobble = v; } },
     { label: "Ring Count",  type: "range", min: 1,    max: 50,  step: 1, default: 42,    get: () => ringCount,     set: (v) => { ringCount = v; } },
     { label: "Thickness",   type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, get: () => lineThickness, set: (v) => { lineThickness = v; } },
