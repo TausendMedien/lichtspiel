@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -27,6 +28,8 @@ const fragmentShader = /* glsl */ `
   uniform float uWarpAmount;
   uniform int   uIterations;
   uniform int   uPalette;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   #define PI  3.14159265358979
   #define TAU 6.28318530717959
@@ -106,6 +109,8 @@ const fragmentShader = /* glsl */ `
 
     vec3 col = applyPalette(v);
 
+    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -134,6 +139,8 @@ export const warpedSurfaces: Pattern = {
         uWarpAmount: { value: warpAmount },
         uIterations: { value: warpIterations },
         uPalette:    { value: palette },
+        uColorsV2:   { value: colorC2.colorsV2 },
+        uMainColor:  { value: new THREE.Vector3() },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
     });
@@ -150,6 +157,9 @@ export const warpedSurfaces: Pattern = {
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uIterations.value = warpIterations;
     material.uniforms.uPalette.value    = palette;
+    const _mc = new THREE.Color(colorC2.main);
+    material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    material.uniforms.uColorsV2.value = colorC2.colorsV2;
   },
 
   resize(width: number, height: number) {

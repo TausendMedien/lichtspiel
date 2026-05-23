@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 // Controls state
 let threshold = 0.29;
@@ -98,6 +99,8 @@ const compositeFragmentShader = /* glsl */ `
   uniform float uBgMode;
   uniform float uDimLevel;
   uniform float uThreshold;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   void main() {
     vec4 trail = texture2D(uTrail, vUv);
@@ -114,6 +117,8 @@ const compositeFragmentShader = /* glsl */ `
     // Reinhard tone-map the accumulated trail so values above 1.0 (from HalfFloat
     // accumulation) compress gracefully rather than hard-clipping to white.
     vec3 toned = trail.rgb / (trail.rgb + 1.0);
+    float _luma = dot(toned, vec3(0.299, 0.587, 0.114));
+    toned = mix(uMainColor * _luma, toned, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(bg + toned, 0.0, 1.0), 1.0);
   }
 `;
@@ -270,6 +275,8 @@ export const lightTrail: Pattern = {
         uBgMode:    { value: bgMode },
         uDimLevel:  { value: dimLevel },
         uThreshold: { value: threshold },
+        uColorsV2:  { value: colorC2.colorsV2 },
+        uMainColor: { value: new THREE.Vector3() },
       },
       vertexShader,
       fragmentShader: compositeFragmentShader,
@@ -317,6 +324,9 @@ export const lightTrail: Pattern = {
     compositeMaterial.uniforms.uBgMode.value    = bgMode;
     compositeMaterial.uniforms.uDimLevel.value  = dimLevel;
     compositeMaterial.uniforms.uThreshold.value = threshold;
+    const _mc = new THREE.Color(colorC2.main);
+    compositeMaterial.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    compositeMaterial.uniforms.uColorsV2.value = colorC2.colorsV2;
   },
 
   resize(width, height) {

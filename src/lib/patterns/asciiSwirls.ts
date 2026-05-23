@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -82,6 +83,8 @@ const swirlFrag = /* glsl */ `
   uniform vec2  uResolution;
   uniform float uBandCount;
   uniform float uWarpAmount;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -112,6 +115,8 @@ const swirlFrag = /* glsl */ `
     vec3 dark   = vec3(0.0,0.0,0.03);
     vec3 col = dark + teal*tealMask + purple*purpleMask;
     col += vec3(0.85,0.95,0.9)*edge*0.18;
+    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -308,6 +313,8 @@ export const asciiSwirls: Pattern = {
         uResolution: { value: new THREE.Vector2(viewWidth, viewHeight) },
         uBandCount:  { value: bandCount },
         uWarpAmount: { value: warpAmount },
+        uColorsV2:   { value: colorC2.colorsV2 },
+        uMainColor:  { value: new THREE.Vector3() },
       },
       vertexShader: swirlVert,
       fragmentShader: swirlFrag,
@@ -359,6 +366,9 @@ export const asciiSwirls: Pattern = {
     swirlMat.uniforms.uTime.value       = accTime;
     swirlMat.uniforms.uBandCount.value  = bandCount;
     swirlMat.uniforms.uWarpAmount.value = warpAmount;
+    const _mc = new THREE.Color(colorC2.main);
+    swirlMat.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    swirlMat.uniforms.uColorsV2.value = colorC2.colorsV2;
     asciiMat.uniforms.uColorMode.value  = colorMode;
     asciiMat.uniforms.uCamBlend.value   = cameraMode && videoTex ? camBlend : 0.0;
 

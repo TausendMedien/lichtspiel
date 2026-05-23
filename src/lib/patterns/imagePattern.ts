@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Pattern, PatternContext } from './types';
 import { poseState } from '../pose';
 import { audioState } from '../globalAudioSettings.svelte';
+import { colorC2 } from '../colorC2.svelte';
 
 // ─── Vertex shader ────────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ const fragmentShader = /* glsl */`
   uniform float uPoseDistort;    // 0-1
   uniform vec2  uJoints[8];
   uniform float uFitMode;        // 0=cover, 1=fitWidth
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   varying vec2 vUv;
 
@@ -183,6 +186,8 @@ const fragmentShader = /* glsl */`
       col *= vig;
     }
 
+    float _luma2 = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma2, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -281,6 +286,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
           uPoseDistort:  { value: 0 },
           uJoints:       { value: joints },
           uFitMode:      { value: fitMode === 'fitWidth' ? 1.0 : 0.0 },
+          uColorsV2:     { value: colorC2.colorsV2 },
+          uMainColor:    { value: new THREE.Vector3() },
         },
         vertexShader,
         fragmentShader,
@@ -316,6 +323,11 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
       // Audio mic flash
       u.uAudioLevel.value = audioState.enabled ? audioState.level / 100 : 0;
+
+      // Colors v2
+      const _mc = new THREE.Color(colorC2.main);
+      u.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+      u.uColorsV2.value = colorC2.colorsV2;
 
       // Pose: parallax tilt + distort — all in rotated UV space so rotation doesn't affect direction
       if (poseState.active && poseState.persons.length > 0) {

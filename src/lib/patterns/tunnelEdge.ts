@@ -164,7 +164,7 @@ export const tunnelEdge: Pattern = {
     accTime    += dt * speed;
     colorPhase += dt * colorDrift * 0.1;
     _colorA.set(colorC2.main);
-    _colorB.set(colorC2.contrast);
+    _colorB.lerpColors(new THREE.Color(colorC2.main), new THREE.Color(colorC2.contrast), colorC2.colorsV2 / 3.0);
     // Motion → Colors v2: no movement = 3, full movement = 0
     if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnelEdge'] ?? true)) {
       colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);

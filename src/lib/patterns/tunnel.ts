@@ -33,6 +33,7 @@ const fragmentShader = /* glsl */ `
   uniform float uRingCount;
   uniform float uLineWidth;
   uniform float uColorPhase;
+  uniform float uColorSpread;
 
   vec3 hsl2rgb(float h, float s, float l) {
     vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -79,7 +80,7 @@ const fragmentShader = /* glsl */ `
     if (line < 0.01) discard;
 
     // Hue oscillates smoothly via sin() — no fract() wrap → no abrupt jumps.
-    float hue = 0.665 + sin(uColorPhase) * 0.165;
+    float hue = 0.665 + sin(uColorPhase) * 0.165 * (uColorSpread + 0.01);
     float lit = 0.55 + 0.15 * sin(uTime * 0.4 + depth * 0.2);
     vec3 col = hsl2rgb(hue, 1.0, lit);
 
@@ -112,7 +113,8 @@ export const tunnel: Pattern = {
         uWobble:     { value: wobble },
         uRingCount:  { value: ringCount },
         uLineWidth:  { value: lineThickness },
-        uColorPhase: { value: colorPhase },
+        uColorPhase:  { value: colorPhase },
+        uColorSpread: { value: colorC2.colorsV2 / 3.0 },
       },
       vertexShader,
       fragmentShader,
@@ -134,7 +136,8 @@ export const tunnel: Pattern = {
     material.uniforms.uWobble.value     = wobble;
     material.uniforms.uRingCount.value  = ringCount;
     material.uniforms.uLineWidth.value  = lineThickness;
-    material.uniforms.uColorPhase.value = colorPhase;
+    material.uniforms.uColorPhase.value  = colorPhase;
+    material.uniforms.uColorSpread.value = colorC2.colorsV2 / 3.0;
     // Motion → Colors v2: no movement = 3, full movement = 0
     if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnel'] ?? true)) {
       colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);

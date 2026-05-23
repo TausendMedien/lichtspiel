@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.SphereGeometry | null = null;
@@ -56,6 +57,8 @@ const fragmentShader = /* glsl */ `
   uniform float uAmplitude;
   uniform float uColorShift;
   uniform int   uPalette;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   vec3 blendPair(vec3 colA, vec3 colB, float blend) {
     vec3 dark = vec3(0.02, 0.04, 0.08);
@@ -88,6 +91,8 @@ const fragmentShader = /* glsl */ `
     float rim = 1.0 - abs(dot(vNorm, vec3(0.0, 0.0, 1.0)));
     col = mix(col, vec3(0.02, 0.04, 0.08), rim * rim * 0.4);
 
+    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -114,6 +119,8 @@ export const wavySphere: Pattern = {
         uAmplitude:  { value: amplitude },
         uColorShift: { value: colorShift },
         uPalette:    { value: palette },
+        uColorsV2:   { value: colorC2.colorsV2 },
+        uMainColor:  { value: new THREE.Vector3() },
       },
       vertexShader, fragmentShader,
       side: THREE.FrontSide,
@@ -141,6 +148,9 @@ export const wavySphere: Pattern = {
     material.uniforms.uAmplitude.value  = smoothedAmplitude;
     material.uniforms.uColorShift.value = colorShift;
     material.uniforms.uPalette.value    = palette;
+    const _mc = new THREE.Color(colorC2.main);
+    material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    material.uniforms.uColorsV2.value = colorC2.colorsV2;
     mesh.rotation.set(rotX, rotY, rotZ);
   },
 

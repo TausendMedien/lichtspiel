@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -42,6 +43,8 @@ const fragmentShader = /* glsl */ `
   uniform vec2  uPersonPoints[15];
   uniform int   uPersonCount;
   uniform float uBodyWarpStr;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -109,6 +112,8 @@ const fragmentShader = /* glsl */ `
       col += vec3(0.9, 1.0, 0.8) * exp(-nd * nd * 1.5) * 0.35;
     }
 
+    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -144,6 +149,8 @@ export const baroqueSwirlsBody: Pattern = {
         uPersonPoints: { value: personPoints },
         uPersonCount:  { value: 0 },
         uBodyWarpStr:  { value: bodyWarpStr },
+        uColorsV2:     { value: colorC2.colorsV2 },
+        uMainColor:    { value: new THREE.Vector3() },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
     });
@@ -182,6 +189,9 @@ export const baroqueSwirlsBody: Pattern = {
     material.uniforms.uRotAngle.value    = rotAngle;
     material.uniforms.uPersonCount.value = count;
     material.uniforms.uBodyWarpStr.value = bodyWarpStr;
+    const _mc = new THREE.Color(colorC2.main);
+    material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    material.uniforms.uColorsV2.value = colorC2.colorsV2;
   },
 
   resize(width: number, height: number) {

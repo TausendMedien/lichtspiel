@@ -18,8 +18,9 @@ let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
 
 // Track last-seen colors to detect changes and rebuild
-let _lastPrimary = "";
-let _lastGlow    = "";
+let _lastPrimary  = "";
+let _lastGlow     = "";
+let _lastColorsV2 = -1;
 
 let fontCache: ReturnType<FontLoader["parse"]> | null = null;
 const loader = new FontLoader();
@@ -31,9 +32,14 @@ function hexToColor(hex: string): THREE.Color {
 function buildText() {
   if (!scene || !fontCache) return;
   const primaryColor = colorC2.main;
-  const glowColor    = colorC2.contrast;
-  _lastPrimary = primaryColor;
-  _lastGlow    = glowColor;
+  const glowColor    = '#' + new THREE.Color().lerpColors(
+    new THREE.Color(colorC2.main),
+    new THREE.Color(colorC2.contrast),
+    colorC2.colorsV2 / 3.0
+  ).getHexString();
+  _lastPrimary  = colorC2.main;
+  _lastGlow     = colorC2.contrast;
+  _lastColorsV2 = colorC2.colorsV2;
 
   if (textGroup) {
     textGroup.traverse(obj => {
@@ -168,7 +174,7 @@ export const typography3d: Pattern = {
     if (!textGroup) return;
 
     // Rebuild if custom colors changed
-    if (colorC2.main !== _lastPrimary || colorC2.contrast !== _lastGlow) {
+    if (colorC2.main !== _lastPrimary || colorC2.contrast !== _lastGlow || colorC2.colorsV2 !== _lastColorsV2) {
       buildText();
     }
 
@@ -204,7 +210,8 @@ export const typography3d: Pattern = {
     scene = null;
     animTime = 0;
     rotLocked = false;
-    _lastPrimary = "";
-    _lastGlow    = "";
+    _lastPrimary  = "";
+    _lastGlow     = "";
+    _lastColorsV2 = -1;
   },
 };

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.SphereGeometry | null = null;
@@ -31,6 +32,8 @@ const fragmentShader = /* glsl */ `
   varying vec3 vWorldPos;
   varying vec3 vViewDir;
   uniform float uFresnel;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
@@ -73,6 +76,8 @@ const fragmentShader = /* glsl */ `
     float spec = pow(max(0.0, dot(reflect(-lightDir, vNormal), vViewDir)), 64.0);
     col += vec3(spec * 0.8);
 
+    float _luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(uMainColor * _luma, col, uColorsV2 / 3.0);
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -109,7 +114,9 @@ export const crystalGem: Pattern = {
     geometry = buildGeometry();
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uFresnel:    { value: fresnelStr },
+        uFresnel:   { value: fresnelStr },
+        uColorsV2:  { value: colorC2.colorsV2 },
+        uMainColor: { value: new THREE.Vector3() },
       },
       vertexShader, fragmentShader,
     });
@@ -127,7 +134,10 @@ export const crystalGem: Pattern = {
     rotX += dt * rotationSpeed * 0.1;
     rotZ += dt * rotationSpeed * 0.2;
     mesh.rotation.set(rotX, rotY, rotZ);
-    material.uniforms.uFresnel.value    = fresnelStr;
+    material.uniforms.uFresnel.value = fresnelStr;
+    const _mc = new THREE.Color(colorC2.main);
+    material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    material.uniforms.uColorsV2.value = colorC2.colorsV2;
   },
 
   resize(_width: number, _height: number) {},

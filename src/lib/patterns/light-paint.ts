@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 // Controls state
 let threshold = 0.29;
@@ -114,6 +115,8 @@ const compositeFragmentShader = /* glsl */ `
   uniform sampler2D uTrail;
   uniform sampler2D uLiveFrame;
   uniform float uGhost;
+  uniform float uColorsV2;
+  uniform vec3  uMainColor;
 
   void main() {
     vec3 trail = texture2D(uTrail, vUv).rgb;
@@ -123,6 +126,8 @@ const compositeFragmentShader = /* glsl */ `
     vec3 painting = trail / (trail + 1.0);
 
     vec3 out_ = mix(painting, live, uGhost);
+    float _luma = dot(out_, vec3(0.299, 0.587, 0.114));
+    out_ = mix(uMainColor * _luma, out_, uColorsV2 / 3.0);
     gl_FragColor = vec4(out_, 1.0);
   }
 `;
@@ -279,6 +284,8 @@ export const lightPaint: Pattern = {
         uTrail:     { value: trailA.texture },
         uLiveFrame: { value: blackTexture },
         uGhost:     { value: ghostOpacity },
+        uColorsV2:  { value: colorC2.colorsV2 },
+        uMainColor: { value: new THREE.Vector3() },
       },
       vertexShader,
       fragmentShader: compositeFragmentShader,
@@ -326,6 +333,9 @@ export const lightPaint: Pattern = {
     compositeMaterial.uniforms.uTrail.value     = trailA.texture;
     compositeMaterial.uniforms.uLiveFrame.value = liveTex;
     compositeMaterial.uniforms.uGhost.value     = ghostOpacity;
+    const _mc = new THREE.Color(colorC2.main);
+    compositeMaterial.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
+    compositeMaterial.uniforms.uColorsV2.value = colorC2.colorsV2;
   },
 
   resize(width, height) {
