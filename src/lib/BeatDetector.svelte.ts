@@ -58,8 +58,8 @@ export class BeatDetector {
   private rafId     : number                             = 0;
 
   // DSP state
-  private fftData     : Float32Array = new Float32Array(0);
-  private prevMag     : Float32Array = new Float32Array(0);
+  private fftData     : Uint8Array = new Uint8Array(0);
+  private prevMag     : Uint8Array = new Uint8Array(0);
   private odfHistory  : number[]     = [];
   private beatTs      : number[]     = [];
   private lastBeatTime: number       = -Infinity;
@@ -94,8 +94,8 @@ export class BeatDetector {
     // Do NOT connect to destination — we don't want to monitor the mic
 
     const binCount = this.analyser.frequencyBinCount;  // 1024
-    this.fftData = new Float32Array(binCount);
-    this.prevMag = new Float32Array(binCount);
+    this.fftData = new Uint8Array(binCount);
+    this.prevMag = new Uint8Array(binCount);
 
     // Compute band boundaries from actual sample rate
     const sr         = ctx.sampleRate;
@@ -113,7 +113,7 @@ export class BeatDetector {
     this.prevMag.fill(0);
 
     this.isRunning = true;
-    this._poll();
+    this.rafId = requestAnimationFrame(this._poll);
   }
 
   stop(): void {
@@ -135,7 +135,7 @@ export class BeatDetector {
     if (!this.analyser || !this.audioCtx) return;
 
     this.rafId = requestAnimationFrame(this._poll);
-    this.analyser.getByteFrequencyData(this.fftData as unknown as Uint8Array);
+    this.analyser.getByteFrequencyData(this.fftData);
 
     // Compute per-band spectral flux (half-wave rectified)
     const subFlux = this._bandFlux(this.subBassStart, this.subBassEnd);
