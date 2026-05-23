@@ -10,7 +10,7 @@ let material: THREE.ShaderMaterial | null = null;
 let speed      = 4.0;
 let rotSpeed   = 0.06;
 let ringCount  = 8;
-let edges      = 4;
+let edges      = 5;
 let ringOffset = 0.0;
 let wobble     = 0.0;
 let shadowWidth = 0.35;
@@ -127,7 +127,7 @@ export const tunnelEdge: Pattern = {
     { label: "Speed",        type: "range", min: -20,   max: 20,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
     { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, get: () => rotSpeed,     set: (v) => { rotSpeed = v; } },
     { label: "Ring Count",   type: "range", min: 2,     max: 20,   step: 1,    default: 8,    get: () => ringCount,    set: (v) => { ringCount = v; } },
-    { label: "Edges",        type: "range", min: 3,     max: 12,   step: 1,    default: 4,    get: () => edges,        set: (v) => { edges = v; } },
+    { label: "Edges",        type: "range", min: 3,     max: 12,   step: 1,    default: 5,    get: () => edges,        set: (v) => { edges = v; } },
     { label: "Ring Offset",  type: "range", min: -3.14, max: 3.14, step: 0.05, default: 0,    get: () => ringOffset,   set: (v) => { ringOffset = v; } },
     { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    get: () => wobble,       set: (v) => { wobble = v; } },
     { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, get: () => shadowWidth,  set: (v) => { shadowWidth = v; } },
