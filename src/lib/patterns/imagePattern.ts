@@ -317,20 +317,29 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       // Audio mic flash
       u.uAudioLevel.value = audioState.enabled ? audioState.level / 100 : 0;
 
-      // Pose: parallax tilt + distort
+      // Pose: parallax tilt + distort — all in rotated UV space so rotation doesn't affect direction
       if (poseState.active && poseState.persons.length > 0) {
         const person = poseState.persons[0];
         let cx = 0, cy = 0;
         for (const pt of person) { cx += pt.x; cy += pt.y; }
         if (person.length > 0) {
           cx /= person.length; cy /= person.length;
-          // Centroid offset from screen center drives parallax (±5% UV shift)
-          u.uParallaxShift.value.set((cx - 0.5) * 0.06, (cy - 0.5) * -0.06);
+          const dx = (cx - 0.5) * 0.06, dy = (cy - 0.5) * -0.06;
+          // Counter-rotate parallax so screen direction stays constant despite image rotation
+          if      (rotation === 1) u.uParallaxShift.value.set( dy, -dx);
+          else if (rotation === 2) u.uParallaxShift.value.set(-dx, -dy);
+          else if (rotation === 3) u.uParallaxShift.value.set(-dy,  dx);
+          else                     u.uParallaxShift.value.set( dx,  dy);
         }
-        // Copy up to 8 joint positions
+        // Copy up to 8 joint positions, transformed to rotated UV space
         for (let i = 0; i < 8; i++) {
           const pt = person[i];
-          joints[i].set(pt ? pt.x : 0, pt ? pt.y : 0);
+          if (!pt) { joints[i].set(0, 0); continue; }
+          let jx = pt.x, jy = pt.y;
+          if      (rotation === 1) { const t = jx; jx = 1 - jy; jy = t; }
+          else if (rotation === 2) { jx = 1 - jx; jy = 1 - jy; }
+          else if (rotation === 3) { const t = jy; jy = 1 - jx; jx = t; }
+          joints[i].set(jx, jy);
         }
         u.uPoseDistort.value = 1.0;
       } else {

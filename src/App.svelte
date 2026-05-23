@@ -1883,7 +1883,7 @@
                 >Colors v2</span>
                 <span class="text-xs text-white/50">{colorC2.colorsV2.toFixed(1)}</span>
               </div>
-              <input type="range" min={0} max={6} step={0.1}
+              <input type="range" min={0} max={3} step={0.1}
                 value={colorC2.colorsV2}
                 oninput={(e) => { colorC2.colorsV2 = parseFloat((e.target as HTMLInputElement).value); saveColorC2(); }}
                 class="w-full accent-white cursor-pointer" />
@@ -1922,6 +1922,11 @@
               onclick={() => {
                 interactiveOn = !interactiveOn;
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
+                if (!interactiveOn) {
+                  cameraState.motionEnabled = false;
+                  audioState.enabled = false;
+                  if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+                }
               }}
             >
               <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {interactiveOn ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
@@ -1930,7 +1935,7 @@
           </div>
 
           {#if !interactiveCollapsed}
-            <div class="flex flex-col gap-2.5 mt-1">
+            <div class="flex flex-col gap-2.5 mt-1 transition-opacity duration-200 {interactiveOn ? '' : 'opacity-40 pointer-events-none'}">
 
               <!-- Camera selection (for motion/pose/blend patterns) -->
               {#if patterns[index].motionReactive || patterns[index].usesPose || patterns[index].usesCameraBlend}
@@ -2031,7 +2036,14 @@
               <!-- Pose -->
               {#if patterns[index].usesPose}
                 <div class="flex items-center justify-between text-xs text-white/70">
-                  <span>Pose / Body</span>
+                  <span class="flex items-center gap-1.5">
+                    Pose
+                    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                    <span class="cursor-pointer select-none transition-colors {poseDebug ? 'text-white/70' : 'text-white/25 hover:text-white/50'}"
+                      onclick={() => { poseDebug = !poseDebug; }}
+                      title="Show pose skeleton overlay"
+                    >⬡</span>
+                  </span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {poseActive ? 'bg-white/70' : 'bg-white/20'}"

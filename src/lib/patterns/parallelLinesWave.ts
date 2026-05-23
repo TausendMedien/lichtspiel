@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -9,7 +10,6 @@ let lineCount = 59;
 let scrollSpeed = 0.02;
 let lineWidth = 0.14;
 let waveAmp = 0.015;
-let colorRange = 0.65;
 let colorSpeed = 1.0;
 let waveSpeed = 1.0;
 let rotateSpeed = 0.02;
@@ -104,7 +104,7 @@ export const parallelLinesWave: Pattern = {
         uLineWidth:   { value: lineWidth },
         uWaveAmp:     { value: waveAmp },
         uWaveSpeed:   { value: waveSpeed },
-        uColorRange:  { value: colorRange },
+        uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
       },
@@ -130,7 +130,7 @@ export const parallelLinesWave: Pattern = {
     material.uniforms.uLineWidth.value   = lineWidth;
     material.uniforms.uWaveAmp.value     = waveAmp;
     material.uniforms.uWaveSpeed.value   = waveSpeed;
-    material.uniforms.uColorRange.value  = colorRange;
+    material.uniforms.uColorRange.value  = colorC2.colorsV2;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uRotAngle.value    = rotAngle;
   },

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -12,7 +13,6 @@ let flowScale   = 3.1;
 let flowSpeed   = 0.02;
 let orbCount    = 16;
 let orbSize     = 0.060;
-let colorRange  = 0.40;
 let colorSpeed  = 0.05;
 let rotateSpeed = 0.0;
 let bodyTracking = true;
@@ -170,7 +170,7 @@ export const curlOrbsBody: Pattern = {
         uFlowScale:    { value: flowScale },
         uOrbCount:     { value: orbCount },
         uOrbSize:      { value: orbSize },
-        uColorRange:   { value: colorRange },
+        uColorRange:   { value: colorC2.colorsV2 },
         uColorPhase:   { value: colorPhase },
         uRotAngle:     { value: rotAngle },
         uPersonPoints: { value: personPoints },
@@ -211,7 +211,7 @@ export const curlOrbsBody: Pattern = {
     material.uniforms.uFlowScale.value  = flowScale;
     material.uniforms.uOrbCount.value   = orbCount;
     material.uniforms.uOrbSize.value    = orbSize;
-    material.uniforms.uColorRange.value = colorRange;
+    material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
     material.uniforms.uRotAngle.value   = rotAngle;
     material.uniforms.uPersonCount.value = count;

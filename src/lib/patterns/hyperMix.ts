@@ -1,14 +1,17 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 const BASE_COUNT = 40000;
+const _c1 = new THREE.Color();
+const _c2 = new THREE.Color();
 
 const params = {
   speed: 0.03,
   curlScale: 0.11,
   spread: 2.1,
   pointSize: 0.8,
-  blur: 0.50,        // 0 = hard circle, 1 = full soft glow
+  blur: 0.50,
   pointCount: 55000,
 };
 
@@ -198,14 +201,14 @@ export const hyperMix: Pattern = {
   controls: [
     {
       label: "Speed",
-      type: "range", min: 0.002, max: 0.6, step: 0.002,
+      type: "range", min: 0, max: 0.6, step: 0.005,
       default: 0.03,
       get: () => params.speed,
       set: (v) => { params.speed = v; },
     },
     {
       label: "Turbulence",
-      type: "range", min: 0.01, max: 0.50, step: 0.01,
+      type: "range", min: 0.01, max: 0.25, step: 0.01,
       default: 0.11,
       get: () => params.curlScale,
       set: (v) => { params.curlScale = v; if (material) material.uniforms.uCurlScale.value = v; },
@@ -219,17 +222,10 @@ export const hyperMix: Pattern = {
     },
     {
       label: "Point Size",
-      type: "range", min: 0.2, max: 12.0, step: 0.2,
+      type: "range", min: 0.2, max: 3.0, step: 0.1,
       default: 0.8,
       get: () => params.pointSize,
       set: (v) => { params.pointSize = v; if (material) material.uniforms.uPtSize.value = v; },
-    },
-    {
-      label: "Blur",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0.5,
-      get: () => params.blur,
-      set: (v) => { params.blur = v; if (material) material.uniforms.uBlur.value = 1.0 - v; },
     },
     {
       label: "Point Count",
@@ -283,8 +279,11 @@ export const hyperMix: Pattern = {
     if (!material) return;
     accTime += dt * params.speed;
     material.uniforms.uTime.value = accTime;
-    // Prevent overexposure when point count exceeds the base count.
     material.uniforms.uCountScale.value = Math.min(1.0, BASE_COUNT / params.pointCount);
+    _c1.set(colorC2.main);
+    _c2.set(colorC2.contrast);
+    material.uniforms.uColor1.value.copy(_c1);
+    material.uniforms.uColor2.value.lerpColors(_c1, _c2, colorC2.colorsV2 / 3.0);
   },
 
   resize() {},

@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 // Each line rendered as a screen-space quad (2 triangles) for real pixel-width control.
 // A second glow-points pass adds per-particle blur and size variation like Particle Field.
 
 let lineCount  = 1000;
 let flowSpeed  = 0.3;
-let colorRange = 1.0;
 let tailLength = 6.0;
 let lineWidth  = 4.0;  // pixels
 
@@ -250,7 +250,7 @@ export const particleLines: Pattern = {
         uTime:       { value: 0 },
         uLineWidth:  { value: lineWidth },
         uResolution: { value: new THREE.Vector2(vpWidth, vpHeight) },
-        uColorRange: { value: colorRange },
+        uColorRange: { value: colorC2.colorsV2 },
       },
       vertexShader:   lineVertShader,
       fragmentShader: lineFragShader,
@@ -264,7 +264,7 @@ export const particleLines: Pattern = {
       uniforms: {
         uTime:       { value: 0 },
         uSize:       { value: 10.0 },
-        uColorRange: { value: colorRange },
+        uColorRange: { value: colorC2.colorsV2 },
       },
       vertexShader:   glowVertShader,
       fragmentShader: glowFragShader,
@@ -287,10 +287,10 @@ export const particleLines: Pattern = {
 
     lineMat.uniforms.uTime.value       = accTime;
     lineMat.uniforms.uLineWidth.value  = lineWidth;
-    lineMat.uniforms.uColorRange.value = colorRange;
+    lineMat.uniforms.uColorRange.value = colorC2.colorsV2;
 
     glowMat.uniforms.uTime.value       = accTime;
-    glowMat.uniforms.uColorRange.value = colorRange;
+    glowMat.uniforms.uColorRange.value = colorC2.colorsV2;
   },
 
   resize(w: number, h: number) {

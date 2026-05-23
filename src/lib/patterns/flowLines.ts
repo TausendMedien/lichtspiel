@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -9,7 +10,6 @@ let lineCount  = 124;
 let flowSpeed  = 0.02;
 let warpAmount = 0.5;
 let lineWidth  = 0.45;
-let colorRange = 0.6;
 let colorSpeed = 0.0;
 let rotateSpeed = 0.01;
 
@@ -123,7 +123,7 @@ export const flowLines: Pattern = {
         uLineCount:   { value: lineCount },
         uWarpAmount:  { value: warpAmount },
         uLineWidth:   { value: lineWidth },
-        uColorRange:  { value: colorRange },
+        uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
       },
@@ -146,7 +146,7 @@ export const flowLines: Pattern = {
     material.uniforms.uLineCount.value  = lineCount;
     material.uniforms.uWarpAmount.value = warpAmount;
     material.uniforms.uLineWidth.value  = lineWidth;
-    material.uniforms.uColorRange.value = colorRange;
+    material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
     material.uniforms.uRotAngle.value   = rotAngle;
   },

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 const NUM_LINES        = 14;
 const POINTS_PER_LINE  = 64;
@@ -9,7 +10,6 @@ const GLOW_SEGMENTS    = 100;
 let rotationSpeed = 0.05;
 let wobble        = 0.30;
 let thickness     = 0.025;
-let colorRange    = 1.0;
 let saturation    = 1.0;
 let opacity       = 0.60;
 let glow          = 0.45;
@@ -71,7 +71,7 @@ export const lines3d: Pattern = {
       const seed       = i * 0.91;
       const basePoints = buildBasePoints(seed);
       const curve      = new THREE.CatmullRomCurve3(basePoints, true, "centripetal");
-      const hue        = 0.5 + (i / NUM_LINES * colorRange) * 0.5;
+      const hue        = 0.5 + (i / NUM_LINES * (colorC2.colorsV2 / 3.0)) * 0.5;
 
       const geometry = new THREE.TubeGeometry(curve, TUBE_SEGMENTS, thickness, 8, true);
       const L = Math.max(0.12, 0.5 - opacity * 0.32);
@@ -111,7 +111,7 @@ export const lines3d: Pattern = {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const hue  = 0.5 + (i / NUM_LINES * colorRange) * 0.5;
+      const hue  = 0.5 + (i / NUM_LINES * (colorC2.colorsV2 / 3.0)) * 0.5;
 
       const L = Math.max(0.12, 0.5 - opacity * 0.32);
       line.material.color.setHSL(hue, saturation, L);

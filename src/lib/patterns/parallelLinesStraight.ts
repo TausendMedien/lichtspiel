@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
+import { colorC2 } from "../colorC2.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -8,7 +9,6 @@ let material: THREE.ShaderMaterial | null = null;
 let lineCount = 47;
 let scrollSpeed = 0.06;
 let lineWidth = 0.19;
-let colorRange = 0.75;
 let colorSpeed = 0.0;
 let rotateSpeed = 0.02;
 
@@ -93,7 +93,7 @@ export const parallelLinesStraight: Pattern = {
         uResolution:  { value: new THREE.Vector2(ctx.size.width, ctx.size.height) },
         uLineCount:   { value: lineCount },
         uLineWidth:   { value: lineWidth },
-        uColorRange:  { value: colorRange },
+        uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
       },
@@ -117,7 +117,7 @@ export const parallelLinesStraight: Pattern = {
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uLineCount.value   = lineCount;
     material.uniforms.uLineWidth.value   = lineWidth;
-    material.uniforms.uColorRange.value  = colorRange;
+    material.uniforms.uColorRange.value  = colorC2.colorsV2;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uRotAngle.value    = rotAngle;
   },
