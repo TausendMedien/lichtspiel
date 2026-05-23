@@ -2147,25 +2147,32 @@
                         class="w-full accent-white pointer-events-none" />
                     </div>
                     <div class="flex items-center gap-2 pt-0.5">
-                      <span class="text-xs text-white/50">Beat</span>
-                      <div class="h-2 w-2 rounded-full flex-shrink-0"
-                        style="background: rgba(255,255,255,{audioState.beat / 100})"></div>
-                      <label class="ml-auto flex items-center gap-1.5 cursor-pointer select-none">
+                      <label class="flex items-center gap-1.5 cursor-pointer select-none">
                         <input type="checkbox" bind:checked={audioState.beatMode}
                           class="accent-white cursor-pointer" />
                         <span class="text-xs text-white/60">Beat mode</span>
                       </label>
                     </div>
-                    <div>
-                      <div class="mb-1 text-xs text-white/70">Beat Algorithm</div>
-                      <select
-                        value={audioState.beatAlgorithm}
-                        onchange={(e) => { audioState.beatAlgorithm = (e.target as HTMLSelectElement).value as 'flux' | 'energy'; }}
-                        class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                      >
-                        <option value="energy">Energy Ratio (bass band, music)</option>
-                        <option value="flux">Spectral Flux (multi-band)</option>
-                      </select>
+                    <div class="flex flex-col gap-1.5 pt-0.5">
+                      <div class="text-xs text-white/50">Beat detectors</div>
+                      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                      <div class="flex items-center gap-2 cursor-pointer" onclick={() => { audioState.energyEnabled = !audioState.energyEnabled; }}>
+                        <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.energyEnabled ? 'bg-white/60' : 'bg-white/20'}">
+                          <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {audioState.energyEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                        </div>
+                        <span class="text-xs text-white/70 flex-1">Energy Ratio</span>
+                        <div class="h-2 w-2 rounded-full flex-shrink-0 transition-none"
+                          style="background: rgba(255,255,255,{audioState.energyBeat / 100})"></div>
+                      </div>
+                      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                      <div class="flex items-center gap-2 cursor-pointer" onclick={() => { audioState.fluxEnabled = !audioState.fluxEnabled; }}>
+                        <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.fluxEnabled ? 'bg-white/60' : 'bg-white/20'}">
+                          <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {audioState.fluxEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                        </div>
+                        <span class="text-xs text-white/70 flex-1">Spectral Flux</span>
+                        <div class="h-2 w-2 rounded-full flex-shrink-0 transition-none"
+                          style="background: rgba(255,255,255,{audioState.fluxBeat / 100})"></div>
+                      </div>
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">

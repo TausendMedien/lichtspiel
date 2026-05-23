@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { audioState } from "../globalAudioSettings.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -177,6 +178,10 @@ export const tunnelEdge: Pattern = {
     // Motion → Colors v2: no movement = 3, full movement = 0
     if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnelEdge'] ?? true)) {
       colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);
+    }
+    // Beat → Colors v2: flash to 3 on each beat, decays to 0 between beats
+    if (audioState.enabled && (audioState.patternAudioEnabled['tunnelEdge'] ?? true)) {
+      colorC2.colorsV2 = parseFloat((audioState.beat / 100 * 3).toFixed(2));
     }
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uRotSpeed.value    = rotSpeed;
