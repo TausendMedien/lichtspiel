@@ -317,6 +317,9 @@
     doColorShuffle();
     colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
     colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
+    // Colors v2: power-curve bias — mostly high (2–3), rarely low
+    colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
+    saveColorC2();
     savePatternColor(patterns[index].id);
     saveSettings(patterns);
   }
@@ -555,6 +558,9 @@
     doColorShuffle();
     colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
     colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
+    // Colors v2: power-curve bias — mostly high (2–3), rarely low
+    colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
+    saveColorC2();
     savePatternColor(patterns[index].id);
     randomizeAnims = anims;
   }
