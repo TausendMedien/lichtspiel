@@ -141,8 +141,9 @@ export const tunnel: Pattern = {
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uColorSpread.value = colorC2.colorsV2;
     // Motion → Colors v2: no movement = 3, full movement = 0
-    if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnel'] ?? true)) {
-      colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);
+    // Power curve (^0.4) makes moderate motion levels produce a strong drop
+    if (cameraState.enabled && cameraState.motionEnabled && (cameraState.patternMotionEnabled['tunnel'] ?? true)) {
+      colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(cameraState.level / 100, 0.4))).toFixed(2));
     }
   },
 

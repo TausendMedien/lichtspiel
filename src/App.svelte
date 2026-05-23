@@ -1931,6 +1931,7 @@
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
                 if (!interactiveOn) {
                   cameraState.motionEnabled = false;
+                  cameraState.enabled = false;
                   audioState.enabled = false;
                   if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
                 }
