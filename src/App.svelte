@@ -2154,6 +2154,15 @@
                         <span class="text-xs text-white/60">Beat mode</span>
                       </label>
                     </div>
+                    <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Beat Threshold</span>
+                        <span class="font-mono text-white/40">{audioState.beatSensitivity.toFixed(1)}</span>
+                      </div>
+                      <input type="range" min={1.0} max={3.0} step={0.1}
+                        bind:value={audioState.beatSensitivity}
+                        class="w-full accent-white cursor-pointer" />
+                    </div>
                   </div>
                 {/if}
               {/if}

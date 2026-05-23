@@ -4,9 +4,14 @@
 // sensitivity, band, beat mode) come from the global Options menu via
 // globalAudioSettings.svelte.ts — no controls are added to the pattern's
 // own controls list.
+//
+// Beat detection is delegated to BeatDetector (multi-band spectral flux).
+// The wrapper keeps its own lightweight AnalyserNode solely for the
+// smoothed-level display in the HUD.
 
 import type { Pattern, PatternControl, PatternContext } from './patterns/types';
 import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
+import { BeatDetector } from './BeatDetector';
 
 
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -26,30 +31,25 @@ function getLevel(dataArray: Uint8Array, band: number): number {
 
 export { BAND_OPTIONS };
 
-// Beat detection constants
-const BEAT_HISTORY = 43;   // ~1.4s window at 30fps
-const BEAT_THRESHOLD = 1.5; // local energy must be this × average to count as a beat
-const BEAT_MIN_LEVEL = 0.10; // ignore beats in near-silence
-const BEAT_COOLDOWN_FRAMES = 8; // ~250ms lockout between beats
-const BEAT_DECAY = 0.82;   // beat pulse half-life ≈ 8 frames
+const BEAT_DECAY = 0.82;  // beat pulse half-life ≈ 8 frames at 30fps
 
 export function addAudioReactivity(pattern: Pattern): Pattern {
   let smoothed            = 0;
+  let beatPulse           = 0;
   let prevEnabled         = false;
   let prevDeviceId        = '';
   let prevPatternEnabled  = true;
 
-  // Beat detection state
-  const energyHist = new Float32Array(BEAT_HISTORY);
-  let histIdx      = 0;
-  let beatPulse    = 0;
-  let beatCooldown = 0;
-
+  // Lightweight analyser for smoothed-level display only
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
   let source: MediaStreamAudioSourceNode | null = null;
   let stream: MediaStream | null = null;
   let dataArray: Uint8Array | null = null;
+
+  // Multi-band spectral-flux beat detector
+  const beatDetector = new BeatDetector();
+  beatDetector.onBeat = () => { beatPulse = 1.0; };
 
   type RangeCtrl = PatternControl & { type: 'range' };
   const allRangeControls = (pattern.controls ?? []).filter((c): c is RangeCtrl => c.type === 'range');
@@ -87,6 +87,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
         video: false,
       };
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // Lightweight analyser for level display
       audioCtx = new AudioContext();
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
@@ -94,6 +96,11 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       dataArray = new Uint8Array(analyser.frequencyBinCount);
       source = audioCtx.createMediaStreamSource(stream);
       source.connect(analyser);
+
+      // Beat detector — gets same stream, manages its own AudioContext
+      beatDetector.sensitivity = audioState.beatSensitivity;
+      beatDetector.start(stream);
+
       await enumerateMicrophones();
     } catch (e) {
       console.warn('[audio] microphone access denied:', e);
@@ -102,6 +109,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   }
 
   function stopAudio() {
+    beatDetector.stop();
     source?.disconnect();
     analyser?.disconnect();
     audioCtx?.close();
@@ -151,36 +159,28 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       prevDeviceId       = nowDeviceId;
       prevPatternEnabled = nowPatternEnabled;
 
-      // Read audio level
-      let raw = 0;
+      // Keep beat detector sensitivity in sync with HUD slider
+      if (beatDetector.isRunning) {
+        beatDetector.sensitivity = audioState.beatSensitivity;
+      }
+
+      // Smoothed level (for level display and non-beat mode)
       if (analyser && dataArray) {
         analyser.getByteFrequencyData(dataArray);
-        raw = getLevel(dataArray, audioState.bandIndex);
+        const raw = getLevel(dataArray, audioState.bandIndex);
         smoothed = raw > smoothed
           ? 0.3 * smoothed + 0.7 * raw
           : 0.7 * smoothed + 0.3 * raw;
       }
       audioState.level = Math.round(smoothed * 100);
 
-      // Beat detection: compare instantaneous energy to rolling average
-      if (analyser && dataArray) {
-        const rawEnergy = raw * raw;
-        energyHist[histIdx] = rawEnergy;
-        histIdx = (histIdx + 1) % BEAT_HISTORY;
-        let avgEnergy = 0;
-        for (let i = 0; i < BEAT_HISTORY; i++) avgEnergy += energyHist[i];
-        avgEnergy /= BEAT_HISTORY;
-        const isBeat = rawEnergy > avgEnergy * BEAT_THRESHOLD && raw > BEAT_MIN_LEVEL && beatCooldown <= 0;
-        beatPulse = isBeat ? 1.0 : beatPulse * BEAT_DECAY;
-        if (isBeat) beatCooldown = BEAT_COOLDOWN_FRAMES;
-        if (beatCooldown > 0) beatCooldown--;
-      } else {
-        beatPulse = beatPulse * BEAT_DECAY;
-      }
+      // Beat pulse — set to 1.0 by beatDetector.onBeat callback, decays here
+      beatPulse *= BEAT_DECAY;
       audioState.beat = Math.round(beatPulse * 100);
 
       // Choose signal: beat pulse (sharp transient) or smoothed level (sustained)
-      const signal = (analyser && dataArray) ? (audioState.beatMode ? beatPulse : smoothed) : 0;
+      const active = analyser && dataArray;
+      const signal = active ? (audioState.beatMode ? beatPulse : smoothed) : 0;
 
       // Boost controls — respecting per-control audioWeight (default 1.0)
       const scaled = signal * (audioState.sensitivity / 100);
