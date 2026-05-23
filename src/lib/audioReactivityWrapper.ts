@@ -11,7 +11,7 @@
 
 import type { Pattern, PatternControl, PatternContext } from './patterns/types';
 import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
-import { BeatDetector } from './BeatDetector';
+import { BeatDetector } from './BeatDetector.svelte';
 
 
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
