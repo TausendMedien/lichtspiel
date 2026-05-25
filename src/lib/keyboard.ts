@@ -72,6 +72,7 @@ export function attachKeyboard(
         handler({ type: "resetToDefault" });
         e.preventDefault(); return;
       case "b": case "B":
+        if (e.repeat) { e.preventDefault(); return; }
         handler({ type: "randomize" });
         e.preventDefault(); return;
       case " ":

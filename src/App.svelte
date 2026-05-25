@@ -109,10 +109,13 @@
   // Demo mode
   let demoActive = $state(false);
   let demoDwell = $state(30);
+  let pedalDwell = $state(180);
   let demoPatternIds = $state<Set<string>>(new Set(patterns.map(p => p.id)));
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
+  let demoPointerVisible = $state(false);
+  let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Screenshot / recording toggles
   const SCREENSHOTS_ENABLED_KEY = 'pp:screenshots';
@@ -338,6 +341,12 @@
     hudTimer = setTimeout(() => (hudVisible = false), 5000);
   }
 
+  function demoPoke() {
+    demoPointerVisible = true;
+    if (demoPointerTimer) clearTimeout(demoPointerTimer);
+    demoPointerTimer = setTimeout(() => (demoPointerVisible = false), 3000);
+  }
+
   function switchTo(n: number): number {
     const i = ((n % patterns.length) + patterns.length) % patterns.length;
     handle?.setPattern(patterns[i]);
@@ -417,14 +426,14 @@
       appState = "active";
       poke();
     }
-    saveDemoSettings(true, demoDwell, [...demoPatternIds]);
+    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) clearTimeout(demoTimer);
     scheduleNext();
   }
 
   function stopDemo() {
     demoActive = false;
-    saveDemoSettings(false, demoDwell, [...demoPatternIds]);
+    saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
   }
 
@@ -494,7 +503,17 @@
       case "tap":              poke(); return;
       case "freeze":           applyFreeze();    return;
       case "blackout":         blackout = !blackout; poke(); return;
-      case "randomize":        startRandomize(performance.now()); return;
+      case "randomize":
+        if (demoActive) {
+          if (demoTimer) clearTimeout(demoTimer);
+          crossFadeTo(nextDemoIndex(index)).then(() => {
+            startRandomize(performance.now());
+            scheduleNext();
+          });
+        } else {
+          startRandomize(performance.now());
+        }
+        return;
       case "resetToDefault":   resetAllControls(); return;
       case "screenshot":       applyScreenshot(); return;
       case "toggleRecording":  recorder?.toggle(); return;
@@ -528,7 +547,8 @@
         case "demo":
           demoVisible = !demoVisible; poke(); break;
         case "escape":
-          focusedIndex = index; appState = "overview"; overlayHidden = false; break;
+          if (demoActive) { stopDemo(); poke(); } else { focusedIndex = index; appState = "overview"; overlayHidden = false; }
+          break;
       }
     } else {
       // preview
@@ -831,7 +851,17 @@
       case "resetToDefault":   resetAllControls(); break;
       case "screenshot":       applyScreenshot(); break;
       case "toggleRecording":  recorder?.toggle(); break;
-      case "randomize":        startRandomize(performance.now()); break;
+      case "randomize":
+        if (demoActive) {
+          if (demoTimer) clearTimeout(demoTimer);
+          crossFadeTo(nextDemoIndex(index)).then(() => {
+            startRandomize(performance.now());
+            scheduleNext();
+          });
+        } else {
+          startRandomize(performance.now());
+        }
+        break;
       case "toggleCamera":     toggleCamera(); break;
       case "toggleOverlay":
         if (hudVisible && !overlayHidden) { overlayHidden = true; }
@@ -862,6 +892,7 @@
     syncCtrlVals();
     const demo = loadDemoSettings(patterns.map(p => p.id));
     demoDwell = demo.demoDwell;
+    pedalDwell = demo.pedalDwell;
     // Exclude experimental patterns from demo by default when experimental is off
     const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
     demoPatternIds = new Set(filteredDemoIds);
@@ -1057,7 +1088,8 @@
         syncCtrlVals();
       }
     });
-    if (!isTouch) window.addEventListener("mousemove", poke);
+    function onMouseMove() { demoActive ? demoPoke() : poke(); }
+    if (!isTouch) window.addEventListener("mousemove", onMouseMove);
 
     return () => {
       cancelAnimationFrame(liveRaf);
@@ -1067,9 +1099,10 @@
       detachTouch();
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
-      if (!isTouch) window.removeEventListener("mousemove", poke);
+      if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
+      if (demoPointerTimer) clearTimeout(demoPointerTimer);
       recorder?.dispose();
       recorder = null;
       handle?.dispose();
@@ -1084,7 +1117,9 @@
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
   ontouchstart={() => {
     if (appState !== "overview") {
-      if (hudVisible && !overlayHidden) {
+      if (demoActive) {
+        demoPoke();
+      } else if (hudVisible && !overlayHidden) {
         hudVisible = false;
         if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
       }
@@ -1104,6 +1139,14 @@
     ontransitionend={() => { snapshotUrl = null; snapshotFading = false; }}
     alt=""
   />
+{/if}
+
+<!-- ─── Demo pointer dismiss button ──────────────────────────────────── -->
+{#if demoActive && demoPointerVisible}
+  <button
+    class="fixed top-4 right-4 z-[70] rounded-full bg-black/60 px-3 py-1.5 text-sm text-white/80 hover:bg-black/80 transition-colors cursor-pointer"
+    onclick={() => { stopDemo(); demoPointerVisible = false; poke(); }}
+  >✕</button>
 {/if}
 
 <!-- ─── Overview overlay ──────────────────────────────────────────────── -->
@@ -1193,7 +1236,7 @@
                     const next = new Set(demoPatternIds);
                     EXPERIMENTAL_IDS.forEach(id => next.delete(id));
                     demoPatternIds = next;
-                    saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]);
+                    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
                   }
                 }}
                 role="switch"
@@ -1558,9 +1601,28 @@
         </div>
         <input
           type="range" min={5} max={240} step={5} value={demoDwell}
-          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
+          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
           class="w-full accent-white cursor-pointer"
         />
+      </div>
+
+      <!-- Interactive features -->
+      <div class="mb-3">
+        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Interactive features</div>
+        <div class="flex gap-2">
+          <button
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.motionEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => { cameraState.motionEnabled = !cameraState.motionEnabled; }}
+          >Motion</button>
+          <button
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseState.active ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => togglePoseTracking()}
+          >Pose</button>
+          <button
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {audioState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => { audioState.enabled = !audioState.enabled; }}
+          >Audio</button>
+        </div>
       </div>
 
       <!-- Randomize toggle -->
@@ -1619,7 +1681,7 @@
               const next = new Set(demoPatternIds);
               if (enabled) { next.delete(p.id); } else { next.add(p.id); }
               demoPatternIds = next;
-              saveDemoSettings(demoActive, demoDwell, [...demoPatternIds]);
+              saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
             }}
           >
             <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>
