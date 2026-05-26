@@ -1721,10 +1721,10 @@
           >Audio</button>
         </div>
 
-        <!-- Device pickers — only shown when multiple devices are available -->
-        {#if cameraState.devices.length > 1 || audioState.devices.length > 1}
+        <!-- Device pickers — camera when Motion or Pose active, mic when Audio active -->
+        {#if (cameraState.motionEnabled || poseState.active) && cameraState.devices.length > 1 || audioState.enabled && audioState.devices.length > 1}
           <div class="mt-2.5 flex flex-col gap-2">
-            {#if cameraState.devices.length > 1}
+            {#if (cameraState.motionEnabled || poseState.active) && cameraState.devices.length > 1}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
                 <select
@@ -1739,7 +1739,7 @@
                 <button onclick={() => enumerateCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect cameras">↺</button>
               </div>
             {/if}
-            {#if audioState.devices.length > 1}
+            {#if audioState.enabled && audioState.devices.length > 1}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
                 <select
@@ -1753,10 +1753,6 @@
                 </select>
                 <button onclick={() => enumerateMicrophones()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect microphones">↺</button>
               </div>
-            {/if}
-            <!-- Detect button when no devices found yet -->
-            {#if cameraState.devices.length === 0 && audioState.devices.length === 0}
-              <button onclick={() => { enumerateCameras(); enumerateMicrophones(); }} class="text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer">Detect devices</button>
             {/if}
           </div>
         {/if}
