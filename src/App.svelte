@@ -117,6 +117,13 @@
   let demoPointerVisible = $state(false);
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Demo auto-restart after idle
+  const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
+  const DEMO_AUTORESTART_TIME_KEY = 'pp:demo-autorestart-time';
+  let demoAutoRestart = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_AUTORESTART_KEY) === 'true' : false);
+  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:30') : '00:30');
+  let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Screenshot / recording toggles
   const SCREENSHOTS_ENABLED_KEY = 'pp:screenshots';
   const RECORDINGS_ENABLED_KEY  = 'pp:recordings';
@@ -339,12 +346,32 @@
     overlayHidden = false;
     if (hudTimer) clearTimeout(hudTimer);
     hudTimer = setTimeout(() => (hudVisible = false), 5000);
+    scheduleAutoRestart(); // reset idle timer on any user interaction
   }
 
   function demoPoke() {
     demoPointerVisible = true;
     if (demoPointerTimer) clearTimeout(demoPointerTimer);
     demoPointerTimer = setTimeout(() => (demoPointerVisible = false), 3000);
+  }
+
+  function parseAutoRestartMs(): number {
+    const [hhStr, mmStr] = demoAutoRestartTime.split(':');
+    const hh = parseInt(hhStr ?? '0', 10) || 0;
+    const mm = parseInt(mmStr ?? '0', 10) || 0;
+    return (hh * 3600 + mm * 60) * 1000;
+  }
+
+  function scheduleAutoRestart() {
+    if (autoRestartTimer) { clearTimeout(autoRestartTimer); autoRestartTimer = null; }
+    if (!demoAutoRestart || demoActive) return;
+    const ms = parseAutoRestartMs();
+    if (ms <= 0) return;
+    autoRestartTimer = setTimeout(() => { autoRestartTimer = null; startDemo(); }, ms);
+  }
+
+  function cancelAutoRestart() {
+    if (autoRestartTimer) { clearTimeout(autoRestartTimer); autoRestartTimer = null; }
   }
 
   function switchTo(n: number): number {
@@ -421,6 +448,7 @@
 
   function startDemo() {
     demoActive = true;
+    cancelAutoRestart(); // stop any pending auto-restart countdown
     if (appState === "overview") {
       handle?.setPattern(patterns[index]);
       appState = "active";
@@ -435,6 +463,7 @@
     demoActive = false;
     saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    scheduleAutoRestart(); // begin idle countdown after demo stops
   }
 
   function resetDemoTimer() {
@@ -1103,6 +1132,7 @@
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
       if (demoPointerTimer) clearTimeout(demoPointerTimer);
+      if (autoRestartTimer) clearTimeout(autoRestartTimer);
       recorder?.dispose();
       recorder = null;
       handle?.dispose();
@@ -1400,6 +1430,67 @@
           class="cursor-pointer rounded px-2 py-0.5 text-xs text-white/50 hover:text-white/80 transition-colors"
           onclick={() => { optionsVisible = false; }}
         >✕</button>
+      </div>
+
+      <!-- Demo section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Demo</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-3">
+          <!-- Auto-restart toggle -->
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Auto-restart demo on idle</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoAutoRestart ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => {
+                demoAutoRestart = !demoAutoRestart;
+                localStorage.setItem(DEMO_AUTORESTART_KEY, String(demoAutoRestart));
+                scheduleAutoRestart();
+              }}
+              role="switch"
+              aria-checked={demoAutoRestart}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {demoAutoRestart ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <!-- Idle time input — only shown when toggle is on -->
+          {#if demoAutoRestart}
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-white/50">Idle time before restart</span>
+              <input
+                type="text"
+                value={demoAutoRestartTime}
+                placeholder="hh:mm"
+                maxlength={5}
+                oninput={(e) => {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  demoAutoRestartTime = v;
+                  if (/^\d{1,2}:\d{2}$/.test(v)) {
+                    localStorage.setItem(DEMO_AUTORESTART_TIME_KEY, v);
+                    scheduleAutoRestart();
+                  }
+                }}
+                onblur={(e) => {
+                  // Normalise to hh:mm on blur
+                  const raw = (e.target as HTMLInputElement).value.trim();
+                  const [hhStr, mmStr] = raw.split(':');
+                  const hh = Math.max(0, parseInt(hhStr ?? '0', 10) || 0);
+                  const mm = Math.min(59, Math.max(0, parseInt(mmStr ?? '0', 10) || 0));
+                  const normalised = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+                  demoAutoRestartTime = normalised;
+                  localStorage.setItem(DEMO_AUTORESTART_TIME_KEY, normalised);
+                  scheduleAutoRestart();
+                }}
+                class="w-16 rounded bg-white/10 px-2 py-0.5 font-mono text-xs text-white text-center outline-none placeholder-white/30 focus:bg-white/15"
+              />
+            </div>
+          {/if}
+        </div>
       </div>
 
       <!-- MIDI section -->
