@@ -116,6 +116,8 @@
   let snapshotFading = $state(false);
   let demoPointerVisible = $state(false);
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
+  const DEMO_HIDE_HUD_KEY = 'pp:demo-hide-hud';
+  let demoHideHud = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_HIDE_HUD_KEY) !== 'false' : true);
 
   // Demo auto-restart after idle
   const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
@@ -342,6 +344,7 @@
   }
 
   function poke() {
+    if (demoActive && demoHideHud) { scheduleAutoRestart(); return; } // HUD hidden in demo mode
     hudVisible = true;
     overlayHidden = false;
     if (hudTimer) clearTimeout(hudTimer);
@@ -452,8 +455,11 @@
     if (appState === "overview") {
       handle?.setPattern(patterns[index]);
       appState = "active";
-      poke();
     }
+    // Immediately hide HUD — don't make the user wait for the auto-hide timer
+    hudVisible = false;
+    if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
+    demoVisible = false; // close the demo modal
     saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) clearTimeout(demoTimer);
     scheduleNext();
@@ -1461,7 +1467,7 @@
           <!-- Idle time input — only shown when toggle is on -->
           {#if demoAutoRestart}
             <div class="flex items-center justify-between gap-3">
-              <span class="text-xs text-white/50">Idle time before restart</span>
+              <span class="text-xs text-white/50">Idle time before restart <span class="font-mono text-white/30">(hh:mm)</span></span>
               <input
                 type="text"
                 value={demoAutoRestartTime}
@@ -1716,15 +1722,27 @@
         </div>
       </div>
 
-      <!-- Randomize toggle -->
-      <div class="mb-4 flex items-center justify-between text-xs text-white/70">
-        <span>Randomize settings on pattern change</span>
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <div
-          class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoRandomize ? 'bg-white/70' : 'bg-white/20'}"
-          onclick={() => { demoRandomize = !demoRandomize; }}
-        >
-          <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomize ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+      <!-- Toggles: hide HUD + randomize -->
+      <div class="mb-4 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between text-xs text-white/70">
+          <span>Hide HUD in Demo Mode</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoHideHud ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => { demoHideHud = !demoHideHud; localStorage.setItem(DEMO_HIDE_HUD_KEY, String(demoHideHud)); }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoHideHud ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-white/70">
+          <span>Randomize settings on pattern change</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoRandomize ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => { demoRandomize = !demoRandomize; }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomize ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
         </div>
       </div>
 
