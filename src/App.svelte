@@ -118,6 +118,8 @@
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
   const DEMO_HIDE_HUD_KEY = 'pp:demo-hide-hud';
   let demoHideHud = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_HIDE_HUD_KEY) !== 'false' : true);
+  const DEMO_PEDAL_CHANGES_PATTERN_KEY = 'pp:demo-pedal-changes-pattern';
+  let demoPedalChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_PEDAL_CHANGES_PATTERN_KEY) !== 'false' : true);
 
   // Demo auto-restart after idle
   const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
@@ -557,11 +559,15 @@
       case "blackout":         blackout = !blackout; poke(); return;
       case "randomize":
         if (demoActive) {
-          if (demoTimer) clearTimeout(demoTimer);
-          crossFadeTo(nextDemoIndex(index)).then(() => {
+          if (demoPedalChangesPattern) {
+            if (demoTimer) clearTimeout(demoTimer);
+            crossFadeTo(nextDemoIndex(index)).then(() => {
+              startRandomize(performance.now());
+              scheduleNext();
+            });
+          } else {
             startRandomize(performance.now());
-            scheduleNext();
-          });
+          }
         } else {
           startRandomize(performance.now());
         }
@@ -914,11 +920,15 @@
       case "toggleRecording":  recorder?.toggle(); break;
       case "randomize":
         if (demoActive) {
-          if (demoTimer) clearTimeout(demoTimer);
-          crossFadeTo(nextDemoIndex(index)).then(() => {
+          if (demoPedalChangesPattern) {
+            if (demoTimer) clearTimeout(demoTimer);
+            crossFadeTo(nextDemoIndex(index)).then(() => {
+              startRandomize(performance.now());
+              scheduleNext();
+            });
+          } else {
             startRandomize(performance.now());
-            scheduleNext();
-          });
+          }
         } else {
           startRandomize(performance.now());
         }
@@ -1826,6 +1836,16 @@
             onclick={() => { demoRandomize = !demoRandomize; }}
           >
             <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomize ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-white/70">
+          <span>Pedal changes pattern <span class="text-white/30">(off = randomize only)</span></span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoPedalChangesPattern ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => { demoPedalChangesPattern = !demoPedalChangesPattern; localStorage.setItem(DEMO_PEDAL_CHANGES_PATTERN_KEY, String(demoPedalChangesPattern)); }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoPedalChangesPattern ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
           </div>
         </div>
       </div>
