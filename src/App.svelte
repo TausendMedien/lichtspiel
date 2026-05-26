@@ -1720,6 +1720,46 @@
             onclick={() => { audioState.enabled = !audioState.enabled; }}
           >Audio</button>
         </div>
+
+        <!-- Device pickers — only shown when multiple devices are available -->
+        {#if cameraState.devices.length > 1 || audioState.devices.length > 1}
+          <div class="mt-2.5 flex flex-col gap-2">
+            {#if cameraState.devices.length > 1}
+              <div class="flex items-center gap-2">
+                <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
+                <select
+                  value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
+                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = cameraState.devices[i]?.deviceId ?? ''; }}
+                  class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                >
+                  {#each cameraState.devices as d, i}
+                    <option value={i}>{d.label}</option>
+                  {/each}
+                </select>
+                <button onclick={() => enumerateCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect cameras">↺</button>
+              </div>
+            {/if}
+            {#if audioState.devices.length > 1}
+              <div class="flex items-center gap-2">
+                <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
+                <select
+                  value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
+                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
+                  class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                >
+                  {#each audioState.devices as d, i}
+                    <option value={i}>{d.label}</option>
+                  {/each}
+                </select>
+                <button onclick={() => enumerateMicrophones()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect microphones">↺</button>
+              </div>
+            {/if}
+            <!-- Detect button when no devices found yet -->
+            {#if cameraState.devices.length === 0 && audioState.devices.length === 0}
+              <button onclick={() => { enumerateCameras(); enumerateMicrophones(); }} class="text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer">Detect devices</button>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Toggles: hide HUD + randomize -->
