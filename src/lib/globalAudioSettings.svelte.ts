@@ -16,7 +16,7 @@ export const audioState = $state({
   beat:            0,     // 0–100 combined beat pulse (max of enabled detectors)
   energyBeat:      0,     // 0–100 beat pulse from Energy Ratio detector only
   fluxBeat:        0,     // 0–100 beat pulse from Spectral Flux detector only
-  beatMode:        false, // false=level-driven, true=beat-driven
+  beatMode:        true,  // false=level-driven, true=beat-driven
   beatSensitivity: 1.5,  // shared threshold multiplier for both detectors
   energyEnabled:   true,  // Energy Ratio detector on/off
   fluxEnabled:     true,  // Spectral Flux detector on/off

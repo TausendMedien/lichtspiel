@@ -19,8 +19,8 @@
   import { getSlots, saveSlot } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
-  import { cameraState, enumerateCameras } from "./lib/globalCameraSettings.svelte";
-  import { audioState, enumerateMicrophones } from "./lib/globalAudioSettings.svelte";
+  import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
+  import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
 
   // Camera/image patterns where Apply Colors defaults to OFF
@@ -206,7 +206,8 @@
         await startPoseTracking();
         poseActive = true;
         // Reflect that camera is now active in the Options panel
-        if (!cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); }
+        if (!cameraState.enabled) cameraState.enabled = true;
+        enumerateCameras(); // always refresh so camera picker appears
       } catch (e) {
         poseError = e instanceof Error ? e.message : "Camera access denied";
         poseActive = false;
@@ -1148,7 +1149,7 @@
         syncCtrlVals();
       }
     });
-    function onMouseMove() { demoActive ? demoPoke() : poke(); }
+    function onMouseMove() { (demoActive && demoHideHud) ? demoPoke() : poke(); }
     if (!isTouch) window.addEventListener("mousemove", onMouseMove);
 
     return () => {
@@ -1178,7 +1179,7 @@
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
   ontouchstart={() => {
     if (appState !== "overview") {
-      if (demoActive) {
+      if (demoActive && demoHideHud) {
         demoPoke();
       } else if (hudVisible && !overlayHidden) {
         hudVisible = false;
@@ -1734,7 +1735,17 @@
         <div class="flex gap-2">
           <button
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.motionEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
-            onclick={() => { const next = !cameraState.motionEnabled; cameraState.motionEnabled = next; if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); } }}
+            onclick={() => {
+              const next = !cameraState.motionEnabled;
+              cameraState.motionEnabled = next;
+              if (next) {
+                // Override any per-pattern disabled flags for all demo patterns
+                for (const p of patterns) { cameraState.patternMotionEnabled[p.id] = true; }
+                savePatternMotionEnabled();
+                if (!cameraState.enabled) cameraState.enabled = true;
+                enumerateCameras();
+              }
+            }}
           >Motion</button>
           <button
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
@@ -1743,7 +1754,15 @@
           >{poseLoading ? '…' : 'Pose'}</button>
           <button
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {audioState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
-            onclick={() => { audioState.enabled = !audioState.enabled; if (audioState.enabled) enumerateMicrophones(); }}
+            onclick={() => {
+              audioState.enabled = !audioState.enabled;
+              if (audioState.enabled) {
+                // Override any per-pattern disabled flags for all demo patterns
+                for (const p of patterns) { audioState.patternAudioEnabled[p.id] = true; }
+                savePatternAudioEnabled();
+                enumerateMicrophones();
+              }
+            }}
           >Audio</button>
         </div>
         {#if poseError}
