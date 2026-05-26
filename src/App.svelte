@@ -542,7 +542,17 @@
     // Global actions for active + preview
     switch (action.type) {
       case "tap":              poke(); return;
-      case "freeze":           if (!demoActive) applyFreeze(); return;
+      case "freeze":
+        applyFreeze();
+        if (demoActive) {
+          // Freeze pauses the demo timer; unfreeze resumes it
+          if (freezeAnim && freezeAnim.to === 0) {
+            if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+          } else {
+            scheduleNext();
+          }
+        }
+        return;
       case "blackout":         blackout = !blackout; poke(); return;
       case "randomize":
         if (demoActive) {
@@ -887,7 +897,16 @@
         index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; resetDemoTimer(); break;
       case "speedUp":          applySpeedUp();   break;
       case "speedDown":        applySpeedDown(); break;
-      case "freeze":           if (!demoActive) applyFreeze(); break;
+      case "freeze":
+        applyFreeze();
+        if (demoActive) {
+          if (freezeAnim && freezeAnim.to === 0) {
+            if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+          } else {
+            scheduleNext();
+          }
+        }
+        break;
       case "blackout":         blackout = !blackout; break;
       case "resetToDefault":   resetAllControls(); break;
       case "screenshot":       applyScreenshot(); break;
@@ -1718,7 +1737,7 @@
             onclick={() => { const next = !cameraState.motionEnabled; cameraState.motionEnabled = next; if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); } }}
           >Motion</button>
           <button
-            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseState.active ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => togglePoseTracking()}
             disabled={poseLoading}
           >{poseLoading ? '…' : 'Pose'}</button>
@@ -1732,9 +1751,9 @@
         {/if}
 
         <!-- Device pickers — camera when Motion or Pose active, mic when Audio active -->
-        {#if (cameraState.motionEnabled || poseState.active) && cameraState.devices.length > 1 || audioState.enabled && audioState.devices.length > 1}
+        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 1 || audioState.enabled && audioState.devices.length > 1}
           <div class="mt-2.5 flex flex-col gap-2">
-            {#if (cameraState.motionEnabled || poseState.active) && cameraState.devices.length > 1}
+            {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 1}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
                 <select
