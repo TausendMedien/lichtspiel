@@ -253,8 +253,9 @@
     !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose || patterns[index]?.usesCameraBlend)
   );
 
-  // Reset slider focus when pattern changes
+  // Reset slider focus when pattern changes or slider mode deactivates
   $effect(() => { const _ = index; sliderFocusIndex = 0; });
+  $effect(() => { if (!sliderModeActive) sliderFocusIndex = 0; });
 
   const displayPatterns = $derived(
     patterns.map((p, i) => ({ p, i }))
@@ -750,14 +751,6 @@
       screenshotFlash = true;
       setTimeout(() => { screenshotFlash = false; }, 800);
     }
-  }
-
-  function applyToggleRecording() {
-    if (!recordingsEnabled) return;
-    const c = handle?.getCanvas();
-    if (!c) return;
-    if (isRecording) { stopRecording(); isRecording = false; }
-    else             { startRecording(c); isRecording = true; }
   }
 
   function applyUndo() {

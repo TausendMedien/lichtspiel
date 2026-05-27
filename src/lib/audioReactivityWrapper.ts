@@ -102,7 +102,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       effectiveVals[idx] = baseVals[idx];
       return {
         ...ctrl,
-        get: () => (ctrl as RangeCtrl).get(),
+        get: () => effectiveVals[idx],
         set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
       } as RangeCtrl;
     }),

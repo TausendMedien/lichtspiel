@@ -288,12 +288,12 @@ export const particleLines: Pattern = {
 
   update(dt: number) {
     if (!lineMat || !glowMat) return;
+    accTime += dt * flowSpeed;
     if (needsRebuild) {
       needsRebuild = false;
       buildGeometry();
       return;
     }
-    accTime += dt * flowSpeed;
 
     lineMat.uniforms.uTime.value       = accTime;
     lineMat.uniforms.uLineWidth.value  = lineWidth;
