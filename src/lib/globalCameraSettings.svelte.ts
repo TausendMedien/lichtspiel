@@ -12,7 +12,12 @@ export const cameraState = $state({
   deviceId:       '',
   devices:        [] as DeviceInfo[],
   sensitivity:    50,
-  level:          0,
+  level:          0,      // 0–100 smoothed motion level
+  /** Motion direction: -1 = left/top, +1 = right/bottom. Updated by motionCameraWrapper. */
+  dirX:           0,
+  dirY:           0,
+  /** Sudden burst pulse 0–100. Spikes on quick gestures, decays fast. */
+  burst:          0,
   patternMotionEnabled: loadPatternMotionEnabled() as Record<string, boolean>,
 });
 

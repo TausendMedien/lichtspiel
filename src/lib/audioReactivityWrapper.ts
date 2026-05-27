@@ -1,13 +1,17 @@
 // Audio reactivity wrapper.
-// Wraps any Pattern and boosts selected range controls in proportion to
-// detected audio level or beat pulse. Both beat detectors run simultaneously;
-// each has an independent on/off flag in audioState. Their pulses are tracked
-// separately (energyBeat, fluxBeat) and combined into beat (max of both).
+// Wraps any Pattern and:
+//  1. Boosts selected range controls in proportion to detected audio level or
+//     beat pulse (existing behaviour, driven by audioControlLabels).
+//  2. Drives the Tier 1 universal Brightness: loud audio → brightnessMult > 1.0,
+//     written to interactionState.brightnessMult for the renderer to apply.
+//  3. Appends a Brightness sub-section to the existing "Interactions" section
+//     (or creates it if the motion wrapper wasn't applied to this pattern).
 
 import type { Pattern, PatternControl, PatternContext } from './patterns/types';
 import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
 import { BeatDetector } from './BeatDetector.svelte';
 import { EnergyBeatDetector } from './EnergyBeatDetector.svelte';
+import { interactionState, getPatternSettings, saveInteractionSettings } from './interactionState.svelte';
 
 
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -35,6 +39,35 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   let prevDeviceId       = '';
   let prevPatternEnabled = true;
 
+  // ── Brightness interaction controls ─────────────────────────────────────
+  function ps() { return getPatternSettings(pattern.id); }
+
+  // Only add the "Interactions" section header if the motion wrapper hasn't
+  // already added one (motion wrapper adds it for all motion-reactive patterns).
+  const hasInteractionsSeparator = (pattern.controls ?? []).some(
+    c => c.type === 'separator' && c.label === 'Interactions'
+  );
+
+  const brightnessControls: PatternControl[] = [
+    ...(hasInteractionsSeparator ? [] : [{
+      label: 'Interactions',
+      type:  'separator' as const,
+    }] as PatternControl[]),
+    {
+      label: 'Brightness',
+      type:  'toggle' as const,
+      get:   () => ps().brightnessEnabled,
+      set:   (v: boolean) => { ps().brightnessEnabled = v; saveInteractionSettings(); },
+    },
+    {
+      label: 'Brightness Gain',
+      type:  'range' as const,
+      min:   0, max: 2, step: 0.1, default: 1.0,
+      get:   () => ps().brightnessGain,
+      set:   (v: number) => { ps().brightnessGain = v; saveInteractionSettings(); },
+    },
+  ];
+
   // Lightweight analyser for smoothed-level display only
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
@@ -61,17 +94,20 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   const baseVals: number[]      = audioTargets.map(c => c.get());
   const effectiveVals: number[] = [...baseVals];
 
-  const wrappedControls: PatternControl[] = (pattern.controls ?? []).map((ctrl) => {
-    const idx = audioTargets.indexOf(ctrl as RangeCtrl);
-    if (idx === -1) return ctrl;
-    baseVals[idx] = (ctrl as RangeCtrl).get();
-    effectiveVals[idx] = baseVals[idx];
-    return {
-      ...ctrl,
-      get: () => (ctrl as RangeCtrl).get(),
-      set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
-    } as RangeCtrl;
-  });
+  const wrappedControls: PatternControl[] = [
+    ...(pattern.controls ?? []).map((ctrl) => {
+      const idx = audioTargets.indexOf(ctrl as RangeCtrl);
+      if (idx === -1) return ctrl;
+      baseVals[idx] = (ctrl as RangeCtrl).get();
+      effectiveVals[idx] = baseVals[idx];
+      return {
+        ...ctrl,
+        get: () => (ctrl as RangeCtrl).get(),
+        set: (v: number) => { baseVals[idx] = v; effectiveVals[idx] = v; },
+      } as RangeCtrl;
+    }),
+    ...brightnessControls,
+  ];
 
   async function startAudio() {
     stopAudio();
@@ -120,6 +156,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     audioState.beat       = 0;
     audioState.energyBeat = 0;
     audioState.fluxBeat   = 0;
+    interactionState.brightnessMult = 1.0;
     for (let i = 0; i < audioTargets.length; i++) {
       effectiveVals[i] = baseVals[i];
       audioTargets[i].set(baseVals[i]);
@@ -202,6 +239,18 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
         const added = Math.min(scaled * range * weight, range * weight);
         effectiveVals[i] = Math.min(baseVals[i] + added, ctrl.max);
         audioTargets[i].set(effectiveVals[i]);
+      }
+
+      // ── Tier 1: Universal Brightness (audio level → brighter) ────────────
+      const settings = getPatternSettings(pattern.id);
+      if (audioState.enabled && settings.brightnessEnabled) {
+        const gain = settings.brightnessGain;
+        const str  = interactionState.strength;
+        // Use smoothed level (not beat) for brightness — more sustained and less jarring
+        interactionState.brightnessMult = 1.0 + smoothed * gain * str * 1.5;
+      } else {
+        // Decay gently back to 1.0 when disabled or audio is off
+        interactionState.brightnessMult += (1.0 - interactionState.brightnessMult) * 0.1;
       }
 
       pattern.update(dt, elapsed);

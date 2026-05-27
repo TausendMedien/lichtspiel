@@ -22,6 +22,7 @@
   import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
+  import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
 
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
@@ -1711,6 +1712,59 @@
               {/if}
             </div>
           {/each}
+        </div>
+      </div>
+
+      <!-- Interactions section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Interactions</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-3">
+          <!-- Interaction Strength -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-white/70">Interaction Strength</span>
+              <span class="font-mono text-[11px] text-white/40">{interactionState.strength.toFixed(1)}</span>
+            </div>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={interactionState.strength}
+              oninput={(e) => { interactionState.strength = parseFloat((e.target as HTMLInputElement).value); saveInteractionSettings(); }}
+              class="w-full accent-white cursor-pointer"
+            />
+            <div class="mt-0.5 text-[10px] text-white/30">Scales all universal reactions (Brightness, Color v2, Speed)</div>
+          </div>
+          <!-- Presence Timeout -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-white/70">Idle Timeout</span>
+              <span class="font-mono text-[11px] text-white/40">{interactionState.presenceTimeoutSec.toFixed(0)} s</span>
+            </div>
+            <input
+              type="range" min={2} max={15} step={1}
+              value={interactionState.presenceTimeoutSec}
+              oninput={(e) => { interactionState.presenceTimeoutSec = parseFloat((e.target as HTMLInputElement).value); saveInteractionSettings(); }}
+              class="w-full accent-white cursor-pointer"
+            />
+            <div class="mt-0.5 text-[10px] text-white/30">Seconds of stillness before entering idle / Speed boost state</div>
+          </div>
+          <!-- Burst Threshold -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-white/70">Burst Threshold</span>
+              <span class="font-mono text-[11px] text-white/40">{interactionState.burstThreshold.toFixed(2)}</span>
+            </div>
+            <input
+              type="range" min={0.05} max={0.5} step={0.01}
+              value={interactionState.burstThreshold}
+              oninput={(e) => { interactionState.burstThreshold = parseFloat((e.target as HTMLInputElement).value); saveInteractionSettings(); }}
+              class="w-full accent-white cursor-pointer"
+            />
+            <div class="mt-0.5 text-[10px] text-white/30">How sharp a gesture spike needs to be to trigger a Burst flash</div>
+          </div>
         </div>
       </div>
 

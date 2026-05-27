@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
 import { colorC2, colorShuffle, getColorByIndex } from "./colorC2.svelte";
+import { interactionState } from "./interactionState.svelte";
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -193,7 +194,12 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     const dt = (now - last) / 1000;
     const elapsed = (now - start) / 1000;
     last = now;
-    current.update(dt * timeScale, elapsed);
+    // Tier 1: Speed universal — idle/stillness lets patterns drift slightly faster.
+    // idleAmount rises when no motion/audio is detected; speedMult > 1 nudges
+    // slow-moving patterns to keep them visually alive during pauses.
+    // Max idle boost is 1.5× at full idleAmount and strength 1.0.
+    const idleBoost = 1.0 + interactionState.idleAmount * interactionState.strength * 0.5;
+    current.update(dt * timeScale * idleBoost, elapsed);
 
     // Sync per-pattern colour assignment into post-process uniforms
     const [a0, a1, a2] = colorShuffle.assign;
@@ -204,7 +210,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     const [gR, gG, gB] = hexToRgb(getColorByIndex(a2));
     postUniforms.uGlow.value.set(gR, gG, gB);
     postUniforms.uSaturation.value   = colorShuffle.saturation;
-    postUniforms.uBrightness.value   = colorShuffle.brightness;
+    // Apply universal Brightness multiplier from audio on top of per-pattern brightness
+    postUniforms.uBrightness.value   = colorShuffle.brightness * interactionState.brightnessMult;
     postUniforms.uColorEnabled.value = colorShuffle.enabled ? 1.0 : 0.0;
 
     // Render scene → RT, then post → canvas

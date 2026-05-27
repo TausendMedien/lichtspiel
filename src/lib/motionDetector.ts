@@ -102,14 +102,22 @@ export class MotionCamera {
 // Pattern motion is spatially uniform (whole-frame flow); people create
 // localised blobs. Measure variance of per-cell motion vs mean — low variance
 // means uniform (pattern), high variance means patchy (people).
+//
+// Also computes dirX / dirY: weighted center-of-mass of the motion grid,
+// normalised to [-1, +1]. Free cost — cellMeans already exist.
 
 export class SpatialPatchinessDetector {
+  /** Last computed horizontal direction: -1 = left, +1 = right. */
+  dirX = 0;
+  /** Last computed vertical direction: -1 = top, +1 = bottom. */
+  dirY = 0;
+
   update(diff: Float32Array): number {
     const n = diff.length;
     let totalSum = 0;
     for (let i = 0; i < n; i++) totalSum += diff[i];
     const totalMean = totalSum / n;
-    if (totalMean < 0.002) return 0;
+    if (totalMean < 0.002) { this.dirX = 0; this.dirY = 0; return 0; }
 
     const cellW = (W / GRID_COLS) | 0;
     const cellH = (H / GRID_ROWS) | 0;
@@ -136,6 +144,27 @@ export class SpatialPatchinessDetector {
     const variance = varSum / numCells;
     // Normalise variance by mean² — gives patchiness independent of brightness
     const patchiness = variance / (totalMean * totalMean + 1e-6);
+
+    // ── Direction: weighted center-of-mass of cellMeans ─────────────────────
+    // Grid coordinates go 0..GRID_COLS-1 / 0..GRID_ROWS-1.
+    // Normalise to [-1, +1] around the center.
+    let wxSum = 0, wySum = 0, wSum = 0;
+    for (let gy = 0; gy < GRID_ROWS; gy++) {
+      for (let gx = 0; gx < GRID_COLS; gx++) {
+        const w = cellMeans[gy * GRID_COLS + gx];
+        wxSum += w * (gx / (GRID_COLS - 1) * 2 - 1);
+        wySum += w * (gy / (GRID_ROWS - 1) * 2 - 1);
+        wSum  += w;
+      }
+    }
+    if (wSum > 1e-6) {
+      this.dirX = Math.max(-1, Math.min(1, wxSum / wSum));
+      this.dirY = Math.max(-1, Math.min(1, wySum / wSum));
+    } else {
+      this.dirX = 0;
+      this.dirY = 0;
+    }
+
     // Require both motion and patchiness; scale to [0,1]
     return Math.min(totalMean * Math.min(patchiness, 1.0) * 8.0, 1.0);
   }

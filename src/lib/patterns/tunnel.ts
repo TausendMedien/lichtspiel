@@ -1,8 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
-import { cameraState } from "../globalCameraSettings.svelte";
-import { audioState } from "../globalAudioSettings.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -97,7 +95,7 @@ const fragmentShader = /* glsl */ `
 export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
-  motionControlLabels: [],          // motion drives colorC2.colorsV2, not these controls
+  motionControlLabels: [],          // no per-pattern slider boost; Tier 1 universals handle Color v2
   audioControlLabels:  ["Thickness"],
   controls: [
     { label: "Speed",       type: "range", min: -100, max: 100, step: 1, default: 10,    get: () => speed,         set: (v) => { speed = v; } },
@@ -141,14 +139,7 @@ export const tunnel: Pattern = {
     material.uniforms.uLineWidth.value  = lineThickness;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uColorSpread.value = colorC2.colorsV2;
-    // Motion → Colors v2: no movement = 3, full movement = 0
-    if (cameraState.enabled && cameraState.motionEnabled && (cameraState.patternMotionEnabled['tunnel'] ?? true)) {
-      colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(cameraState.level / 100, 0.4))).toFixed(2));
-    }
-    // Beat → Colors v2: flash to 3 on each beat, decays to 0 between beats
-    if (audioState.enabled && (audioState.patternAudioEnabled['tunnel'] ?? true)) {
-      colorC2.colorsV2 = parseFloat((audioState.beat / 100 * 3).toFixed(2));
-    }
+    // Color v2 is now driven universally by the motionCameraWrapper.
   },
 
   resize(width: number, height: number) {
