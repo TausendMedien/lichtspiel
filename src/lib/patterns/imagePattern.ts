@@ -31,6 +31,7 @@ const fragmentShader = /* glsl */`
   uniform float uChromaticAb;    // 0-1
   uniform float uEdgePulse;      // 0-1
   uniform float uAudioLevel;     // 0-1
+  uniform float uAudioBrightness; // 0-1, flash strength multiplier
   uniform vec2  uParallaxShift;  // from pose centroid
   uniform float uPoseDistort;    // 0-1
   uniform vec2  uJoints[8];
@@ -174,7 +175,7 @@ const fragmentShader = /* glsl */`
 
     // 14. Mic flash (luminance-masked brightness boost)
     if (uAudioLevel > 0.001) {
-      col += uAudioLevel * luma * 0.55;
+      col += uAudioLevel * luma * uAudioBrightness;
     }
 
     // 15. Vignette — Gaussian falloff; higher slider = extends further from corners inward.
@@ -221,6 +222,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
   let zoomBreathe  = 0.15;
   let ripple       = 0.05;
 
+  let audioFlash   = 0.55;
   let vignette     = 0.0;
   let motionOn     = true;
   let styleOn      = false;
@@ -240,7 +242,9 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     id,
     name,
     usesPose: true,
-    motionControlLabels: [],
+    motionReactive: true,
+    motionControlLabels: ['Drift', 'Ripple'],
+    audioControlLabels: ['Zoom Breathe'],
     colorDefaults: { saturation: 1.0, brightness: 1.20 },
     defaultCollapsedSections: [],
 
@@ -254,6 +258,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => drift,       set: v => { drift = v; } },
       { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
       { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.05, get: () => ripple,      set: v => { ripple = v; } },
+      { label: 'Brightness',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.55, get: () => audioFlash,  set: v => { audioFlash = v; } },
 
       // ── Style section ────────────────────────────────────────────────
       { label: 'Style', type: 'section', get: () => styleOn, set: (v: boolean) => { styleOn = v; } },
@@ -284,7 +289,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
           uRipple:       { value: ripple },
           uChromaticAb:  { value: chromaticAb },
           uEdgePulse:    { value: edgePulse },
-          uAudioLevel:   { value: 0 },
+          uAudioLevel:      { value: 0 },
+          uAudioBrightness: { value: audioFlash },
           uParallaxShift: { value: new THREE.Vector2(0, 0) },
           uPoseDistort:  { value: 0 },
           uJoints:       { value: joints },
@@ -325,7 +331,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       u.uEdgePulse.value     = styleOn  ? edgePulse   : 0;
 
       // Audio mic flash
-      u.uAudioLevel.value = audioState.enabled ? audioState.level / 100 : 0;
+      u.uAudioLevel.value      = audioState.enabled ? audioState.level / 100 : 0;
+      u.uAudioBrightness.value = audioFlash;
 
       // Colors v2
       const _mc = new THREE.Color(colorC2.main);

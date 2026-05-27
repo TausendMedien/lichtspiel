@@ -36,13 +36,10 @@ const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals',
 // Patterns that must NOT get the generic motion camera wrapper:
 // - lightTrail / lightPaint  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
-// - image patterns  (handle their own pose/audio directly)
-const NO_MOTION_CAMERA = new Set(['lightTrail', 'lightPaint', 'asciiSwirls', 'typography3d',
-  'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals']);
+const NO_MOTION_CAMERA = new Set(['lightTrail', 'lightPaint', 'asciiSwirls', 'typography3d']);
 
-// Patterns that skip audio reactivity wrapping (camera-based patterns, image patterns handle audio directly)
-const NO_AUDIO = new Set(['lightTrail', 'lightPaint', 'typography3d',
-  'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals']);
+// Patterns that skip audio reactivity wrapping (camera-based patterns)
+const NO_AUDIO = new Set(['lightTrail', 'lightPaint', 'typography3d']);
 
 const rawPatterns: Pattern[] = [
   hyperMix,

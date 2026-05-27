@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { createRenderer, type RendererHandle } from "./lib/renderer";
   import { attachKeyboard, type KeyAction } from "./lib/keyboard";
@@ -291,12 +291,14 @@
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
         : true;
-      // Enforce camera/audio/pose based on the incoming pattern's interactive state
-      if (!interactiveOn) {
+      // Enforce camera/audio/pose based on the incoming pattern's interactive state.
+      // Skip in demo mode — Demo Options manages these features independently.
+      if (!interactiveOn && !demoActive) {
         cameraState.motionEnabled = false;
         cameraState.enabled = false;
         audioState.enabled = false;
-        if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+        // Use untrack so poseActive changes don't re-trigger this effect.
+        if (untrack(() => poseActive)) { stopPoseTracking(); poseActive = false; poseError = null; }
       }
     }
   });
