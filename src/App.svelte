@@ -444,10 +444,10 @@
     return n;
   }
 
-  function nextDemoIndex(from: number): number {
+  function nextDemoIndex(from: number, delta: 1 | -1 = 1): number {
     const count = patterns.length;
     for (let i = 1; i <= count; i++) {
-      const next = (from + i) % count;
+      const next = ((from + delta * i) % count + count) % count;
       const id = patterns[next].id;
       if (demoPatternIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
     }
@@ -630,9 +630,13 @@
     if (appState === "active") {
       switch (action.type) {
         case "next":
-          index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          if (demoActive) { crossFadeTo(nextDemoIndex(index, 1)).then(() => resetDemoTimer()); }
+          else { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          break;
         case "prev":
-          index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          if (demoActive) { crossFadeTo(nextDemoIndex(index, -1)).then(() => resetDemoTimer()); }
+          else { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          break;
         case "jump":
           if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
           break;
@@ -648,9 +652,13 @@
       // preview
       switch (action.type) {
         case "next":
-          index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          if (demoActive) { crossFadeTo(nextDemoIndex(index, 1)).then(() => resetDemoTimer()); }
+          else { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          break;
         case "prev":
-          index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); break;
+          if (demoActive) { crossFadeTo(nextDemoIndex(index, -1)).then(() => resetDemoTimer()); }
+          else { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          break;
         case "jump":
           if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
           break;
@@ -935,9 +943,13 @@
 
     switch (action.type) {
       case "next":
-        index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; resetDemoTimer(); break;
+        if (demoActive) { crossFadeTo(nextDemoIndex(index, 1)).then(() => resetDemoTimer()); }
+        else { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; resetDemoTimer(); }
+        break;
       case "prev":
-        index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; resetDemoTimer(); break;
+        if (demoActive) { crossFadeTo(nextDemoIndex(index, -1)).then(() => resetDemoTimer()); }
+        else { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; resetDemoTimer(); }
+        break;
       case "speedUp":          applySpeedUp();   break;
       case "speedDown":        applySpeedDown(); break;
       case "freeze":
