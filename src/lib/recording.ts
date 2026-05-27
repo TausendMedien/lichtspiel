@@ -48,11 +48,8 @@ export function createRecorder(
       const blob = new Blob(chunks, { type: mr.mimeType || chosen.mime });
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `Lichtspiel-${timestamp}.${chosen.ext}`;
-      const file = new File([blob], filename, { type: blob.type });
-      if (navigator.canShare?.({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'Lichtspiel' }); }
-        catch { /* user cancelled share or share failed — no download fallback */ }
-      } else {
+
+      function downloadBlob() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -62,6 +59,14 @@ export function createRecorder(
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+
+      const file = new File([blob], filename, { type: blob.type });
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'Lichtspiel' }); }
+        catch { downloadBlob(); }
+      } else {
+        downloadBlob();
       }
       chunks = [];
       mediaRecorder = null;

@@ -19,8 +19,62 @@ let glowMat:  THREE.ShaderMaterial | null = null;
 let camera:   THREE.PerspectiveCamera | null = null;
 let sceneRef: THREE.Scene | null = null;
 let accTime = 0;
-let needsRebuild = false;
+let needsRebuild    = false;
+let needsTailUpdate = false;
 let vpWidth = 1, vpHeight = 1;
+
+// ─── Persistent line store ────────────────────────────────────────────────────
+// Stores stable per-line head positions and tail directions so that changing
+// Line Count only adds/removes lines from the end, and changing Tail Length
+// only slides the tail endpoints — neither scrambles the whole image.
+interface LineEntry {
+  hx: number; hy: number; hz: number;  // head position
+  tdx: number; tdy: number; tdz: number; // tail direction (unscaled, multiply by tailLength)
+  hs: number;  // head seed
+}
+let lineStore: LineEntry[] = [];
+let posAttr:      THREE.BufferAttribute | null = null;
+let otherPosAttr: THREE.BufferAttribute | null = null;
+
+function ensureStore(N: number) {
+  while (lineStore.length < N) {
+    const r     = Math.cbrt(Math.random()) * 4;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    lineStore.push({
+      hx:  r * Math.sin(phi) * Math.cos(theta),
+      hy:  r * Math.sin(phi) * Math.sin(theta),
+      hz:  r * Math.cos(phi),
+      tdx: Math.random() - 0.5,
+      tdy: Math.random() - 0.5,
+      tdz: Math.random() - 0.5,
+      hs:  Math.random(),
+    });
+  }
+}
+
+// Update only position/otherPos when tailLength changes (seeds/sides/indices unchanged).
+function updateTailPositions() {
+  if (!posAttr || !otherPosAttr) return;
+  const N = Math.round(lineCount);
+  const positions = posAttr.array as Float32Array;
+  const otherPos  = otherPosAttr.array as Float32Array;
+  for (let i = 0; i < N; i++) {
+    const { hx, hy, hz, tdx, tdy, tdz } = lineStore[i];
+    const tx = hx + tdx * tailLength;
+    const ty = hy + tdy * tailLength;
+    const tz = hz + tdz * tailLength;
+    const b = i * 4;
+    // HL, HR: position = head (stable), otherPos = tail (changes)
+    otherPos[b*3]=tx;     otherPos[b*3+1]=ty;     otherPos[b*3+2]=tz;
+    otherPos[(b+1)*3]=tx; otherPos[(b+1)*3+1]=ty; otherPos[(b+1)*3+2]=tz;
+    // TL, TR: position = tail (changes), otherPos = head (stable)
+    positions[(b+2)*3]=tx; positions[(b+2)*3+1]=ty; positions[(b+2)*3+2]=tz;
+    positions[(b+3)*3]=tx; positions[(b+3)*3+1]=ty; positions[(b+3)*3+2]=tz;
+  }
+  posAttr.needsUpdate      = true;
+  otherPosAttr.needsUpdate = true;
+}
 
 // ─── Shared flow field ────────────────────────────────────────────────────────
 const FLOW_GLSL = /* glsl */ `
@@ -40,10 +94,6 @@ const FLOW_GLSL = /* glsl */ `
 `;
 
 // ─── Fat line shaders ─────────────────────────────────────────────────────────
-// Each vertex knows its own base position and the other endpoint's base position.
-// Both are animated in the vertex shader so the quad stays aligned with the
-// animated line direction. The perpendicular offset is computed in screen space
-// so lineWidth means actual pixels regardless of depth.
 const lineVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uLineWidth;
@@ -65,13 +115,11 @@ const lineVertShader = /* glsl */ `
     vec4 clipThis  = projectionMatrix * modelViewMatrix * vec4(thisWorld,  1.0);
     vec4 clipOther = projectionMatrix * modelViewMatrix * vec4(otherWorld, 1.0);
 
-    // Direction in NDC → pixel space (so aspect ratio is handled correctly)
     vec2 ndcDir = (clipOther.xy / clipOther.w) - (clipThis.xy / clipThis.w);
     vec2 pxDir  = vec2(ndcDir.x * uResolution.x, ndcDir.y * uResolution.y);
     if (length(pxDir) < 0.0001) pxDir = vec2(0.0, 1.0);
     pxDir = normalize(pxDir);
 
-    // Perpendicular in pixel space → back to NDC → clip space offset
     vec2 pxPerp  = vec2(-pxDir.y, pxDir.x);
     vec2 ndcPerp = vec2(pxPerp.x / uResolution.x, pxPerp.y / uResolution.y);
     vec2 offset  = ndcPerp * uLineWidth * aSide * clipThis.w;
@@ -83,6 +131,7 @@ const lineVertShader = /* glsl */ `
 
 const lineFragShader = /* glsl */ `
   uniform float uColorRange;
+  uniform float uLineOpacity;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -95,13 +144,11 @@ const lineFragShader = /* glsl */ `
     float _spread = max(0.0, uColorRange - 1.0) / 2.0;
     float hue = 0.5 + fract(vSeed * _spread) * 0.33;
     vec3  col = hsl2rgb(hue, _sat, 0.6);
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, uLineOpacity);
   }
 `;
 
 // ─── Glow-point shaders ───────────────────────────────────────────────────────
-// One soft radial point per line-head. Size varies per seed (like Particle Field)
-// giving the "blurry, different sizes" look.
 const glowVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uSize;
@@ -115,7 +162,6 @@ const glowVertShader = /* glsl */ `
     vec3 p  = _animPt(position, aSeed, uTime);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    // Vary size per particle using seed so each line-head looks different
     float sizeVar = 0.5 + fract(aSeed * 7.317) * 1.5;
     gl_PointSize  = uSize * sizeVar * (6.0 / -mv.z);
   }
@@ -123,6 +169,7 @@ const glowVertShader = /* glsl */ `
 
 const glowFragShader = /* glsl */ `
   uniform float uColorRange;
+  uniform float uLineOpacity;
   varying float vSeed;
 
   vec3 hsl2rgb(float h, float s, float l) {
@@ -134,7 +181,7 @@ const glowFragShader = /* glsl */ `
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
     if (d > 0.5) discard;
-    float alpha = smoothstep(0.5, 0.0, d) * 0.45;
+    float alpha = smoothstep(0.5, 0.0, d) * 0.45 * uLineOpacity;
 
     float _sat    = clamp(uColorRange, 0.0, 1.0);
     float _spread = max(0.0, uColorRange - 1.0) / 2.0;
@@ -146,12 +193,14 @@ const glowFragShader = /* glsl */ `
 
 // ─── Geometry builder ─────────────────────────────────────────────────────────
 function buildGeometry() {
-  if (lineMesh  && sceneRef) sceneRef.remove(lineMesh);
+  if (lineMesh   && sceneRef) sceneRef.remove(lineMesh);
   if (glowPoints && sceneRef) sceneRef.remove(glowPoints);
   lineGeo?.dispose();
   glowGeo?.dispose();
 
   const N = Math.round(lineCount);
+  ensureStore(N);
+
   // 4 vertices per line (HL, HR, TL, TR), 6 indices per line
   const positions  = new Float32Array(N * 4 * 3);
   const otherPos   = new Float32Array(N * 4 * 3);
@@ -165,18 +214,12 @@ function buildGeometry() {
   const glowSeeds     = new Float32Array(N);
 
   for (let i = 0; i < N; i++) {
-    const r     = Math.cbrt(Math.random()) * 4;
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    const hx = r * Math.sin(phi) * Math.cos(theta);
-    const hy = r * Math.sin(phi) * Math.sin(theta);
-    const hz = r * Math.cos(phi);
-    const headSeed = Math.random();
-
-    const tx = hx + (Math.random() - 0.5) * tailLength;
-    const ty = hy + (Math.random() - 0.5) * tailLength;
-    const tz = hz + (Math.random() - 0.5) * tailLength;
-    const tailSeed = headSeed + 0.0001;
+    const { hx, hy, hz, tdx, tdy, tdz, hs } = lineStore[i];
+    const tx = hx + tdx * tailLength;
+    const ty = hy + tdy * tailLength;
+    const tz = hz + tdz * tailLength;
+    const headSeed = hs;
+    const tailSeed = hs + 0.0001;
 
     // Layout: base=i*4  → HL(+0), HR(+1), TL(+2), TR(+3)
     const b = i * 4;
@@ -207,9 +250,12 @@ function buildGeometry() {
     glowSeeds[i]=headSeed;
   }
 
+  posAttr      = new THREE.BufferAttribute(positions, 3);
+  otherPosAttr = new THREE.BufferAttribute(otherPos,  3);
+
   lineGeo = new THREE.BufferGeometry();
-  lineGeo.setAttribute("position",   new THREE.BufferAttribute(positions,  3));
-  lineGeo.setAttribute("aOtherPos",  new THREE.BufferAttribute(otherPos,   3));
+  lineGeo.setAttribute("position",   posAttr);
+  lineGeo.setAttribute("aOtherPos",  otherPosAttr);
   lineGeo.setAttribute("aSeed",      new THREE.BufferAttribute(seeds,      1));
   lineGeo.setAttribute("aOtherSeed", new THREE.BufferAttribute(otherSeeds, 1));
   lineGeo.setAttribute("aSide",      new THREE.BufferAttribute(sides,      1));
@@ -238,7 +284,7 @@ export const particleLines: Pattern = {
     { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.3,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
     { label: "Line Width",  type: "range", min: 1.5,  max: 14.0, step: 0.5,  default: 4.0,  get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
-    { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  get: () => tailLength, set: (v) => { tailLength = v; needsRebuild = true; } },
+    { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  get: () => tailLength, set: (v) => { tailLength = v; needsTailUpdate = true; } },
     // Hidden control — used by audio wrapper only, not shown in UI
     { label: "Colors v2", type: "range", min: 0, max: 3, step: 0.1, default: 3,
       interactive: 'internal' as const,
@@ -253,14 +299,16 @@ export const particleLines: Pattern = {
     vpHeight = ctx.size.height;
     camera.position.set(0, 0, 4);
     camera.lookAt(0, 0, 0);
-    needsRebuild = false;
+    needsRebuild    = false;
+    needsTailUpdate = false;
 
     lineMat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:       { value: 0 },
-        uLineWidth:  { value: lineWidth },
-        uResolution: { value: new THREE.Vector2(vpWidth, vpHeight) },
-        uColorRange: { value: colorC2.colorsV2 },
+        uTime:        { value: 0 },
+        uLineWidth:   { value: lineWidth },
+        uResolution:  { value: new THREE.Vector2(vpWidth, vpHeight) },
+        uColorRange:  { value: colorC2.colorsV2 },
+        uLineOpacity: { value: 1.0 },
       },
       vertexShader:   lineVertShader,
       fragmentShader: lineFragShader,
@@ -272,9 +320,10 @@ export const particleLines: Pattern = {
 
     glowMat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:       { value: 0 },
-        uSize:       { value: 10.0 },
-        uColorRange: { value: colorC2.colorsV2 },
+        uTime:        { value: 0 },
+        uSize:        { value: 10.0 },
+        uColorRange:  { value: colorC2.colorsV2 },
+        uLineOpacity: { value: 1.0 },
       },
       vertexShader:   glowVertShader,
       fragmentShader: glowFragShader,
@@ -290,17 +339,28 @@ export const particleLines: Pattern = {
     if (!lineMat || !glowMat) return;
     accTime += dt * flowSpeed;
     if (needsRebuild) {
-      needsRebuild = false;
+      needsRebuild    = false;
+      needsTailUpdate = false;
       buildGeometry();
       return;
     }
+    if (needsTailUpdate) {
+      needsTailUpdate = false;
+      updateTailPositions();
+    }
 
-    lineMat.uniforms.uTime.value       = accTime;
-    lineMat.uniforms.uLineWidth.value  = lineWidth;
-    lineMat.uniforms.uColorRange.value = colorC2.colorsV2;
+    // Auto-scale opacity so dense/wide configurations don't saturate to white.
+    // Formula keeps total perceived brightness roughly constant across lineCount × lineWidth.
+    const autoOpacity = Math.min(1.0, 4400 / (lineCount * lineWidth));
 
-    glowMat.uniforms.uTime.value       = accTime;
-    glowMat.uniforms.uColorRange.value = colorC2.colorsV2;
+    lineMat.uniforms.uTime.value        = accTime;
+    lineMat.uniforms.uLineWidth.value   = lineWidth;
+    lineMat.uniforms.uColorRange.value  = colorC2.colorsV2;
+    lineMat.uniforms.uLineOpacity.value = autoOpacity;
+
+    glowMat.uniforms.uTime.value        = accTime;
+    glowMat.uniforms.uColorRange.value  = colorC2.colorsV2;
+    glowMat.uniforms.uLineOpacity.value = autoOpacity;
   },
 
   resize(w: number, h: number) {
@@ -317,6 +377,9 @@ export const particleLines: Pattern = {
     lineGeo  = null; glowGeo    = null;
     lineMat  = null; glowMat    = null;
     camera   = null; sceneRef   = null;
-    accTime  = 0; needsRebuild = false;
+    accTime  = 0; needsRebuild = false; needsTailUpdate = false;
+    lineStore    = [];
+    posAttr      = null;
+    otherPosAttr = null;
   },
 };

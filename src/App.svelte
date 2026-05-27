@@ -1507,9 +1507,9 @@
             ["Randomize",            "B",                 "○ / B"],
             ["Blackout toggle",      "X",                 "△ / Y"],
             ["Hide / show HUD",      "Y",                 "□ / X"],
-            ["Screenshot",           "L  ·  2 (R2)",      "R2 / RT"],
-            ["Camera toggle",        "2  ·  L1",          "L1 / LB"],
-            ["Record video",         "1  ·  L2",          "L2 / LT"],
+            ["Screenshot",           "S  ·  L  ·  2 (R2)", "R2 / RT"],
+            ["Camera toggle",        "2  ·  L1",           "L1 / LB"],
+            ["Record video",         "V  ·  1  ·  L2",     "L2 / LT"],
             ["About / Controls",     "M  ·  ?",           "R1 / RB"],
             ["Options",              "O",                 "—"],
             ["Fullscreen",           "F",                 "—"],
@@ -2739,14 +2739,14 @@
           <button
             class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
             onclick={applyScreenshot}
-            title="Screenshot"
+            title="Screenshot  (S / L)"
           ><span class="text-sm leading-none">📷</span></button>
         {/if}
         {#if recordingsEnabled}
           <button
             class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {isRecording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
             onclick={() => recorder?.toggle()}
-            title="Record video"
+            title="Record video  (V / 1)"
           ><span class="text-sm leading-none">{isRecording ? '⏹' : '⏺'}</span></button>
         {/if}
       </div>
