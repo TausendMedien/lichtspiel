@@ -95,7 +95,7 @@ const fragmentShader = /* glsl */ `
 export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
-  motionControlLabels: [],          // no per-pattern slider boost; Tier 1 universals handle Color v2
+  motionControlLabels: ["Wobble"],   // wobble responds to motion; Tier 1 universals handle Color v2
   audioControlLabels:  ["Thickness"],
   controls: [
     { label: "Speed",       type: "range", min: -100, max: 100, step: 1, default: 10,    get: () => speed,         set: (v) => { speed = v; } },
@@ -132,7 +132,7 @@ export const tunnel: Pattern = {
   update(dt: number, _elapsed: number) {
     if (!material) return;
     accTime    += dt * speed;
-    colorPhase += dt * colorSpeed * 0.3;
+    colorPhase += dt * colorSpeed * 2.0;
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uWobble.value     = wobble;
     material.uniforms.uRingCount.value  = ringCount;

@@ -1,8 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
-import { cameraState } from "../globalCameraSettings.svelte";
-import { audioState } from "../globalAudioSettings.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -122,7 +120,7 @@ const fragmentShader = /* glsl */ `
 export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
-  motionControlLabels: [],           // motion drives colorC2.colorsV2, not these controls
+  motionControlLabels: ["Wobble"],   // wobble responds to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
     { label: "Speed",        type: "range", min: -20,   max: 20,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
@@ -175,14 +173,7 @@ export const tunnelEdge: Pattern = {
     _colorA.copy(_cFade);
     _cTemp.set(colorC2.contrast);
     _colorB.lerpColors(_cFade, _cTemp, _ph2);
-    // Motion → Colors v2: no movement = 3, full movement = 0
-    if (cameraState.enabled && (cameraState.patternMotionEnabled['tunnelEdge'] ?? true)) {
-      colorC2.colorsV2 = 3 * (1 - cameraState.level / 100);
-    }
-    // Beat → Colors v2: flash to 3 on each beat, decays to 0 between beats
-    if (audioState.enabled && (audioState.patternAudioEnabled['tunnelEdge'] ?? true)) {
-      colorC2.colorsV2 = parseFloat((audioState.beat / 100 * 3).toFixed(2));
-    }
+    // Color v2 is now driven universally by the motionCameraWrapper.
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uRotSpeed.value    = rotSpeed;
     material.uniforms.uRingCount.value   = ringCount;

@@ -205,6 +205,7 @@
   let poseError = $state<string | null>(null);
   let poseLoading = $state(false);
   let poseDebug = $state(false);
+  let interactionDebug = $state(false);
   let debugCanvas: HTMLCanvasElement | undefined = $state();
 
   async function togglePoseTracking() {
@@ -297,10 +298,10 @@
         : true;
       interactiveOn = _perPatternInteractiveOn.has(pat.id)
         ? _perPatternInteractiveOn.get(pat.id)!
-        : !!pat.usesCameraBlend;  // camera-required patterns default to interactive ON
+        : !!(pat.usesCameraBlend || pat.usesPose);  // camera/pose patterns default to interactive ON
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
-        : !pat.usesCameraBlend;   // camera-required patterns default to interactive expanded
+        : !(pat.usesCameraBlend || pat.usesPose);   // camera/pose patterns default to interactive expanded
       // Enforce camera/audio/pose based on the incoming pattern's interactive state.
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
@@ -1172,17 +1173,18 @@
               dCtx.fillText(`P${pi + 1} ${LABELS[ji]}`, cx, cy);
             });
           });
-          // Legend
+          // Legend — bottom-left
           dCtx.font = '11px monospace';
           dCtx.textAlign = 'left';
+          const legendBaseY = dh - 12 - COLORS.length * 18;
           COLORS.forEach((c, i) => {
             dCtx.fillStyle = c;
-            dCtx.fillRect(12, 12 + i * 18, 10, 10);
+            dCtx.fillRect(12, legendBaseY + i * 18, 10, 10);
             dCtx.fillStyle = 'rgba(255,255,255,0.8)';
-            dCtx.fillText(LABELS[i], 26, 18 + i * 18);
+            dCtx.fillText(LABELS[i], 26, legendBaseY + 6 + i * 18);
           });
           dCtx.fillStyle = 'rgba(255,255,255,0.5)';
-          dCtx.fillText(`${poseState.persons.length} person(s)`, 12, 68);
+          dCtx.fillText(`${poseState.persons.length} person(s)`, 12, legendBaseY - 10);
         }
       } else if (debugCanvas) {
         const dCtx = debugCanvas.getContext('2d');
@@ -1239,6 +1241,32 @@
 </script>
 
 <canvas bind:this={debugCanvas} class="pointer-events-none fixed inset-0 z-30 w-full h-full"></canvas>
+
+<!-- Interaction debug overlay — bottom-left, toggled by ⬡ button in Options/Interactions -->
+{#if interactionDebug}
+<div class="pointer-events-none fixed bottom-3 left-3 z-40 flex flex-col gap-0.5 rounded bg-black/70 px-2 py-1.5 font-mono text-[10px] leading-[1.6] text-white/80 backdrop-blur-sm">
+  <div class="mb-0.5 text-[9px] uppercase tracking-widest text-white/40">Interaction Debug</div>
+  <div class="flex gap-3">
+    <div class="flex flex-col gap-0.5">
+      <span class="text-white/40">CAM</span>
+      <span>level <span class="text-green-400">{cameraState.level}</span></span>
+      <span>dirX  <span class="text-cyan-400">{interactionState.dirX.toFixed(2)}</span></span>
+      <span>dirY  <span class="text-cyan-400">{interactionState.dirY.toFixed(2)}</span></span>
+      <span>burst <span class="text-yellow-400">{(interactionState.burst * 100).toFixed(0)}</span></span>
+    </div>
+    <div class="flex flex-col gap-0.5">
+      <span class="text-white/40">AUDIO</span>
+      <span>level <span class="text-green-400">{audioState.level}</span></span>
+      <span>beat  <span class="text-yellow-400">{audioState.beat}</span></span>
+      <span class="text-white/40 mt-0.5">UNIVERSALS</span>
+      <span>colV2 <span class="text-purple-400">{colorC2.colorsV2.toFixed(1)}</span></span>
+      <span>brit  <span class="text-orange-400">{interactionState.brightnessMult.toFixed(2)}</span></span>
+      <span>idle  <span class="text-blue-400">{(interactionState.idleAmount * 100).toFixed(0)}</span></span>
+      <span>here  <span class="{interactionState.presence ? 'text-green-400' : 'text-red-400'}">{interactionState.presence ? 'YES' : 'no'}</span></span>
+    </div>
+  </div>
+</div>
+{/if}
 
 <canvas bind:this={canvas} class="block w-full h-full"
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
@@ -1771,6 +1799,17 @@
             />
             <div class="mt-0.5 text-[10px] text-white/30">How sharp a gesture spike needs to be to trigger a Burst flash</div>
           </div>
+          <!-- Debug overlay toggle -->
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Signal debug overlay</span>
+            <div
+              class="relative h-[16px] w-6 shrink-0 cursor-pointer rounded-full transition-colors duration-200 {interactionDebug ? 'bg-white/70' : 'bg-white/20'}"
+              onclick={() => { interactionDebug = !interactionDebug; }}
+            >
+              <div class="absolute top-[2px] h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 {interactionDebug ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1851,9 +1890,10 @@
         <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Interactive features</div>
         <div class="flex gap-2">
           <button
-            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.motionEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.enabled && cameraState.motionEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => {
-              const next = !cameraState.motionEnabled;
+              const isOn = cameraState.enabled && cameraState.motionEnabled;
+              const next = !isOn;
               cameraState.motionEnabled = next;
               if (next) {
                 // Override any per-pattern disabled flags for all demo patterns
@@ -1887,9 +1927,9 @@
         {/if}
 
         <!-- Device pickers — camera when Motion or Pose active, mic when Audio active -->
-        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 1 || audioState.enabled && audioState.devices.length > 1}
+        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0 || audioState.enabled && audioState.devices.length > 0}
           <div class="mt-2.5 flex flex-col gap-2">
-            {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 1}
+            {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
                 <select
@@ -2423,7 +2463,8 @@
                   <div
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => {
-                      const next = !cameraState.motionEnabled;
+                      const isOn = cameraState.enabled && cameraState.motionEnabled;
+                      const next = !isOn;
                       cameraState.motionEnabled = next;
                       if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); }
                     }}

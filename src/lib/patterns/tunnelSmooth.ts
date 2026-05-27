@@ -116,7 +116,7 @@ export const tunnelSmooth: Pattern = {
 
   update(dt: number, elapsed: number) {
     if (!material) return;
-    colorPhase += dt * colorSpeed * 0.3;
+    colorPhase += dt * colorSpeed * 2.0;
     tunnelOffset += dt * speed * 0.05;
     material.uniforms.uTime.value       = elapsed;
     material.uniforms.uOffset.value     = tunnelOffset;
