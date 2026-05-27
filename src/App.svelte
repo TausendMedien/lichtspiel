@@ -1314,9 +1314,7 @@
                   experimentalEnabled = !experimentalEnabled;
                   localStorage.setItem(EXPERIMENTAL_KEY, String(experimentalEnabled));
                   if (!experimentalEnabled) {
-                    const next = new Set(demoPatternIds);
-                    EXPERIMENTAL_IDS.forEach(id => next.delete(id));
-                    demoPatternIds = next;
+                    EXPERIMENTAL_IDS.forEach(id => demoPatternIds.delete(id));
                     saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
                   }
                 }}
@@ -1869,8 +1867,7 @@
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
           onclick={() => {
             demoFavoritesOnly = true;
-            const next = new Set([...demoPatternIds].filter(id => favorites.has(id)));
-            demoPatternIds = next;
+            for (const id of [...demoPatternIds]) { if (!favorites.has(id)) demoPatternIds.delete(id); }
             saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
           }}
         >★ Favorites</button>
@@ -1893,10 +1890,10 @@
               <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
               <div class="flex items-center gap-1.5 cursor-pointer group/hdr"
                 onclick={() => {
-                  const next = new Set(demoPatternIds);
-                  if (allOn) { (group.ids as readonly string[]).forEach(id => next.delete(id)); }
-                  else       { (group.ids as readonly string[]).forEach(id => next.add(id)); }
-                  demoPatternIds = next;
+                  const ids = group.ids as readonly string[];
+                  const currentlyAllOn = ids.every(id => demoPatternIds.has(id));
+                  if (currentlyAllOn) { ids.forEach(id => demoPatternIds.delete(id)); }
+                  else               { ids.forEach(id => demoPatternIds.add(id)); }
                   saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
                 }}
               >
@@ -1916,9 +1913,7 @@
                 class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
                   {enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/25 hover:bg-white/5'}"
                 onclick={() => {
-                  const next = new Set(demoPatternIds);
-                  if (enabled) { next.delete(p.id); } else { next.add(p.id); }
-                  demoPatternIds = next;
+                  if (enabled) { demoPatternIds.delete(p.id); } else { demoPatternIds.add(p.id); }
                   saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
                 }}
               >
