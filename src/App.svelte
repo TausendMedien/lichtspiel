@@ -295,10 +295,10 @@
         : true;
       interactiveOn = _perPatternInteractiveOn.has(pat.id)
         ? _perPatternInteractiveOn.get(pat.id)!
-        : false;
+        : !!pat.usesCameraBlend;  // camera-required patterns default to interactive ON
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
-        : true;
+        : !pat.usesCameraBlend;   // camera-required patterns default to interactive expanded
       // Enforce camera/audio/pose based on the incoming pattern's interactive state.
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
@@ -307,6 +307,10 @@
         audioState.enabled = false;
         // Use untrack so poseActive changes don't re-trigger this effect.
         if (untrack(() => poseActive)) { stopPoseTracking(); poseActive = false; poseError = null; }
+        // Turn off per-pattern camera toggles (e.g. Light Trail / Light Paint)
+        for (const c of (pat.controls ?? [])) {
+          if (c.type === 'toggle' && (c as any).interactive === 'camera' && c.get()) c.set(false);
+        }
       }
     }
   });
@@ -2248,6 +2252,14 @@
                   cameraState.enabled = false;
                   audioState.enabled = false;
                   if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+                  // Turn off per-pattern camera toggles (e.g. Light Trail / Light Paint)
+                  for (const c of (patterns[index].controls ?? [])) {
+                    if (c.type === 'toggle' && (c as any).interactive === 'camera') {
+                      (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(false);
+                      ctrlVals[c.label] = 0;
+                    }
+                  }
+                  saveSettings(patterns);
                 }
               }}
             >

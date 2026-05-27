@@ -10,6 +10,7 @@ let gain = 1.0;
 let colorBoost = 2.0;
 let ghostOpacity = 0.15;  // live camera overlay
 let clearRequested = false;
+let cameraOn = true;      // user-facing camera toggle (persisted)
 
 // THREE objects
 let _renderer: THREE.WebGLRenderer | null = null;
@@ -20,6 +21,7 @@ let video: HTMLVideoElement | null = null;
 let videoTexture: THREE.VideoTexture | null = null;
 let blackTexture: THREE.DataTexture | null = null;
 let cameraReady = false;
+let startId = 0;          // incremented on every startCamera/stopCamera to cancel stale async calls
 
 // Ping-pong render targets
 let trailA: THREE.WebGLRenderTarget | null = null;
@@ -137,17 +139,33 @@ const compositeFragmentShader = /* glsl */ `
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
 
+function stopCamera() {
+  ++startId; // invalidate any in-flight startCamera
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+  if (video) { video.pause(); video.srcObject = null; video = null; }
+  videoTexture?.dispose();
+  videoTexture = null;
+  cameraReady = false;
+  overlay?.remove();
+  overlay = null;
+}
+
 async function startCamera(canvas: HTMLCanvasElement) {
+  const myId = ++startId;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const s = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
       audio: false,
     });
+    if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
+    stream = s;
     video = document.createElement("video");
     video.srcObject = stream;
     video.setAttribute("playsinline", "");
     video.muted = true;
     await video.play();
+    if (myId !== startId) { stopCamera(); return; }
     videoTexture = new THREE.VideoTexture(video);
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
@@ -155,6 +173,7 @@ async function startCamera(canvas: HTMLCanvasElement) {
     overlay?.remove();
     overlay = null;
   } catch {
+    if (myId !== startId) return;
     cameraReady = false;
     showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings and reload.");
   }
@@ -179,8 +198,20 @@ function showOverlay(canvas: HTMLCanvasElement, message: string) {
 export const lightPaint: Pattern = {
   id: "lightPaint",
   name: "Light Paint",
+  usesCameraBlend: true,
 
   controls: [
+    {
+      label: "Camera",
+      type: "toggle",
+      interactive: "camera" as const,
+      get: () => cameraOn,
+      set: (v: boolean) => {
+        cameraOn = !!v;
+        if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
+        else if (!cameraOn) stopCamera();
+      },
+    },
     {
       label: "Threshold",
       type: "range", min: 0.05, max: 0.95, step: 0.01,
@@ -302,7 +333,7 @@ export const lightPaint: Pattern = {
   },
 
   activate() {
-    if (canvasRef) {
+    if (canvasRef && cameraOn) {
       showOverlay(canvasRef, "Requesting camera access…");
       startCamera(canvasRef);
     }
@@ -349,15 +380,9 @@ export const lightPaint: Pattern = {
   },
 
   dispose() {
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = null;
-    if (video) { video.pause(); video.srcObject = null; }
-    video = null;
-    videoTexture?.dispose();
-    videoTexture = null;
+    stopCamera();
     blackTexture?.dispose();
     blackTexture = null;
-    cameraReady = false;
 
     trailA?.dispose(); trailA = null;
     trailB?.dispose(); trailB = null;

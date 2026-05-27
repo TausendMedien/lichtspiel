@@ -15,6 +15,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   const detector = new SpatialPatchinessDetector();
   let canvasRef: HTMLCanvasElement | null = null;
   let overlay: HTMLDivElement | null = null;
+  let startId = 0; // incremented on stop to cancel stale async startCamera calls
 
   // Track previous global state to detect changes in update()
   let prevEnabled        = false;
@@ -60,7 +61,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       audio: false,
     };
     overlay = showMotionOverlay(canvasRef, 'Requesting camera…');
+    const myId = ++startId;
     MotionCamera.createWithConstraints(canvasRef, constraints).then(async (cam) => {
+      if (myId !== startId) { cam?.dispose(); return; }
       overlay?.remove();
       overlay = null;
       motionCamera = cam ?? null;
@@ -69,6 +72,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   }
 
   function stopCamera() {
+    ++startId; // invalidate any in-flight startCamera
     motionCamera?.dispose();
     motionCamera = null;
     smoothedMotion = 0;
