@@ -167,6 +167,13 @@
   let demoVisible       = $state(false);
   let demoRandomize     = $state(false);
   let demoFavoritesOnly = $state(false);
+
+  const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
+    { label: 'Generative',        ids: ['hyperMix','particlesBody','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
+    { label: 'Live Light Painting',ids: ['lightTrail','lightPaint'] },
+    { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals'] },
+    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
+  ];
   let collapsedSections = $state(new Set<string>());
   const _perPatternCollapsed = new Map<string, Set<string>>();
   const _perPatternColourCollapsed = new Map<string, boolean>();
@@ -1858,51 +1865,67 @@
         >All</button>
         <button
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-          onclick={() => { demoFavoritesOnly = true; }}
+          onclick={() => {
+            demoFavoritesOnly = true;
+            const next = new Set([...demoPatternIds].filter(id => favorites.has(id)));
+            demoPatternIds = next;
+            saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+          }}
         >★ Favorites</button>
       </div>
 
       <!-- Pattern list — 2-col on sm+, 1-col on mobile -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-[60vh] overflow-y-auto overscroll-contain pr-1">
-        {#each (demoFavoritesOnly ? patterns.filter(p => favorites.has(p.id)) : patterns) as p, i}
-          {#if p.id === 'lightTrail'}
+        {#each DEMO_GROUPS as group}
+          {@const visiblePatterns = patterns.filter(p =>
+            (group.ids as readonly string[]).includes(p.id) &&
+            (!demoFavoritesOnly || favorites.has(p.id)) &&
+            (group.label !== 'Experimental' || experimentalEnabled)
+          )}
+          {#if visiblePatterns.length > 0}
+            {@const allOn  = (group.ids as readonly string[]).every(id => demoPatternIds.has(id))}
+            {@const someOn = !allOn && (group.ids as readonly string[]).some(id => demoPatternIds.has(id))}
+            <!-- Group header with select-all checkbox -->
             <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+              <div class="flex items-center gap-1.5 cursor-pointer group/hdr"
+                onclick={() => {
+                  const next = new Set(demoPatternIds);
+                  if (allOn) { (group.ids as readonly string[]).forEach(id => next.delete(id)); }
+                  else       { (group.ids as readonly string[]).forEach(id => next.add(id)); }
+                  demoPatternIds = next;
+                  saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+                }}
+              >
+                <div class="h-3 w-3 rounded-sm border flex items-center justify-center transition-colors
+                  {allOn ? 'border-white/50 bg-white/30' : someOn ? 'border-white/30 bg-white/10' : 'border-white/20'}">
+                  {#if allOn}<span class="text-[8px] leading-none text-white">✓</span>{/if}
+                  {#if someOn}<span class="text-[8px] leading-none text-white/60">–</span>{/if}
+                </div>
+                <span class="text-[10px] uppercase tracking-widest text-white/40 group-hover/hdr:text-white/60 transition-colors">{group.label}</span>
+              </div>
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
+
+            {#each visiblePatterns as p}
+              {@const enabled = demoPatternIds.has(p.id)}
+              <button
+                class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
+                  {enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/25 hover:bg-white/5'}"
+                onclick={() => {
+                  const next = new Set(demoPatternIds);
+                  if (enabled) { next.delete(p.id); } else { next.add(p.id); }
+                  demoPatternIds = next;
+                  saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+                }}
+              >
+                <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>
+                <span class="flex-1 leading-snug">{p.name}</span>
+                {#if enabled}<span class="shrink-0 h-1.5 w-1.5 rounded-full bg-white/50"></span>{/if}
+              </button>
+            {/each}
           {/if}
-          {#if p.id === 'img-tealLines'}
-            <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
-              <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Static Images</span>
-              <div class="h-px flex-1 bg-white/20"></div>
-            </div>
-          {/if}
-          {#if p.id === 'particlesPalette'}
-            <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
-              <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Experimental</span>
-              <div class="h-px flex-1 bg-white/20"></div>
-            </div>
-          {/if}
-          {@const enabled = demoPatternIds.has(p.id)}
-          <button
-            class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
-              {enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/25 hover:bg-white/5'}"
-            onclick={() => {
-              const next = new Set(demoPatternIds);
-              if (enabled) { next.delete(p.id); } else { next.add(p.id); }
-              demoPatternIds = next;
-              saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
-            }}
-          >
-            <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>
-            <span class="flex-1 leading-snug">{p.name}</span>
-            {#if enabled}
-              <span class="shrink-0 h-1.5 w-1.5 rounded-full bg-white/50"></span>
-            {/if}
-          </button>
         {/each}
       </div>
     </div>
