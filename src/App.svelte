@@ -110,13 +110,14 @@
   let demoActive = $state(false);
   let demoDwell = $state(30);
   let pedalDwell = $state(180);
-  let demoPatternIds = $state<Set<string>>(new Set(patterns.map(p => p.id)));
-  // Plain (non-signal) copy used by nextDemoIndex inside setTimeout — always kept in sync.
-  // Plain `let` closures always read the current value; $state signals may be stale there.
-  let _demoIds: Set<string> = new Set(patterns.map(p => p.id));
+  // Plain let (NOT $state) — plain JS closures always read the current value, even
+  // inside setTimeout callbacks where $state signal reads can be stale in Svelte 5.
+  let demoPatternIds: Set<string> = new Set(patterns.map(p => p.id));
+  // Reactive tick — incremented on every mutation to force template re-evaluation.
+  let _demoPatternTick = $state(0);
   function applyDemoPatternIds(next: Set<string>) {
-    demoPatternIds = next;       // reactive: triggers UI re-render
-    _demoIds = new Set(next);    // plain: always current for setTimeout reads
+    demoPatternIds = next;    // plain assignment — always current everywhere
+    _demoPatternTick++;       // trigger UI re-render
     saveDemoSettings(demoActive, demoDwell, pedalDwell, [...next]);
   }
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
@@ -448,7 +449,7 @@
     for (let i = 1; i <= count; i++) {
       const next = (from + i) % count;
       const id = patterns[next].id;
-      if (_demoIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
+      if (demoPatternIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
     }
     return from; // all disabled or only current enabled — stay put
   }
@@ -479,20 +480,34 @@
     }, demoDwell * 1000);
   }
 
+  function firstDemoIndex(): number {
+    for (let i = 0; i < patterns.length; i++) {
+      if (demoPatternIds.has(patterns[i].id)) return i;
+    }
+    return index; // nothing selected — stay put
+  }
+
   function startDemo() {
     demoActive = true;
     cancelAutoRestart(); // stop any pending auto-restart countdown
-    if (appState === "overview") {
-      handle?.setPattern(patterns[index]);
-      appState = "active";
-    }
-    // Immediately hide HUD — don't make the user wait for the auto-hide timer
     hudVisible = false;
     if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
     demoVisible = false; // close the demo modal
     saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
     if (demoTimer) clearTimeout(demoTimer);
-    scheduleNext();
+
+    const startIdx = firstDemoIndex();
+    if (appState === "overview") {
+      // In overview: switch directly (no crossfade needed)
+      index = switchTo(startIdx);
+      appState = "active";
+      scheduleNext();
+    } else if (startIdx !== index) {
+      // In active but current pattern not selected: crossfade to first selected
+      crossFadeTo(startIdx).then(() => scheduleNext());
+    } else {
+      scheduleNext();
+    }
   }
 
   function stopDemo() {
@@ -988,7 +1003,6 @@
     // Exclude experimental patterns from demo by default when experimental is off
     const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
     demoPatternIds = new Set(filteredDemoIds);
-    _demoIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     if (demo.demoActive) startDemo();
@@ -1895,8 +1909,8 @@
             (group.label !== 'Experimental' || experimentalEnabled)
           )}
           {#if visiblePatterns.length > 0}
-            {@const allOn  = (group.ids as readonly string[]).every(id => demoPatternIds.has(id))}
-            {@const someOn = !allOn && (group.ids as readonly string[]).some(id => demoPatternIds.has(id))}
+            {@const allOn  = _demoPatternTick >= 0 && (group.ids as readonly string[]).every(id => demoPatternIds.has(id))}
+            {@const someOn = _demoPatternTick >= 0 && !allOn && (group.ids as readonly string[]).some(id => demoPatternIds.has(id))}
             <!-- Group header with select-all checkbox -->
             <div class="col-span-1 sm:col-span-2 mt-2 mb-0.5 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
@@ -1922,7 +1936,7 @@
             </div>
 
             {#each visiblePatterns as p}
-              {@const enabled = demoPatternIds.has(p.id)}
+              {@const enabled = _demoPatternTick >= 0 && demoPatternIds.has(p.id)}
               <button
                 class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
                   {enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/25 hover:bg-white/5'}"
