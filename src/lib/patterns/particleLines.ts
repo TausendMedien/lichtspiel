@@ -151,7 +151,7 @@ function buildGeometry() {
   lineGeo?.dispose();
   glowGeo?.dispose();
 
-  const N = lineCount;
+  const N = Math.round(lineCount);
   // 4 vertices per line (HL, HR, TL, TR), 6 indices per line
   const positions  = new Float32Array(N * 4 * 3);
   const otherPos   = new Float32Array(N * 4 * 3);
@@ -233,7 +233,7 @@ export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
   motionControlLabels: ["Flow Speed", "Line Width"],
-  audioControlLabels:  ["Line Width", "Colors v2"],
+  audioControlLabels:  ["Line Width"],
   controls: [
     { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.3,  get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
     { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },

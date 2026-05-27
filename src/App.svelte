@@ -351,6 +351,7 @@
 
   function randomizeControls() {
     for (const c of patterns[index]?.controls ?? []) {
+      if ((c as any).interactive) continue;
       if (c.type === 'range' && !c.readonly) {
         const steps = Math.round((c.max - c.min) / c.step);
         const r = Math.floor(Math.random() * (steps + 1));
@@ -677,8 +678,13 @@
     const anims: Record<string, RandAnim> = {};
     for (const ctrl of patterns[index]?.controls ?? []) {
       if (/camera|microphone/i.test(ctrl.label)) continue;
+      if ((ctrl as any).interactive) continue;
       if (ctrl.type === 'range' && !ctrl.readonly) {
-        anims[ctrl.label] = { from: ctrl.get(), to: ctrl.min + Math.random() * (ctrl.max - ctrl.min), startMs: now };
+        // Snap to step so intermediate animated values are valid (e.g. integer line counts)
+        const steps = Math.round((ctrl.max - ctrl.min) / ctrl.step);
+        const r = Math.floor(Math.random() * (steps + 1));
+        const to = parseFloat(Math.min(ctrl.max, ctrl.min + r * ctrl.step).toFixed(10));
+        anims[ctrl.label] = { from: ctrl.get(), to, startMs: now };
       } else if (ctrl.type === 'select' && !ctrl.disabled?.()) {
         const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options;
         const idx = Math.floor(Math.random() * opts.length);
