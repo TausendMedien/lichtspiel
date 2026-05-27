@@ -111,6 +111,14 @@
   let demoDwell = $state(30);
   let pedalDwell = $state(180);
   let demoPatternIds = $state<Set<string>>(new Set(patterns.map(p => p.id)));
+  // Plain (non-signal) copy used by nextDemoIndex inside setTimeout — always kept in sync.
+  // Plain `let` closures always read the current value; $state signals may be stale there.
+  let _demoIds: Set<string> = new Set(patterns.map(p => p.id));
+  function applyDemoPatternIds(next: Set<string>) {
+    demoPatternIds = next;       // reactive: triggers UI re-render
+    _demoIds = new Set(next);    // plain: always current for setTimeout reads
+    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...next]);
+  }
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
@@ -436,7 +444,7 @@
     for (let i = 1; i <= count; i++) {
       const next = (from + i) % count;
       const id = patterns[next].id;
-      if (demoPatternIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
+      if (_demoIds.has(id) && (!demoFavoritesOnly || favorites.has(id))) return next;
     }
     return from; // all disabled or only current enabled — stay put
   }
@@ -976,6 +984,7 @@
     // Exclude experimental patterns from demo by default when experimental is off
     const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
     demoPatternIds = new Set(filteredDemoIds);
+    _demoIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     if (demo.demoActive) startDemo();
@@ -1314,8 +1323,9 @@
                   experimentalEnabled = !experimentalEnabled;
                   localStorage.setItem(EXPERIMENTAL_KEY, String(experimentalEnabled));
                   if (!experimentalEnabled) {
-                    EXPERIMENTAL_IDS.forEach(id => demoPatternIds.delete(id));
-                    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+                    const next = new Set(demoPatternIds);
+                    EXPERIMENTAL_IDS.forEach(id => next.delete(id));
+                    applyDemoPatternIds(next);
                   }
                 }}
                 role="switch"
@@ -1867,8 +1877,7 @@
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
           onclick={() => {
             demoFavoritesOnly = true;
-            for (const id of [...demoPatternIds]) { if (!favorites.has(id)) demoPatternIds.delete(id); }
-            saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+            applyDemoPatternIds(new Set([...demoPatternIds].filter(id => favorites.has(id))));
           }}
         >★ Favorites</button>
       </div>
@@ -1891,10 +1900,11 @@
               <div class="flex items-center gap-1.5 cursor-pointer group/hdr"
                 onclick={() => {
                   const ids = group.ids as readonly string[];
-                  const currentlyAllOn = ids.every(id => demoPatternIds.has(id));
-                  if (currentlyAllOn) { ids.forEach(id => demoPatternIds.delete(id)); }
-                  else               { ids.forEach(id => demoPatternIds.add(id)); }
-                  saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+                  const next = new Set(demoPatternIds);
+                  const currentlyAllOn = ids.every(id => next.has(id));
+                  if (currentlyAllOn) { ids.forEach(id => next.delete(id)); }
+                  else               { ids.forEach(id => next.add(id)); }
+                  applyDemoPatternIds(next);
                 }}
               >
                 <div class="h-3 w-3 rounded-sm border flex items-center justify-center transition-colors
@@ -1913,8 +1923,9 @@
                 class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer
                   {enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/25 hover:bg-white/5'}"
                 onclick={() => {
-                  if (enabled) { demoPatternIds.delete(p.id); } else { demoPatternIds.add(p.id); }
-                  saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]);
+                  const next = new Set(demoPatternIds);
+                  if (enabled) { next.delete(p.id); } else { next.add(p.id); }
+                  applyDemoPatternIds(next);
                 }}
               >
                 <span class="shrink-0 font-mono text-[10px] {enabled ? 'text-white/30' : 'text-white/15'}">{patterns.indexOf(p) + 1}</span>
