@@ -348,16 +348,12 @@ export const particleLines: Pattern = {
       updateTailPositions();
     }
 
-    // Auto-exposure: three independent factors, each cuts in once its parameter
-    // exceeds a safe threshold.  Multiplicative so high values in multiple
-    // dimensions compound (many + wide + long = very dark, as expected).
-    //   N ≤ 1500 → full opacity;  above that scales as 1500/N
-    //   W ≤ 5 px → full opacity;  above that scales as 5/W
-    //   T ≤ 7    → full opacity;  above that scales as 7/T
-    const nFactor    = Math.min(1.0, 1500 / lineCount);
-    const wFactor    = Math.min(1.0, 5.0  / lineWidth);
-    const tFactor    = Math.min(1.0, 7.0  / tailLength);
-    const autoOpacity = nFactor * wFactor * tFactor;
+    // Auto-exposure: combined power-law keeps perceived brightness constant.
+    // Reference point: default N=1000, W=4, T=6 → ratio=1 → opacity=1.
+    // Exponent 1.5 makes extreme combos fall much harder than linear.
+    // e.g. N=2000 W=14 T=10 → ratio≈0.086 → opacity≈0.025 (was 0.19 with old formula).
+    const ratio      = 24000 / (lineCount * lineWidth * tailLength);
+    const autoOpacity = Math.min(1.0, Math.pow(ratio, 1.5));
 
     lineMat.uniforms.uTime.value        = accTime;
     lineMat.uniforms.uLineWidth.value   = lineWidth;
