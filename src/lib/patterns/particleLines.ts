@@ -348,9 +348,16 @@ export const particleLines: Pattern = {
       updateTailPositions();
     }
 
-    // Auto-scale opacity so dense/wide configurations don't saturate to white.
-    // Formula keeps total perceived brightness roughly constant across lineCount × lineWidth.
-    const autoOpacity = Math.min(1.0, 4400 / (lineCount * lineWidth));
+    // Auto-exposure: three independent factors, each cuts in once its parameter
+    // exceeds a safe threshold.  Multiplicative so high values in multiple
+    // dimensions compound (many + wide + long = very dark, as expected).
+    //   N ≤ 1500 → full opacity;  above that scales as 1500/N
+    //   W ≤ 5 px → full opacity;  above that scales as 5/W
+    //   T ≤ 7    → full opacity;  above that scales as 7/T
+    const nFactor    = Math.min(1.0, 1500 / lineCount);
+    const wFactor    = Math.min(1.0, 5.0  / lineWidth);
+    const tFactor    = Math.min(1.0, 7.0  / tailLength);
+    const autoOpacity = nFactor * wFactor * tFactor;
 
     lineMat.uniforms.uTime.value        = accTime;
     lineMat.uniforms.uLineWidth.value   = lineWidth;
