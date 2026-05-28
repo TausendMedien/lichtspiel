@@ -342,7 +342,6 @@ export const particleLines: Pattern = {
       needsRebuild    = false;
       needsTailUpdate = false;
       buildGeometry();
-      return;
     }
     if (needsTailUpdate) {
       needsTailUpdate = false;
