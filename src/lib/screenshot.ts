@@ -8,7 +8,9 @@ export function takeScreenshot(canvas: HTMLCanvasElement): void {
   canvas.toBlob(async (blob) => {
     if (!blob) { console.warn('[screenshot] toBlob returned null'); return; }
     const file = new File([blob], filename, { type: 'image/png' });
-    if (navigator.canShare?.({ files: [file] })) {
+    const isMobileOrTablet = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1);
+    if (isMobileOrTablet && navigator.canShare?.({ files: [file] })) {
       try { await navigator.share({ files: [file], title: 'Lichtspiel' }); return; } catch {}
     }
     const url = URL.createObjectURL(blob);
