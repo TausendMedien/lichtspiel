@@ -1154,7 +1154,7 @@
       if (posePersonCount !== pc) posePersonCount = pc;
 
       // Debug overlay: draw landmarks on canvas
-      if (poseDebug && debugCanvas) {
+      if ((poseDebug || interactionDebug) && debugCanvas) {
         const dw = window.innerWidth, dh = window.innerHeight;
         if (debugCanvas.width !== dw) debugCanvas.width = dw;
         if (debugCanvas.height !== dh) debugCanvas.height = dh;
@@ -2187,7 +2187,12 @@
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
               <!-- Standalone toggle row -->
               <div class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
-                <span>{ctrl.label}</span>
+                <span class="flex items-center gap-1.5">
+                  {ctrl.label}
+                  {#if ctrl.label === 'Burst' && cameraState.burst > 0}
+                    <span class="inline-block h-2 w-2 rounded-full" style="background: rgba(250,204,21,{Math.min(1, cameraState.burst / 100)})"></span>
+                  {/if}
+                </span>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
                   class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
@@ -2355,7 +2360,12 @@
                   onclick={() => { colorShuffle.brightness = 1.0; savePatternColor(patterns[index].id); }}
                   title="Click to reset"
                 >Brightness</span>
-                <span class="text-xs text-white/50">{colorShuffle.brightness.toFixed(2)}</span>
+                <span class="text-xs text-white/50 flex items-center gap-1">
+                  {colorShuffle.brightness.toFixed(2)}
+                  {#if Math.abs(interactionState.brightnessMult - 1.0) > 0.02}
+                    <span class="text-white/30">×{interactionState.brightnessMult.toFixed(2)}</span>
+                  {/if}
+                </span>
               </div>
               <input type="range" min={0.75} max={2} step={0.05}
                 value={colorShuffle.brightness}
@@ -2695,6 +2705,9 @@
             <div class="mt-1 text-xs font-mono text-amber-400/80">FREEZE</div>
           {:else if !freezeAnim && Math.abs(timeScaleMirror - 1.0) > 0.05}
             <div class="mt-1 text-xs font-mono text-white/50">{timeScaleMirror.toFixed(1)}×</div>
+          {/if}
+          {#if Math.abs(interactionState.speedMult - 1.0) > 0.05}
+            <div class="mt-0.5 text-xs font-mono text-blue-400/60">spd ×{interactionState.speedMult.toFixed(2)}</div>
           {/if}
           {#if isRecording}
             <div class="mt-1 text-xs font-mono text-red-400/90">● REC</div>

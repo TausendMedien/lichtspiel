@@ -194,12 +194,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     const dt = (now - last) / 1000;
     const elapsed = (now - start) / 1000;
     last = now;
-    // Tier 1: Speed universal — idle/stillness lets patterns drift slightly faster.
-    // idleAmount rises when no motion/audio is detected; speedMult > 1 nudges
-    // slow-moving patterns to keep them visually alive during pauses.
-    // Max idle boost is 1.5× at full idleAmount and strength 1.0.
-    const idleBoost = 1.0 + interactionState.idleAmount * interactionState.strength * 0.5;
-    current.update(dt * timeScale * idleBoost, elapsed);
+    // Tier 1: Speed universal — driven by motionCameraWrapper per active pattern.
+    // speedMult > 1 when motion is active; < 1 during prolonged stillness.
+    // Falls back to 1.0 when no motion camera is running.
+    current.update(dt * timeScale * interactionState.speedMult, elapsed);
 
     // Sync per-pattern colour assignment into post-process uniforms
     const [a0, a1, a2] = colorShuffle.assign;

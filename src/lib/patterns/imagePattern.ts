@@ -346,7 +346,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
         for (const pt of person) { cx += pt.x; cy += pt.y; }
         if (person.length > 0) {
           cx /= person.length; cy /= person.length;
-          const dx = (cx - 0.5) * 0.06, dy = (cy - 0.5) * -0.06;
+          const dx = (cx - 0.5) * 0.06, dy = (cy - 0.5) * 0.06;
           // Counter-rotate parallax so screen direction stays constant despite image rotation
           if      (rotation === 1) u.uParallaxShift.value.set( dy, -dx);
           else if (rotation === 2) u.uParallaxShift.value.set(-dx, -dy);

@@ -98,6 +98,11 @@ export const interactionState = $state({
 
   /** Sudden burst pulse. 0–1 with fast decay. */
   burst:              0,
+
+  /** Speed multiplier driven by motion/idle.
+   *  > 1.0 when motion active, < 1.0 during prolonged stillness.
+   *  Written by motionCameraWrapper; applied in renderer. */
+  speedMult:          1.0,
 });
 
 export function getPatternSettings(id: string): PatternInteractionSettings {

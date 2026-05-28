@@ -166,8 +166,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       effectiveVals[i] = baseVals[i];
       boostTargets[i].set(baseVals[i]);
     }
-    // Restore colorsV2 to user-set base when camera stops
+    // Restore colorsV2 and speedMult to defaults when camera stops
     colorC2.colorsV2 = 3.0;
+    interactionState.speedMult = 1.0;
   }
 
   return {
@@ -217,7 +218,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
           rawMotion = Math.min(detector.update(diff), 1.0);
           smoothedMotion = rawMotion > smoothedMotion
             ? 0.80 * smoothedMotion + 0.20 * rawMotion   // fast rise
-            : 0.90 * smoothedMotion + 0.10 * rawMotion;  // faster fall
+            : 0.80 * smoothedMotion + 0.20 * rawMotion;  // fast fall (2× previous)
         }
       } else if (!cameraState.motionEnabled) {
         smoothedMotion = Math.max(0, smoothedMotion * 0.95);
@@ -237,7 +238,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       burstPulse *= BURST_DECAY;
       cameraState.burst = Math.round(burstPulse * 100);
 
-      // ── Boost per-pattern native controls ────────────────────────────────
+      // ── Boost per-pattern native controls + Direction bias ───────────────
+      const settings = getPatternSettings(pattern.id);
+      const str = interactionState.strength;
       const scaledMotion = cameraState.motionEnabled
         ? smoothedMotion * (cameraState.sensitivity / 10) * (8 / 7)
         : 0;
@@ -245,7 +248,13 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         const ctrl  = boostTargets[i];
         const range = ctrl.max - ctrl.min;
         const added = Math.min(scaledMotion * range, range);
-        effectiveVals[i] = Math.min(baseVals[i] + added, ctrl.max);
+        let effective = baseVals[i] + added;
+        // Direction bias: dirX/Y shifts the effective value left/right along the control's range
+        if (settings.directionEnabled && cameraState.motionEnabled) {
+          effective += cameraState.dirX * settings.directionXBlend * range * 0.3;
+          effective += cameraState.dirY * settings.directionYBlend * range * 0.3;
+        }
+        effectiveVals[i] = Math.max(ctrl.min, Math.min(ctrl.max, effective));
         if (effectiveVals[i] !== lastWritten[i]) {
           lastWritten[i] = effectiveVals[i];
           ctrl.set(effectiveVals[i]);
@@ -253,8 +262,6 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       }
 
       // ── Tier 1: Universal Color v2 (motion reduces variety) ──────────────
-      const settings = getPatternSettings(pattern.id);
-      const str = interactionState.strength;
       if (cameraState.motionEnabled && cameraState.enabled && settings.colorsV2Enabled) {
         const gain       = settings.colorsV2Gain;
         // No motion = colorsV2 stays at 3 (max variety).
@@ -285,6 +292,17 @@ export function addMotionCamera(pattern: Pattern): Pattern {
           interactionState.presence   = false;
           interactionState.idleAmount = Math.min(1, interactionState.idleAmount + dt * 0.1);
         }
+      }
+
+      // ── Tier 1: Speed universal — motion→faster, idle→slower ────────────
+      // speedMult > 1 when motion active; < 1 during prolonged stillness.
+      if (settings.speedEnabled && cameraState.enabled) {
+        const gain       = settings.speedGain;
+        const motionBoost = smoothedMotion * gain * str;
+        const idleSlow    = interactionState.idleAmount * gain * str * 0.5;
+        interactionState.speedMult = Math.max(0.2, 1.0 + motionBoost - idleSlow);
+      } else {
+        interactionState.speedMult = 1.0;
       }
 
       pattern.update(dt, elapsed);
