@@ -333,7 +333,8 @@ export const lightPaint: Pattern = {
   },
 
   activate() {
-    if (canvasRef && cameraOn) {
+    if (canvasRef) {
+      cameraOn = true; // always enable camera when pattern is activated
       showOverlay(canvasRef, "Requesting camera access…");
       startCamera(canvasRef);
     }

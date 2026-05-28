@@ -9,6 +9,7 @@
   import { attachTouch } from "./lib/touch";
   import { patterns } from "./lib/patterns";
   import * as fs from "./lib/fullscreen";
+  import { createWakeLock } from "./lib/wakelock";
   import { loadSettings, saveSettings, loadDemoSettings, saveDemoSettings } from "./lib/settings";
   import type { PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
@@ -198,6 +199,10 @@
   let interactiveCollapsed = $state(true);
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
   let isFullscreenState = $state(false);
+
+  // Wake lock — held while demo mode or fullscreen is active
+  const wl = createWakeLock();
+  $effect(() => { if (demoActive || isFullscreenState) { wl.acquire(); } else { wl.release(); } });
 
   // Body pose tracking
   let posePersonCount = $state(0);
@@ -612,6 +617,11 @@
           startRandomize(performance.now());
         }
         return;
+      case "activatePattern": {
+        const target = patterns.findIndex(p => p.id === action.id);
+        if (target !== -1) { index = target; activatePattern(target); }
+        return;
+      }
       case "resetToDefault":   resetAllControls(); return;
       case "screenshot":       applyScreenshot(); return;
       case "toggleRecording":  recorder?.toggle(); return;
@@ -982,6 +992,11 @@
           startRandomize(performance.now());
         }
         break;
+      case "activatePattern": {
+        const target = patterns.findIndex(p => p.id === action.id);
+        if (target !== -1) { index = target; activatePattern(target); }
+        break;
+      }
       case "toggleCamera":     toggleCamera(); break;
       case "toggleOverlay":
         if (hudVisible && !overlayHidden) { overlayHidden = true; }
@@ -1199,7 +1214,8 @@
     document.addEventListener("webkitfullscreenchange", onFsChange);
     // Keep the blob fresh so it never lags behind pp: keys
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") saveSettings(patterns);
+      if (document.visibilityState === "hidden") { saveSettings(patterns); }
+      else if (demoActive || isFullscreenState) { wl.acquire(); } // re-acquire after OS released it
     });
     // Re-hydrate controls when Arc (or any browser) restores the page from bfcache
     window.addEventListener("pageshow", (e) => {
@@ -1227,6 +1243,7 @@
       if (autoRestartTimer) clearTimeout(autoRestartTimer);
       recorder?.dispose();
       recorder = null;
+      wl.release();
       handle?.dispose();
       handle = null;
     };

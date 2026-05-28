@@ -23,13 +23,15 @@ export type KeyAction =
   | { type: "toggleOptions" }
   | { type: "undo" }
   | { type: "togglePose" }
-  | { type: "tap" };
+  | { type: "tap" }
+  | { type: "activatePattern"; id: string };
 
 export function attachKeyboard(
   handler: (action: KeyAction) => void,
   onRHeldChange?: (held: boolean) => void,
 ): () => void {
   let rHeld = false;
+  let bPressedAt = 0; // tracks keydown time for long-press detection on 'b'
 
   function onKeyDown(e: KeyboardEvent) {
     // Don't fire shortcuts when typing in a text or textarea field
@@ -73,7 +75,7 @@ export function attachKeyboard(
         e.preventDefault(); return;
       case "b": case "B":
         if (e.repeat) { e.preventDefault(); return; }
-        handler({ type: "randomize" });
+        bPressedAt = performance.now(); // dispatch deferred to keyup for long-press detection
         e.preventDefault(); return;
       case " ":
         handler({ type: "freeze" });
@@ -139,6 +141,16 @@ export function attachKeyboard(
     if (e.key === "r" || e.key === "R") {
       rHeld = false;
       onRHeldChange?.(false);
+    }
+    // Long-press detection for 'b': < 500 ms → randomize, ≥ 500 ms → jump to Light Paint
+    if ((e.key === "b" || e.key === "B") && bPressedAt > 0) {
+      const held = performance.now() - bPressedAt;
+      bPressedAt = 0;
+      if (held >= 500) {
+        handler({ type: "activatePattern", id: "lightPaint" });
+      } else {
+        handler({ type: "randomize" });
+      }
     }
   }
 
