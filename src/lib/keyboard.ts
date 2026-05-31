@@ -24,14 +24,22 @@ export type KeyAction =
   | { type: "undo" }
   | { type: "togglePose" }
   | { type: "tap" }
+  | { type: "pedalShort" }
+  | { type: "pedalDouble" }
+  | { type: "pedalLong" }
   | { type: "activatePattern"; id: string };
+
+const PEDAL_LONG_MS = 500;    // hold ≥ this → long press
+const PEDAL_DOUBLE_MS = 250;  // gap between releases ≤ this → double press
 
 export function attachKeyboard(
   handler: (action: KeyAction) => void,
   onRHeldChange?: (held: boolean) => void,
+  pedalDoubleEnabled?: () => boolean,
 ): () => void {
   let rHeld = false;
   let bPressedAt = 0; // tracks keydown time for long-press detection on 'b'
+  let bSingleTimer: ReturnType<typeof setTimeout> | null = null; // pending single press awaiting a possible double
 
   function onKeyDown(e: KeyboardEvent) {
     // Don't fire shortcuts when typing in a text or textarea field
@@ -142,14 +150,29 @@ export function attachKeyboard(
       rHeld = false;
       onRHeldChange?.(false);
     }
-    // Long-press detection for 'b': < 500 ms → randomize, ≥ 500 ms → jump to Light Paint
+    // Pedal ('b') gesture detection on release:
+    //   hold ≥ 500 ms        → long press
+    //   two quick taps       → double press (only when enabled)
+    //   single tap           → short press
     if ((e.key === "b" || e.key === "B") && bPressedAt > 0) {
       const held = performance.now() - bPressedAt;
       bPressedAt = 0;
-      if (held >= 500) {
-        handler({ type: "activatePattern", id: "lightPaint" });
+      if (held >= PEDAL_LONG_MS) {
+        if (bSingleTimer !== null) { clearTimeout(bSingleTimer); bSingleTimer = null; }
+        handler({ type: "pedalLong" });
+      } else if (bSingleTimer !== null) {
+        // Second tap within the window → double press
+        clearTimeout(bSingleTimer);
+        bSingleTimer = null;
+        handler({ type: "pedalDouble" });
+      } else if (pedalDoubleEnabled?.()) {
+        // First tap — wait briefly to see if a second tap follows
+        bSingleTimer = setTimeout(() => {
+          bSingleTimer = null;
+          handler({ type: "pedalShort" });
+        }, PEDAL_DOUBLE_MS);
       } else {
-        handler({ type: "randomize" });
+        handler({ type: "pedalShort" });
       }
     }
   }

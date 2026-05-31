@@ -129,8 +129,16 @@
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
   const DEMO_HIDE_HUD_KEY = 'pp:demo-hide-hud';
   let demoHideHud = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_HIDE_HUD_KEY) !== 'false' : true);
-  const DEMO_PEDAL_CHANGES_PATTERN_KEY = 'pp:demo-pedal-changes-pattern';
-  let demoPedalChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_PEDAL_CHANGES_PATTERN_KEY) !== 'false' : true);
+  // Pedal ('b') behaviour — applies in and out of Demo mode.
+  // Short press → randomize (+ change pattern when pedalChangesPattern is on).
+  // Double press → change pattern (when pedalDoubleChangesPattern is on).
+  // Long press → Light Paint, or Screenshot when pedalLongScreenshot is on.
+  const PEDAL_CHANGES_PATTERN_KEY = 'pp:pedal-changes-pattern';
+  let pedalChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_CHANGES_PATTERN_KEY) !== 'false' : true);
+  const PEDAL_DOUBLE_CHANGES_PATTERN_KEY = 'pp:pedal-double-changes-pattern';
+  let pedalDoubleChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_DOUBLE_CHANGES_PATTERN_KEY) === 'true' : false);
+  const PEDAL_LONG_SCREENSHOT_KEY = 'pp:pedal-long-screenshot';
+  let pedalLongScreenshot = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_LONG_SCREENSHOT_KEY) === 'true' : false);
 
   // Demo auto-restart after idle
   const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
@@ -602,21 +610,10 @@
         }
         return;
       case "blackout":         blackout = !blackout; poke(); return;
-      case "randomize":
-        if (demoActive) {
-          if (demoPedalChangesPattern) {
-            if (demoTimer) clearTimeout(demoTimer);
-            crossFadeTo(nextDemoIndex(index)).then(() => {
-              startRandomize(performance.now());
-              scheduleNext();
-            });
-          } else {
-            startRandomize(performance.now());
-          }
-        } else {
-          startRandomize(performance.now());
-        }
-        return;
+      case "randomize":        applyPedalShort(); return;
+      case "pedalShort":       applyPedalShort(); return;
+      case "pedalDouble":      pedalChangePattern(); return;
+      case "pedalLong":        applyPedalLong(); return;
       case "activatePattern": {
         const target = patterns.findIndex(p => p.id === action.id);
         if (target !== -1) { index = target; activatePattern(target); }
@@ -683,6 +680,39 @@
         case "escape":
           focusedIndex = index; appState = "overview"; overlayHidden = false; break;
       }
+    }
+  }
+
+  // Change to the next pattern (demo-aware), then run `after` once it's live.
+  function pedalChangePattern(after?: () => void) {
+    if (demoActive) {
+      if (demoTimer) clearTimeout(demoTimer);
+      crossFadeTo(nextDemoIndex(index)).then(() => { after?.(); scheduleNext(); });
+    } else {
+      index = switchTo(nextVisibleIndex(index, 1));
+      focusedIndex = index;
+      handle?.activateCurrentPattern();
+      resetDemoTimer();
+      after?.();
+    }
+  }
+
+  // Pedal short press: randomize, optionally changing pattern first.
+  function applyPedalShort() {
+    if (pedalChangesPattern) {
+      pedalChangePattern(() => startRandomize(performance.now()));
+    } else {
+      startRandomize(performance.now());
+    }
+  }
+
+  // Pedal long press: jump to Light Paint, or take a screenshot.
+  function applyPedalLong() {
+    if (pedalLongScreenshot) {
+      applyScreenshot();
+    } else {
+      const target = patterns.findIndex(p => p.id === 'lightPaint');
+      if (target !== -1) { index = target; activatePattern(target); }
     }
   }
 
@@ -977,21 +1007,7 @@
       case "resetToDefault":   resetAllControls(); break;
       case "screenshot":       applyScreenshot(); break;
       case "toggleRecording":  recorder?.toggle(); break;
-      case "randomize":
-        if (demoActive) {
-          if (demoPedalChangesPattern) {
-            if (demoTimer) clearTimeout(demoTimer);
-            crossFadeTo(nextDemoIndex(index)).then(() => {
-              startRandomize(performance.now());
-              scheduleNext();
-            });
-          } else {
-            startRandomize(performance.now());
-          }
-        } else {
-          startRandomize(performance.now());
-        }
-        break;
+      case "randomize":        applyPedalShort(); break;
       case "activatePattern": {
         const target = patterns.findIndex(p => p.id === action.id);
         if (target !== -1) { index = target; activatePattern(target); }
@@ -1203,7 +1219,7 @@
     };
     liveRaf = requestAnimationFrame(liveSync);
 
-    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; });
+    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern);
     const detachTouch = attachTouch(handleAction);
 
     function onFsChange() {
@@ -1522,6 +1538,8 @@
             ["Reset controls",       "A",                 "× / A"],
             ["Freeze toggle",        "Space / Start",     "Options / Start"],
             ["Randomize",            "B",                 "○ / B"],
+            ["Pedal double-press",   "B B",               "—"],
+            ["Pedal long-press",     "B (hold)",          "—"],
             ["Blackout toggle",      "X",                 "△ / Y"],
             ["Hide / show HUD",      "Y",                 "□ / X"],
             ["Screenshot",           "S  ·  L  ·  2 (R2)", "R2 / RT"],
@@ -1688,6 +1706,56 @@
               tabindex="0"
             >
               <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {recordingsEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pedal section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Pedal</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Short press changes pattern <span class="text-white/30">(off = randomize only)</span></span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {pedalChangesPattern ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => { pedalChangesPattern = !pedalChangesPattern; localStorage.setItem(PEDAL_CHANGES_PATTERN_KEY, String(pedalChangesPattern)); }}
+              role="switch"
+              aria-checked={pedalChangesPattern}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {pedalChangesPattern ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Double-press changes pattern</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {pedalDoubleChangesPattern ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => { pedalDoubleChangesPattern = !pedalDoubleChangesPattern; localStorage.setItem(PEDAL_DOUBLE_CHANGES_PATTERN_KEY, String(pedalDoubleChangesPattern)); }}
+              role="switch"
+              aria-checked={pedalDoubleChangesPattern}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {pedalDoubleChangesPattern ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Long press <span class="text-white/30">→ {pedalLongScreenshot ? 'Screenshot' : 'Light Paint'}</span></span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {pedalLongScreenshot ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => { pedalLongScreenshot = !pedalLongScreenshot; localStorage.setItem(PEDAL_LONG_SCREENSHOT_KEY, String(pedalLongScreenshot)); }}
+              role="switch"
+              aria-checked={pedalLongScreenshot}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {pedalLongScreenshot ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
             </div>
           </div>
         </div>
@@ -1993,16 +2061,6 @@
             onclick={() => { demoRandomize = !demoRandomize; }}
           >
             <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomize ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
-          </div>
-        </div>
-        <div class="flex items-center justify-between text-xs text-white/70">
-          <span>Pedal changes pattern <span class="text-white/30">(off = randomize only)</span></span>
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div
-            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoPedalChangesPattern ? 'bg-white/70' : 'bg-white/20'}"
-            onclick={() => { demoPedalChangesPattern = !demoPedalChangesPattern; localStorage.setItem(DEMO_PEDAL_CHANGES_PATTERN_KEY, String(demoPedalChangesPattern)); }}
-          >
-            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoPedalChangesPattern ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
           </div>
         </div>
       </div>
