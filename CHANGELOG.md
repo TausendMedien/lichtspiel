@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.260601-0126 — Light Painting unified + new feedback/look effects
+
+**Light Trail and Light Paint merged into one pattern, "Light Painting."** Brush Size = 0 reproduces the old sharp Light-Trail look; higher values give the soft Light-Paint brush. The redundant Gain/Brightness controls are now a single **Gain**.
+
+**Trail Color reworked** — was a chroma boost that defaulted to 2.0 and oversaturated a clean feed. It is now a single slider blending **Live/natural colour (0) → custom palette (1)**, defaulting to 0 (untouched colour). This replaces the old per-frame chroma amplification and the global Colors v2 tint for this pattern.
+
+**Threshold isolation** — no separate toggle needed: **Background = Black** already shows only above-threshold trails on pure black.
+
+**New effects:**
+- *Fly In/Out* (−1…1) — feedback zoom; trails rush inward or fly outward through space
+- *Vortex* (−1…1) — rotational feedback swirl
+- *Bloom* (0…1) — separable-blur soft glow around bright trails
+- *RGB Split* (0…0.02) — chromatic channel offset
+- *Kaleidoscope* + *Segments* (2…12) — radial mirror symmetry
+
 ## v0.4.260527-0142 — Demo Mode Overhaul
 
 Comprehensive rework of demo / kiosk mode.

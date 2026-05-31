@@ -11,7 +11,6 @@ import { hyperMix } from "./hyperMix";
 import { flowLines } from "./flowLines";
 import { curlOrbsBody } from "./curlOrbsBody";
 import { baroqueSwirlsBody } from "./baroqueSwirlsBody";
-import { lightTrail } from "./light-trail";
 import { lightPaint } from "./light-paint";
 import { warpedSurfaces } from "./warpedSurfaces";
 import { wavySphere } from "./wavySphere";
@@ -34,12 +33,12 @@ const imgBaroqueVines  = makeImagePattern('img-baroqueVines',  'Baroque Vines', 
 const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals', `${_base}images/thin-verticals.webp`);
 
 // Patterns that must NOT get the generic motion camera wrapper:
-// - lightTrail / lightPaint  (camera-based themselves)
+// - lightPaint  (camera-based itself)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
-const NO_MOTION_CAMERA = new Set(['lightTrail', 'lightPaint', 'asciiSwirls', 'typography3d']);
+const NO_MOTION_CAMERA = new Set(['lightPaint', 'asciiSwirls', 'typography3d']);
 
 // Patterns that skip audio reactivity wrapping (camera-based patterns)
-const NO_AUDIO = new Set(['lightTrail', 'lightPaint', 'typography3d']);
+const NO_AUDIO = new Set(['lightPaint', 'typography3d']);
 
 const rawPatterns: Pattern[] = [
   hyperMix,
@@ -59,7 +58,6 @@ const rawPatterns: Pattern[] = [
   wavySphere,
   crystalGem,
   typography3d,
-  lightTrail,
   lightPaint,
   imgTealLines,
   imgOrganicWeb,

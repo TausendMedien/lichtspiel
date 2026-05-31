@@ -2,15 +2,30 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 
+// ── Unified "Light Painting" pattern ─────────────────────────────────────────
+// A webcam frame feeds a feedback loop: the accumulation pass adds pixels
+// brighter than a threshold onto a decaying buffer (with a soft brush + spatial
+// feedback transforms), the composite pass tone-maps it with background / ghost
+// / colour / glow / split / kaleidoscope looks.
+// Brush Size = 0 gives the sharp "Light Trail" look; raise it for a soft brush.
+
 // Controls state
 let threshold = 0.29;
-let decayRate = 0.015;
-let brushRadius = 0.015;  // glow spread in UV space
-let gain = 1.0;
-let colorBoost = 2.0;
-let ghostOpacity = 0.15;  // live camera overlay
+let decayRate = 0.015;       // 0 = forever, >0 = fade per frame
+let gain = 1.5;
+let trailColor = 0;          // 0 = live/natural colour, 1 = full custom palette
+let brushRadius = 0.0;       // glow spread in UV space (0 = sharp trail)
+let bgMode = 2;              // 0=black, 1=live, 2=dimmed
+let dimLevel = 0.30;
+let ghostOpacity = 0.0;      // live camera overlay
+let flow = 0;                // -1 fly in fast … 0 none … 1 fly out fast
+let vortex = 0;              // -1 … 1 rotational feedback
+let bloom = 0;               // 0 … 1 soft glow amount
+let rgbSplit = 0;            // 0 … 0.02 chromatic offset (UV)
+let kaleidoOn = false;
+let kaleidoSeg = 6;          // mirror segments
 let clearRequested = false;
-let cameraOn = true;      // user-facing camera toggle (persisted)
+let cameraOn = true;         // user-facing camera toggle (persisted)
 
 // THREE objects
 let _renderer: THREE.WebGLRenderer | null = null;
@@ -21,17 +36,25 @@ let video: HTMLVideoElement | null = null;
 let videoTexture: THREE.VideoTexture | null = null;
 let blackTexture: THREE.DataTexture | null = null;
 let cameraReady = false;
-let startId = 0;          // incremented on every startCamera/stopCamera to cancel stale async calls
+let startId = 0;             // incremented on every startCamera/stopCamera to cancel stale async calls
 
 // Ping-pong render targets
 let trailA: THREE.WebGLRenderTarget | null = null;
 let trailB: THREE.WebGLRenderTarget | null = null;
+// Bloom blur targets
+let bloomA: THREE.WebGLRenderTarget | null = null;
+let bloomB: THREE.WebGLRenderTarget | null = null;
 
 // Accumulation pass (offscreen scene)
 let accumScene: THREE.Scene | null = null;
 let accumCamera: THREE.OrthographicCamera | null = null;
 let accumGeometry: THREE.PlaneGeometry | null = null;
 let accumMaterial: THREE.ShaderMaterial | null = null;
+
+// Blur pass (reuses accumScene/Camera by swapping the mesh material)
+let blurScene: THREE.Scene | null = null;
+let blurGeometry: THREE.PlaneGeometry | null = null;
+let blurMaterial: THREE.ShaderMaterial | null = null;
 
 // Composite pass (main scene)
 let compositeGeometry: THREE.PlaneGeometry | null = null;
@@ -42,7 +65,7 @@ let compositeMesh: THREE.Mesh | null = null;
 let overlay: HTMLDivElement | null = null;
 let canvasRef: HTMLCanvasElement | null = null;
 
-// Resolution for brush radius conversion
+// Resolution for brush radius / bloom texel conversion
 let resX = 1280;
 let resY = 720;
 
@@ -57,8 +80,9 @@ const vertexShader = /* glsl */ `
 `;
 
 // 9-tap disc sample: center + 8 neighbours scaled by uRadius.
-// Each tap detects bright pixels; contributions are summed and averaged
-// to produce a soft brush stroke rather than a hard single-pixel trace.
+// Bright pixels are detected, summed and averaged → a soft brush stroke.
+// The previous trail is read through a feedback transform (vortex rotation +
+// fly-in/out scale) so the accumulated light flows through space.
 const accumFragmentShader = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
@@ -67,26 +91,32 @@ const accumFragmentShader = /* glsl */ `
   uniform float uThreshold;
   uniform float uDecay;
   uniform float uGain;
-  uniform float uColorBoost;
   uniform float uClear;
   uniform float uRadiusX;  // brushRadius / resX
   uniform float uRadiusY;  // brushRadius / resY
+  uniform float uFlow;     // -1 fly in … 1 fly out
+  uniform float uVortex;   // rotation radians/frame
 
   vec3 detectAt(vec2 uv) {
     vec4 live = texture2D(uLiveFrame, uv);
     float brightness = max(max(live.r, live.g), live.b);
     float weight = clamp((brightness - uThreshold) / max(1.0 - uThreshold, 0.01), 0.0, 1.0);
     weight = weight * weight;
-    float gray = dot(live.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 vivid = mix(vec3(gray), live.rgb, uColorBoost);
-    vec3 c = vivid * weight * uGain;
+    // Natural camera colour (no chroma boost) — Trail Color is applied at composite.
+    vec3 c = live.rgb * weight * uGain;
     // Reinhard soft-saturation: preserves hue, prevents single-frame white slam.
     float peak = max(max(c.r, c.g), c.b) + 0.001;
     return c / (peak + 1.0);
   }
 
   void main() {
-    vec4 trail = texture2D(uTrail, vUv);
+    // Feedback transform on the previous trail (rotate then scale about centre).
+    vec2 fb = vUv - 0.5;
+    float a = uVortex;
+    float s = sin(a), co = cos(a);
+    fb = mat2(co, -s, s, co) * fb;
+    fb *= (1.0 - uFlow * 0.02);   // -1 => content flies IN, +1 => flies OUT
+    vec4 trail = texture2D(uTrail, fb + 0.5);
 
     // 9-tap disc (centre + 8 diagonal/cardinal offsets)
     float r = 0.707;
@@ -109,31 +139,86 @@ const accumFragmentShader = /* glsl */ `
   }
 `;
 
-// Reinhard tone-map the accumulated painting so overexposed areas
-// bloom smoothly to white, then blend the live ghost over the top.
+// Separable 9-tap Gaussian blur (used twice: horizontal then vertical) for bloom.
+const blurFragmentShader = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTex;
+  uniform vec2 uDir;   // texel * spread along one axis
+  void main() {
+    vec3 sum = texture2D(uTex, vUv).rgb * 0.2270270;
+    sum += (texture2D(uTex, vUv + uDir * 1.0).rgb + texture2D(uTex, vUv - uDir * 1.0).rgb) * 0.1945946;
+    sum += (texture2D(uTex, vUv + uDir * 2.0).rgb + texture2D(uTex, vUv - uDir * 2.0).rgb) * 0.1216216;
+    sum += (texture2D(uTex, vUv + uDir * 3.0).rgb + texture2D(uTex, vUv - uDir * 3.0).rgb) * 0.0540541;
+    sum += (texture2D(uTex, vUv + uDir * 4.0).rgb + texture2D(uTex, vUv - uDir * 4.0).rgb) * 0.0162162;
+    gl_FragColor = vec4(sum, 1.0);
+  }
+`;
+
 const compositeFragmentShader = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
   uniform sampler2D uTrail;
+  uniform sampler2D uBloomTex;
   uniform sampler2D uLiveFrame;
+  uniform float uBgMode;
+  uniform float uDimLevel;
+  uniform float uThreshold;
   uniform float uGhost;
-  uniform float uColorsV2;
-  uniform vec3  uMainColor;
+  uniform float uTrailColor;   // 0 live colour … 1 custom palette
+  uniform vec3  uPal0;         // main
+  uniform vec3  uPal1;         // contrast
+  uniform vec3  uPal2;         // glow
+  uniform float uBloom;
+  uniform float uRgbSplit;
+  uniform float uKaleido;      // >0.5 = on
+  uniform float uKaleidoSeg;
+
+  // Reinhard-toned trail + bloom at a given uv.
+  vec3 tonedAt(vec2 uv) {
+    vec3 t = texture2D(uTrail, uv).rgb;
+    t += uBloom * texture2D(uBloomTex, uv).rgb;
+    return t / (t + 1.0);
+  }
+
+  vec2 kaleido(vec2 uv) {
+    vec2 p = uv - 0.5;
+    float ang = atan(p.y, p.x);
+    float rad = length(p);
+    float seg = 6.2831853 / uKaleidoSeg;
+    ang = mod(ang, seg);
+    ang = abs(ang - seg * 0.5);
+    return vec2(cos(ang), sin(ang)) * rad + 0.5;
+  }
 
   void main() {
-    vec3 trail = texture2D(uTrail, vUv).rgb;
-    vec3 live  = texture2D(uLiveFrame, vUv).rgb;
+    vec2 suv = uKaleido > 0.5 ? kaleido(vUv) : vUv;
 
-    // Reinhard tone-map: handles values above 1.0 gracefully
-    vec3 painting = trail / (trail + 1.0);
+    // Chromatic split across channels.
+    vec3 toned;
+    toned.r = tonedAt(suv + vec2(uRgbSplit, 0.0)).r;
+    toned.g = tonedAt(suv).g;
+    toned.b = tonedAt(suv - vec2(uRgbSplit, 0.0)).b;
 
-    vec3 out_ = mix(painting, live, uGhost);
-    vec3 _orig_o = out_;
-    float _luma = dot(_orig_o, vec3(0.299, 0.587, 0.114));
-    float _ph1 = clamp(uColorsV2, 0.0, 1.0);
-    float _ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
-    out_ = mix(mix(vec3(_luma), uMainColor * (0.2 + _luma * 0.8), _ph1), _orig_o, _ph2);
-    gl_FragColor = vec4(out_, 1.0);
+    // Palette map: brightness-driven gradient across the custom colours.
+    float luma = dot(toned, vec3(0.299, 0.587, 0.114));
+    vec3 pal = luma < 0.5
+      ? mix(uPal0, uPal1, luma * 2.0)
+      : mix(uPal1, uPal2, (luma - 0.5) * 2.0);
+    vec3 colored = mix(toned, pal * luma, uTrailColor);
+
+    // Background from the live feed.
+    vec4 live = texture2D(uLiveFrame, suv);
+    float lluma = dot(live.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float darkness = 1.0 - smoothstep(0.0, uThreshold, lluma);
+    float t01 = clamp(uBgMode, 0.0, 1.0);
+    float t12 = clamp(uBgMode - 1.0, 0.0, 1.0);
+    vec3 bg = mix(vec3(0.0), live.rgb, t01);
+    bg = mix(bg, live.rgb * uDimLevel * darkness, t12);
+
+    vec3 outc = clamp(bg + colored, 0.0, 1.0);
+    outc = mix(outc, live.rgb, uGhost);
+    gl_FragColor = vec4(outc, 1.0);
   }
 `;
 
@@ -197,7 +282,7 @@ function showOverlay(canvas: HTMLCanvasElement, message: string) {
 
 export const lightPaint: Pattern = {
   id: "lightPaint",
-  name: "Light Paint",
+  name: "Light Painting",
   usesCameraBlend: true,
 
   controls: [
@@ -227,32 +312,87 @@ export const lightPaint: Pattern = {
       set: (v) => { decayRate = v; },
     },
     {
-      label: "Brush Size",
-      type: "range", min: 0.0, max: 0.05, step: 0.001,
-      default: 0.015,
-      get: () => brushRadius,
-      set: (v) => { brushRadius = v; },
-    },
-    {
-      label: "Brightness",
-      type: "range", min: 0.75, max: 8.0, step: 0.1,
-      default: 1,
+      label: "Gain",
+      type: "range", min: 0.5, max: 8.0, step: 0.1,
+      default: 1.5,
       get: () => gain,
       set: (v) => { gain = v; },
     },
     {
       label: "Trail Color",
-      type: "range", min: 0.0, max: 4.0, step: 0.1,
-      default: 2,
-      get: () => colorBoost,
-      set: (v) => { colorBoost = v; },
+      type: "range", min: 0.0, max: 1.0, step: 0.05,
+      default: 0,
+      get: () => trailColor,
+      set: (v) => { trailColor = v; },
+    },
+    {
+      label: "Brush Size",
+      type: "range", min: 0.0, max: 0.05, step: 0.001,
+      default: 0,
+      get: () => brushRadius,
+      set: (v) => { brushRadius = v; },
+    },
+    {
+      label: "Background",
+      type: "select", options: ["Black", "Live", "Dimmed"],
+      get: () => bgMode,
+      set: (v) => { bgMode = v; },
+    },
+    {
+      label: "Dim Level",
+      type: "range", min: 0.0, max: 1.0, step: 0.05,
+      default: 0.3,
+      get: () => dimLevel,
+      set: (v) => { dimLevel = v; },
     },
     {
       label: "Ghost",
       type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0.15,
+      default: 0,
       get: () => ghostOpacity,
       set: (v) => { ghostOpacity = v; },
+    },
+    {
+      label: "Fly In/Out",
+      type: "range", min: -1.0, max: 1.0, step: 0.01,
+      default: 0,
+      get: () => flow,
+      set: (v) => { flow = v; },
+    },
+    {
+      label: "Vortex",
+      type: "range", min: -1.0, max: 1.0, step: 0.01,
+      default: 0,
+      get: () => vortex,
+      set: (v) => { vortex = v; },
+    },
+    {
+      label: "Bloom",
+      type: "range", min: 0.0, max: 1.0, step: 0.05,
+      default: 0,
+      get: () => bloom,
+      set: (v) => { bloom = v; },
+    },
+    {
+      label: "RGB Split",
+      type: "range", min: 0.0, max: 0.02, step: 0.0005,
+      default: 0,
+      get: () => rgbSplit,
+      set: (v) => { rgbSplit = v; },
+    },
+    {
+      label: "Kaleidoscope",
+      type: "toggle",
+      get: () => kaleidoOn,
+      set: (v) => { kaleidoOn = !!v; },
+    },
+    {
+      label: "Segments",
+      type: "range", min: 2, max: 12, step: 1,
+      default: 6,
+      disabled: () => !kaleidoOn,
+      get: () => kaleidoSeg,
+      set: (v) => { kaleidoSeg = v; },
     },
     {
       label: "Clear Canvas",
@@ -267,7 +407,6 @@ export const lightPaint: Pattern = {
     resX = width;
     resY = height;
     canvasRef = ctx.renderer.domElement;
-    const canvas = canvasRef;
 
     blackTexture = new THREE.DataTexture(
       new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat
@@ -287,6 +426,8 @@ export const lightPaint: Pattern = {
     };
     trailA = new THREE.WebGLRenderTarget(width, height, rtOpts);
     trailB = new THREE.WebGLRenderTarget(width, height, rtOpts);
+    bloomA = new THREE.WebGLRenderTarget(width, height, rtOpts);
+    bloomB = new THREE.WebGLRenderTarget(width, height, rtOpts);
 
     accumScene = new THREE.Scene();
     accumCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -298,10 +439,11 @@ export const lightPaint: Pattern = {
         uThreshold:  { value: threshold },
         uDecay:      { value: decayRate },
         uGain:       { value: gain },
-        uColorBoost: { value: colorBoost },
         uClear:      { value: 0.0 },
         uRadiusX:    { value: brushRadius / resX },
         uRadiusY:    { value: brushRadius / resY },
+        uFlow:       { value: flow },
+        uVortex:     { value: vortex },
       },
       vertexShader,
       fragmentShader: accumFragmentShader,
@@ -312,14 +454,40 @@ export const lightPaint: Pattern = {
     accumMesh.frustumCulled = false;
     accumScene.add(accumMesh);
 
+    blurScene = new THREE.Scene();
+    blurGeometry = new THREE.PlaneGeometry(2, 2);
+    blurMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTex: { value: blackTexture },
+        uDir: { value: new THREE.Vector2() },
+      },
+      vertexShader,
+      fragmentShader: blurFragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const blurMesh = new THREE.Mesh(blurGeometry, blurMaterial);
+    blurMesh.frustumCulled = false;
+    blurScene.add(blurMesh);
+
     compositeGeometry = new THREE.PlaneGeometry(2, 2);
     compositeMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uTrail:     { value: trailA.texture },
-        uLiveFrame: { value: blackTexture },
-        uGhost:     { value: ghostOpacity },
-        uColorsV2:  { value: colorC2.colorsV2 },
-        uMainColor: { value: new THREE.Vector3() },
+        uTrail:      { value: trailA.texture },
+        uBloomTex:   { value: blackTexture },
+        uLiveFrame:  { value: blackTexture },
+        uBgMode:     { value: bgMode },
+        uDimLevel:   { value: dimLevel },
+        uThreshold:  { value: threshold },
+        uGhost:      { value: ghostOpacity },
+        uTrailColor: { value: trailColor },
+        uPal0:       { value: new THREE.Vector3() },
+        uPal1:       { value: new THREE.Vector3() },
+        uPal2:       { value: new THREE.Vector3() },
+        uBloom:      { value: bloom },
+        uRgbSplit:   { value: rgbSplit },
+        uKaleido:    { value: 0.0 },
+        uKaleidoSeg: { value: kaleidoSeg },
       },
       vertexShader,
       fragmentShader: compositeFragmentShader,
@@ -329,7 +497,6 @@ export const lightPaint: Pattern = {
     compositeMesh = new THREE.Mesh(compositeGeometry, compositeMaterial);
     compositeMesh.frustumCulled = false;
     ctx.scene.add(compositeMesh);
-
   },
 
   activate() {
@@ -341,7 +508,7 @@ export const lightPaint: Pattern = {
   },
 
   update(_dt, _elapsed) {
-    if (!_renderer || !accumMaterial || !compositeMaterial) return;
+    if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
 
     const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
     if (cameraReady && videoTexture) videoTexture.needsUpdate = true;
@@ -354,10 +521,11 @@ export const lightPaint: Pattern = {
     accumMaterial.uniforms.uThreshold.value  = threshold;
     accumMaterial.uniforms.uDecay.value      = decayRate;
     accumMaterial.uniforms.uGain.value       = gain;
-    accumMaterial.uniforms.uColorBoost.value = colorBoost;
     accumMaterial.uniforms.uClear.value      = doClear;
     accumMaterial.uniforms.uRadiusX.value    = brushRadius / resX;
     accumMaterial.uniforms.uRadiusY.value    = brushRadius / resY;
+    accumMaterial.uniforms.uFlow.value       = flow;
+    accumMaterial.uniforms.uVortex.value     = vortex * 0.05;
 
     _renderer.setRenderTarget(trailB);
     _renderer.render(accumScene!, accumCamera!);
@@ -365,12 +533,42 @@ export const lightPaint: Pattern = {
 
     [trailA, trailB] = [trailB!, trailA!];
 
-    compositeMaterial.uniforms.uTrail.value     = trailA.texture;
-    compositeMaterial.uniforms.uLiveFrame.value = liveTex;
-    compositeMaterial.uniforms.uGhost.value     = ghostOpacity;
-    const _mc = new THREE.Color(colorC2.main);
-    compositeMaterial.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
-    compositeMaterial.uniforms.uColorsV2.value = colorC2.colorsV2;
+    // Bloom: blur the fresh trail horizontally then vertically (skipped when off).
+    let bloomTex: THREE.Texture = blackTexture!;
+    if (bloom > 0 && bloomA && bloomB) {
+      const spread = 2.0;
+      blurMaterial.uniforms.uTex.value = trailA.texture;
+      blurMaterial.uniforms.uDir.value.set(spread / resX, 0);
+      _renderer.setRenderTarget(bloomA);
+      _renderer.render(blurScene!, accumCamera!);
+
+      blurMaterial.uniforms.uTex.value = bloomA.texture;
+      blurMaterial.uniforms.uDir.value.set(0, spread / resY);
+      _renderer.setRenderTarget(bloomB);
+      _renderer.render(blurScene!, accumCamera!);
+      _renderer.setRenderTarget(null);
+      bloomTex = bloomB.texture;
+    }
+
+    const u = compositeMaterial.uniforms;
+    u.uTrail.value      = trailA.texture;
+    u.uBloomTex.value   = bloomTex;
+    u.uLiveFrame.value  = liveTex;
+    u.uBgMode.value     = bgMode;
+    u.uDimLevel.value   = dimLevel;
+    u.uThreshold.value  = threshold;
+    u.uGhost.value      = ghostOpacity;
+    u.uTrailColor.value = trailColor;
+    u.uBloom.value      = bloom;
+    u.uRgbSplit.value   = rgbSplit;
+    u.uKaleido.value    = kaleidoOn ? 1.0 : 0.0;
+    u.uKaleidoSeg.value = kaleidoSeg;
+    const p0 = new THREE.Color(colorC2.main);
+    const p1 = new THREE.Color(colorC2.contrast);
+    const p2 = new THREE.Color(colorC2.glow);
+    u.uPal0.value.set(p0.r, p0.g, p0.b);
+    u.uPal1.value.set(p1.r, p1.g, p1.b);
+    u.uPal2.value.set(p2.r, p2.g, p2.b);
   },
 
   resize(width, height) {
@@ -378,6 +576,8 @@ export const lightPaint: Pattern = {
     resY = height;
     trailA?.setSize(width, height);
     trailB?.setSize(width, height);
+    bloomA?.setSize(width, height);
+    bloomB?.setSize(width, height);
   },
 
   dispose() {
@@ -387,10 +587,16 @@ export const lightPaint: Pattern = {
 
     trailA?.dispose(); trailA = null;
     trailB?.dispose(); trailB = null;
+    bloomA?.dispose(); bloomA = null;
+    bloomB?.dispose(); bloomB = null;
 
     accumGeometry?.dispose(); accumGeometry = null;
     accumMaterial?.dispose(); accumMaterial = null;
     accumScene = null; accumCamera = null;
+
+    blurGeometry?.dispose(); blurGeometry = null;
+    blurMaterial?.dispose(); blurMaterial = null;
+    blurScene = null;
 
     compositeGeometry?.dispose(); compositeGeometry = null;
     compositeMaterial?.dispose(); compositeMaterial = null;
