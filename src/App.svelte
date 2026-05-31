@@ -27,7 +27,7 @@
 
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
-    'lightTrail', 'lightPaint',
+    'lightPaint',
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
   ]);
 
@@ -140,6 +140,35 @@
   const PEDAL_LONG_SCREENSHOT_KEY = 'pp:pedal-long-screenshot';
   let pedalLongScreenshot = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_LONG_SCREENSHOT_KEY) === 'true' : false);
 
+  const cheatsheetRows = $derived((() => {
+    const rows: [string, string, string][] = [
+      ["Prev / next pattern",  "← →",                "D-Pad ← →"],
+      ["Speed +/−",            "↑ ↓",                "D-Pad ↑ ↓"],
+      ["Switch slider",        "R (hold) + ↑↓",      "R-Stick ↑↓"],
+      ["Adjust slider",        "R (hold) + ←→",      "R-Stick ←→"],
+      ["Reset controls",       "A",                  "× / A"],
+      ["Freeze toggle",        "Space / Start",      "Options / Start"],
+      [pedalChangesPattern ? "Randomize + change pattern" : "Randomize",
+       "B  · Pedal",           "○ / B"],
+      ...(pedalDoubleChangesPattern
+        ? [["Change pattern",  "B B  · Pedal",       "—"] as [string, string, string]]
+        : []),
+      [pedalLongScreenshot ? "Screenshot" : "Light Paint",
+       "B (hold)  · Pedal",   "—"],
+      ["Blackout toggle",      "X",                  "△ / Y"],
+      ["Hide / show HUD",      "Y",                  "□ / X"],
+      ["Screenshot",           "S  ·  L  ·  2 (R2)", "R2 / RT"],
+      ["Camera toggle",        "2  ·  L1",           "L1 / LB"],
+      ["Record video",         "V  ·  1  ·  L2",     "L2 / LT"],
+      ["About / Controls",     "M  ·  ?",            "R1 / RB"],
+      ["Options",              "O",                  "—"],
+      ["Fullscreen",           "F",                  "—"],
+      ["Demo mode",            "D",                  "—"],
+      ["Overview / back",      "Esc",                "Share / Back"],
+    ];
+    return rows;
+  })());
+
   // Demo auto-restart after idle
   const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
   const DEMO_AUTORESTART_TIME_KEY = 'pp:demo-autorestart-time';
@@ -189,7 +218,7 @@
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
     { label: 'Generative',        ids: ['hyperMix','particlesBody','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
-    { label: 'Live Light Painting',ids: ['lightTrail','lightPaint'] },
+    { label: 'Live Light Painting',ids: ['lightPaint'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
@@ -1389,7 +1418,7 @@
         </div>
       {:else}
         {#each displayPatterns as { p, i }}
-          {#if p.id === 'lightTrail' && !showFavoritesOnly && !showPoseOnly}
+          {#if p.id === 'lightPaint' && !showFavoritesOnly && !showPoseOnly}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
@@ -1525,32 +1554,12 @@
         <thead>
           <tr class="border-b border-white/20">
             <th class="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-white/50">Controls</th>
-            <th class="pb-2 pl-4 text-left text-xs font-semibold uppercase tracking-wider text-white/50">Keyboard and 8BitDo Micro</th>
+            <th class="pb-2 pl-4 text-left text-xs font-semibold uppercase tracking-wider text-white/50">Keyboard / 8BitDo Micro (Pedal)</th>
             <th class="pb-2 pl-4 text-left text-xs font-semibold uppercase tracking-wider text-white/50">Dual Shock</th>
           </tr>
         </thead>
         <tbody>
-          {#each [
-            ["Prev / next pattern",  "← →",               "D-Pad ← →"],
-            ["Speed +/−",            "↑ ↓",               "D-Pad ↑ ↓"],
-            ["Switch slider",        "R (hold) + ↑↓",     "R-Stick ↑↓"],
-            ["Adjust slider",        "R (hold) + ←→",     "R-Stick ←→"],
-            ["Reset controls",       "A",                 "× / A"],
-            ["Freeze toggle",        "Space / Start",     "Options / Start"],
-            ["Randomize",            "B",                 "○ / B"],
-            ["Pedal double-press",   "B B",               "—"],
-            ["Pedal long-press",     "B (hold)",          "—"],
-            ["Blackout toggle",      "X",                 "△ / Y"],
-            ["Hide / show HUD",      "Y",                 "□ / X"],
-            ["Screenshot",           "S  ·  L  ·  2 (R2)", "R2 / RT"],
-            ["Camera toggle",        "2  ·  L1",           "L1 / LB"],
-            ["Record video",         "V  ·  1  ·  L2",     "L2 / LT"],
-            ["About / Controls",     "M  ·  ?",           "R1 / RB"],
-            ["Options",              "O",                 "—"],
-            ["Fullscreen",           "F",                 "—"],
-            ["Demo mode",            "D",                 "—"],
-            ["Overview / back",      "Esc",               "Share / Back"],
-          ] as row}
+          {#each cheatsheetRows as row}
             <tr class="border-b border-white/[0.06]">
               <td class="py-1.5 pr-4 text-sm text-white/70 whitespace-nowrap">{row[0]}</td>
               <td class="py-1.5 pl-4 pr-4 font-mono text-xs text-white/80 whitespace-nowrap">{row[1]}</td>
