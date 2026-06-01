@@ -95,7 +95,7 @@ const fragmentShader = /* glsl */ `
 export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
-  motionControlLabels: ["Wobble"],   // wobble responds to motion; Tier 1 universals handle Color v2
+  motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Thickness"],
   controls: [
     { label: "Speed",       type: "range", min: -100, max: 100, step: 1, default: 10,    get: () => speed,         set: (v) => { speed = v; } },

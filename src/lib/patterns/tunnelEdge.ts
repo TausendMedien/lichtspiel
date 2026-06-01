@@ -120,7 +120,7 @@ const fragmentShader = /* glsl */ `
 export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
-  motionControlLabels: ["Wobble"],   // wobble responds to motion; Tier 1 handles Color v2
+  motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
     { label: "Speed",        type: "range", min: -20,   max: 20,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },

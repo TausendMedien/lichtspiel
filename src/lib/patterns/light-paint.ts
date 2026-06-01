@@ -570,7 +570,7 @@ function createLightPainting(
     id,
     name,
     usesCameraBlend: true,
-    audioControlLabels: [],
+    audioControlLabels: ['RGB Split'],
     defaultCollapsedSections: ['Additional'],
     controls: builtControls,
 

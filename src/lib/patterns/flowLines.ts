@@ -107,6 +107,8 @@ const fragmentShader = /* glsl */ `
 export const flowLines: Pattern = {
   id: "flowLines",
   name: "Flow Lines",
+  motionControlLabels: ["Line Width"],
+  audioControlLabels:  ["Flow Speed", "Rotate"],
   controls: [
     { label: "Line Count",   type: "range", min: 10,  max: 150, step: 1, default: 124,    get: () => lineCount,   set: (v) => { lineCount = v; } },
     { label: "Flow Speed",   type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.35, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
