@@ -2179,8 +2179,8 @@
             const groupDisabled = !sectionOn && ctrl.type !== 'section' && ctrl.type !== 'separator';
             const inSection = (ctrl.type !== 'section' && ctrl.type !== 'separator') ? currentSection : null;
             const hidden = inSection !== null && collapsedSections.has(inSection);
-            // Skip controls that belong to the Interactive section
-            const isInteractive = ctrl.type === 'range' && !!(ctrl as any).interactive;
+            // Skip controls that belong to the Interactive section (camera toggles, select, etc.)
+            const isInteractive = !!(ctrl as any).interactive;
             return { ctrl, groupDisabled, hidden, isInteractive };
           });
         })()}
@@ -2499,33 +2499,14 @@
           {#if !interactiveCollapsed}
             <div class="flex flex-col gap-2.5 mt-1 transition-opacity duration-200 {interactiveOn ? '' : 'opacity-40 pointer-events-none'}">
 
-              <!-- Camera selection (for motion/pose/blend patterns) -->
+              <!-- Camera section -->
               {#if patterns[index].motionReactive || patterns[index].usesPose || patterns[index].usesCameraBlend}
                 <div>
                   <div class="mb-1 text-xs text-white/70">Camera</div>
-                  {#if cameraState.devices.length > 0}
-                    <select
-                      value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
-                      onchange={(e) => {
-                        const i = parseInt((e.target as HTMLSelectElement).value);
-                        cameraState.deviceId = cameraState.devices[i]?.deviceId ?? '';
-                      }}
-                      class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                    >
-                      {#each cameraState.devices as d, i}
-                        <option value={i}>{d.label}</option>
-                      {/each}
-                    </select>
-                  {:else}
-                    <button
-                      onclick={() => enumerateCameras()}
-                      class="text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
-                    >Detect cameras</button>
-                  {/if}
-                  <!-- Camera blend controls (ASCII Swirls) -->
                   {#if patterns[index].usesCameraBlend}
+                    <!-- Light-painting patterns: render interactive:'camera' controls from pattern -->
                     {@const camControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'camera')}
-                    <div class="mt-2 flex flex-col gap-2">
+                    <div class="flex flex-col gap-2">
                       {#each camControls as ctrl}
                         {#if ctrl.type === 'toggle'}
                           {@const isOn = !!(ctrlVals[ctrl.label] ?? ctrl.get())}
@@ -2534,25 +2515,48 @@
                             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                             <div
                               class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
-                              onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); enumerateCameras(); }}
+                              onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
                             >
                               <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
                             </div>
                           </div>
-                        {:else if ctrl.type === 'range'}
-                          <div class="flex flex-col gap-0.5">
-                            <div class="flex justify-between text-xs text-white/70">
-                              <span>{ctrl.label}</span>
-                              <span class="font-mono text-white/40">{Number(ctrlVals[ctrl.label] ?? ctrl.get()).toFixed(2)}</span>
-                            </div>
-                            <input type="range" min={ctrl.min} max={ctrl.max} step={ctrl.step}
+                        {:else if ctrl.type === 'select'}
+                          {@const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options}
+                          {#if opts.length > 1}
+                            <select
                               value={ctrlVals[ctrl.label] ?? ctrl.get()}
-                              oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns); }}
-                              class="w-full accent-white cursor-pointer" />
-                          </div>
+                              onchange={(e) => { const v = parseInt((e.target as HTMLSelectElement).value); ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns); }}
+                              class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                            >
+                              {#each opts as opt, i}
+                                <option value={i}>{opt}</option>
+                              {/each}
+                            </select>
+                          {/if}
                         {/if}
                       {/each}
                     </div>
+                  {:else}
+                    <!-- Motion/pose patterns: global motion camera picker -->
+                    {#if cameraState.devices.length > 0}
+                      <select
+                        value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
+                        onchange={(e) => {
+                          const i = parseInt((e.target as HTMLSelectElement).value);
+                          cameraState.deviceId = cameraState.devices[i]?.deviceId ?? '';
+                        }}
+                        class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                      >
+                        {#each cameraState.devices as d, i}
+                          <option value={i}>{d.label}</option>
+                        {/each}
+                      </select>
+                    {:else}
+                      <button
+                        onclick={() => enumerateCameras()}
+                        class="text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                      >Detect cameras</button>
+                    {/if}
                   {/if}
                 </div>
               {/if}

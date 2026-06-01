@@ -3,6 +3,19 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 
+// ─── Shared camera device state (module-level, persists across pattern switches) ──
+let _lpDeviceId = '';
+const _lpDevices: Array<{ deviceId: string; label: string }> = [];
+
+async function enumerateLpCameras(): Promise<void> {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    const cams = all.filter(d => d.kind === 'videoinput');
+    _lpDevices.length = 0;
+    cams.forEach((d, i) => _lpDevices.push({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+  } catch { /* ignore */ }
+}
+
 // ── "Light Painting" family ──────────────────────────────────────────────────
 // A webcam frame feeds a feedback loop: the accumulation pass adds pixels
 // brighter than a threshold onto a decaying buffer (with a soft brush + spatial
@@ -301,11 +314,13 @@ function createLightPainting(
 
   async function startCamera(canvas: HTMLCanvasElement) {
     const myId = ++startId;
+    // Enumerate cameras so device picker is populated on first use
+    if (_lpDevices.length === 0) await enumerateLpCameras();
     try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
-        audio: false,
-      });
+      const videoConstraint: MediaTrackConstraints = _lpDeviceId
+        ? { deviceId: { exact: _lpDeviceId }, width: { ideal: 1280 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
+      const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
       if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
       stream = s;
       video = document.createElement("video");
@@ -345,18 +360,37 @@ function createLightPainting(
   const thresholdSetter = (v: number) => { threshold = v; };
   _thresholdSetters.push(thresholdSetter);
 
+  // Camera controls live in Interactive section (interactive:'camera'), not the main controls panel.
+  const cameraControls = [
+    {
+      label: "Camera",
+      type: "toggle" as const,
+      interactive: "camera" as const,
+      get: () => cameraOn,
+      set: (v: boolean) => {
+        cameraOn = !!v;
+        if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
+        else if (!cameraOn) stopCamera();
+      },
+    },
+    {
+      label: "Camera Device",
+      type: "select" as const,
+      interactive: "camera" as const,
+      options: () => _lpDevices.length > 0 ? _lpDevices.map(d => d.label) : ['Default'],
+      get: () => {
+        const idx = _lpDevices.findIndex(d => d.deviceId === _lpDeviceId);
+        return idx >= 0 ? idx : 0;
+      },
+      set: (idx: number) => {
+        _lpDeviceId = _lpDevices[idx]?.deviceId ?? '';
+        if (cameraOn && canvasRef) startCamera(canvasRef);
+      },
+    },
+  ];
+
   const baseControls = [
-        {
-          label: "Camera",
-          type: "toggle" as const,
-          interactive: "camera" as const,
-          get: () => cameraOn,
-          set: (v: boolean) => {
-            cameraOn = !!v;
-            if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
-            else if (!cameraOn) stopCamera();
-          },
-        },
+        ...cameraControls,
         {
           label: "Mirror",
           type: "toggle" as const,
@@ -487,7 +521,8 @@ function createLightPainting(
         },
       ];
 
-  // Move priority controls (by label) to position 2 (after Camera + Mirror).
+  // Move priority controls to position 2 (after the 2 camera controls that are in Interactive).
+  // This puts the distinctive slider first in the Controls panel.
   const builtControls = (() => {
     if (priorityLabels.length > 0) {
       const priorityItems = baseControls.filter(c => priorityLabels.includes(c.label));
@@ -500,6 +535,7 @@ function createLightPainting(
   return {
     id,
     name,
+    usesCameraBlend: true,
     audioControlLabels: [],
     defaultCollapsedSections: ['Additional'],
     controls: builtControls,
