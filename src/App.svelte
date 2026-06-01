@@ -2698,6 +2698,14 @@
                         class="w-full accent-white cursor-pointer" />
                     </div>
                     <div>
+                      <div class="flex justify-between mb-1 text-xs text-white/70">
+                        <span>Noise Gate <span class="text-white/30 text-[10px]">silence floor</span></span>
+                        <span class="font-mono text-white/40">{audioState.noiseGate}</span>
+                      </div>
+                      <input type="range" min={0} max={60} step={1} bind:value={audioState.noiseGate}
+                        class="w-full accent-white cursor-pointer" />
+                    </div>
+                    <div>
                       <div class="mb-1 text-xs text-white/70">Frequency Band</div>
                       <select
                         value={audioState.bandIndex}

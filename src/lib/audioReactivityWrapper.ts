@@ -35,6 +35,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   let smoothed           = 0;
   let energyBeatPulse    = 0;   // decaying pulse from Energy Ratio detector
   let fluxBeatPulse      = 0;   // decaying pulse from Spectral Flux detector
+  let gateOpenAmount     = 1;   // 0=gated (silent), 1=fully open
+  let noiseFloor         = 0;   // slow-tracking background RMS
   let prevEnabled        = false;
   let prevDeviceId       = '';
   let prevPatternEnabled = true;
@@ -67,6 +69,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
   let source: MediaStreamAudioSourceNode | null = null;
   let stream: MediaStream | null = null;
   let dataArray: Uint8Array | null = null;
+  let timeDomainArray: Uint8Array | null = null;
 
   // Both detectors always instantiated; both start with the same stream.
   // onBeat callbacks only register a pulse if the detector is enabled.
@@ -118,6 +121,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.4;
       dataArray = new Uint8Array(analyser.frequencyBinCount);
+      timeDomainArray = new Uint8Array(analyser.fftSize);
       source = audioCtx.createMediaStreamSource(stream);
       source.connect(analyser);
 
@@ -141,10 +145,13 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     analyser?.disconnect();
     audioCtx?.close();
     stream?.getTracks().forEach(t => t.stop());
-    source = null; analyser = null; audioCtx = null; stream = null; dataArray = null;
+    source = null; analyser = null; audioCtx = null; stream = null;
+    dataArray = null; timeDomainArray = null;
     smoothed = 0;
     energyBeatPulse = 0;
     fluxBeatPulse   = 0;
+    gateOpenAmount  = 1;
+    noiseFloor      = 0;
     audioState.level      = 0;
     audioState.beat       = 0;
     audioState.energyBeat = 0;
@@ -194,34 +201,55 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       if (energyDetector.isRunning) energyDetector.sensitivity = audioState.beatSensitivity;
       if (fluxDetector.isRunning)   fluxDetector.sensitivity   = audioState.beatSensitivity;
 
-      // Smoothed level for level display
-      if (analyser && dataArray) {
+      // Smoothed level + RMS for gate
+      if (analyser && dataArray && timeDomainArray) {
         analyser.getByteFrequencyData(dataArray);
         const raw = getLevel(dataArray, audioState.bandIndex);
         smoothed = raw > smoothed
           ? 0.3 * smoothed + 0.7 * raw
           : 0.7 * smoothed + 0.3 * raw;
-      }
-      audioState.level = Math.round(smoothed * 100);
 
-      // Decay both pulses every frame
+        // Compute RMS from time-domain waveform for accurate silence detection
+        analyser.getByteTimeDomainData(timeDomainArray);
+        let sum = 0;
+        for (let i = 0; i < timeDomainArray.length; i++) {
+          const s = (timeDomainArray[i] - 128) / 128;
+          sum += s * s;
+        }
+        const rms = Math.sqrt(sum / timeDomainArray.length);
+        noiseFloor = noiseFloor * 0.995 + rms * 0.005; // ~30s slow tracking
+
+        // Gate: smoothstep from threshold to 2.5× threshold → 0..1
+        const threshold = (audioState.noiseGate / 100) * 0.3;
+        if (threshold < 0.001) {
+          gateOpenAmount = 1;
+        } else {
+          const t = Math.max(0, Math.min(1, (rms - threshold) / (threshold * 1.5)));
+          gateOpenAmount = t * t * (3 - 2 * t);
+        }
+      }
+      audioState.level = Math.round(smoothed * gateOpenAmount * 100);
+
+      // Decay both pulses every frame, then apply gate
       energyBeatPulse *= BEAT_DECAY;
       fluxBeatPulse   *= BEAT_DECAY;
+      const gatedEnergyPulse = energyBeatPulse * gateOpenAmount;
+      const gatedFluxPulse   = fluxBeatPulse   * gateOpenAmount;
 
       // Publish per-detector readouts (zero if that detector is disabled)
-      audioState.energyBeat = audioState.energyEnabled ? Math.round(energyBeatPulse * 100) : 0;
-      audioState.fluxBeat   = audioState.fluxEnabled   ? Math.round(fluxBeatPulse   * 100) : 0;
+      audioState.energyBeat = audioState.energyEnabled ? Math.round(gatedEnergyPulse * 100) : 0;
+      audioState.fluxBeat   = audioState.fluxEnabled   ? Math.round(gatedFluxPulse   * 100) : 0;
 
       // Combined beat: max of whichever detectors are enabled
       const combinedPulse = Math.max(
-        audioState.energyEnabled ? energyBeatPulse : 0,
-        audioState.fluxEnabled   ? fluxBeatPulse   : 0,
+        audioState.energyEnabled ? gatedEnergyPulse : 0,
+        audioState.fluxEnabled   ? gatedFluxPulse   : 0,
       );
       audioState.beat = Math.round(combinedPulse * 100);
 
-      // Choose signal: combined beat or smoothed level
+      // Choose signal: combined beat or smoothed gated level
       const active = analyser && dataArray;
-      const signal = active ? (audioState.beatMode ? combinedPulse : smoothed) : 0;
+      const signal = active ? (audioState.beatMode ? combinedPulse : smoothed * gateOpenAmount) : 0;
 
       // Boost controls
       const scaled = signal * (audioState.sensitivity / 100);
@@ -239,8 +267,8 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       if (audioState.enabled && settings.brightnessEnabled) {
         const gain = settings.brightnessGain;
         const str  = interactionState.strength;
-        // Use smoothed level (not beat) for brightness — more sustained and less jarring
-        interactionState.brightnessMult = 1.0 + smoothed * gain * str * 1.5;
+        // Use gated smoothed level for brightness — more sustained and less jarring
+        interactionState.brightnessMult = 1.0 + smoothed * gateOpenAmount * gain * str * 1.5;
       } else {
         // Decay gently back to 1.0 when disabled or audio is off
         interactionState.brightnessMult += (1.0 - interactionState.brightnessMult) * 0.1;

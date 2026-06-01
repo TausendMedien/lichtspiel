@@ -20,6 +20,7 @@ export const audioState = $state({
   beatSensitivity: 1.5,  // shared threshold multiplier for both detectors
   energyEnabled:   false, // Energy Ratio detector on/off
   fluxEnabled:     true,  // Spectral Flux detector on/off
+  noiseGate:       15,    // 0=off, 1–100 gates below this RMS level (suppresses fan/room noise)
   patternAudioEnabled: loadPatternAudioEnabled() as Record<string, boolean>,
 });
 

@@ -38,9 +38,13 @@ function clamp(v: number, lo: number, hi: number): number {
 
 // ─── BeatDetector ─────────────────────────────────────────────────────────────
 
-const ODF_HISTORY  = 43;   // adaptive threshold window (~1.4 s at 30 fps)
-const BEAT_HISTORY = 8;    // timestamps kept for BPM estimation
-const MIN_BEAT_GAP = 200;  // ms debounce between triggers
+const ODF_HISTORY     = 43;   // adaptive threshold window (~1.4 s at 30 fps)
+const BEAT_HISTORY    = 8;    // timestamps kept for BPM estimation
+const MIN_BEAT_GAP    = 200;  // ms debounce between triggers
+// Absolute floor: prevents adaptive threshold from triggering on pure noise.
+// Flux is summed byte differences (0–255 per bin) across three bands.
+// Fan/room noise produces near-zero flux; any real transient far exceeds this.
+const ABS_ODF_FLOOR   = 80;
 
 export class BeatDetector {
   // Svelte 5 reactive fields — writable from outside, readable reactively
@@ -153,9 +157,9 @@ export class BeatDetector {
     if (this.odfHistory.length > ODF_HISTORY) this.odfHistory.shift();
     const threshold = median(this.odfHistory) * this.sensitivity;
 
-    // Beat trigger with debounce
+    // Beat trigger with debounce — must exceed both adaptive and absolute floor
     const now = performance.now();
-    if (odf > threshold && (now - this.lastBeatTime) > MIN_BEAT_GAP) {
+    if (odf > threshold && odf > ABS_ODF_FLOOR && (now - this.lastBeatTime) > MIN_BEAT_GAP) {
       this.lastBeatTime = now;
       this.beatTs.push(now);
       if (this.beatTs.length > BEAT_HISTORY) this.beatTs.shift();
