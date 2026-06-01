@@ -129,7 +129,7 @@ export const baroqueSwirlsBody: Pattern = {
     { label: "Body Warp",      type: "range", min: 0.0, max: 2.0, step: 0.05, default: 0.5, interactive: 'pose' as const, get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
     { label: "Band Count",     type: "range", min: 2,   max: 20,  step: 1, default: 13,    get: () => bandCount,   set: (v) => { bandCount = v; } },
     { label: "Flow Speed",     type: "range", min: 0.0, max: 0.3, step: 0.005, default: 0, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
-    { label: "Warp Amount",    type: "range", min: 0.0, max: 3.0, step: 0.05, default: 1.4, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
+    { label: "Warp Amount",    type: "range", min: 0.15, max: 3.0, step: 0.05, default: 1.4, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
     { label: "Teal",           type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.75, get: () => tealAmt,   set: (v) => { tealAmt = v; } },
     { label: "Purple",         type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.8, get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
     { label: "Color Speed",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.08, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },

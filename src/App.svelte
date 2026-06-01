@@ -884,7 +884,8 @@
     snap['__colorAssign']  = colorShuffle.assign.join(',');
     snap['__colorSat']     = colorShuffle.saturation;
     snap['__colorBri']     = colorShuffle.brightness;
-    // Palette colour values
+    // Colors v2 (variety slider) + palette colour values
+    snap['__c2ColorsV2'] = colorC2.colorsV2;
     snap['__c2Main']     = colorC2.main;
     snap['__c2Contrast'] = colorC2.contrast;
     snap['__c2Glow']     = colorC2.glow;
@@ -930,7 +931,8 @@
     if (typeof snap['__colorSat'] === 'number') colorShuffle.saturation = snap['__colorSat'];
     if (typeof snap['__colorBri'] === 'number') colorShuffle.brightness  = snap['__colorBri'];
     savePatternColor(patterns[index].id);
-    // Restore palette colour values
+    // Restore Colors v2 + palette colour values
+    if (typeof snap['__c2ColorsV2'] === 'number') colorC2.colorsV2 = snap['__c2ColorsV2'] as number;
     const hexRe = /^#[0-9a-fA-F]{6}$/;
     if (typeof snap['__c2Main']     === 'string' && hexRe.test(snap['__c2Main']     as string)) colorC2.main     = snap['__c2Main']     as string;
     if (typeof snap['__c2Contrast'] === 'string' && hexRe.test(snap['__c2Contrast'] as string)) colorC2.contrast = snap['__c2Contrast'] as string;
