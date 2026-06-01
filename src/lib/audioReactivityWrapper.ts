@@ -60,7 +60,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     {
       label: 'Brightness Gain',
       type:  'range' as const,
-      min: 0, max: 2, step: 0.1, default: 1.0,
+      min: 0, max: 0.5, step: 0.01, default: 0.1,
       get:  () => ps().brightnessGain,
       set:  (v: number) => { ps().brightnessGain = v; saveInteractionSettings(); },
     },
