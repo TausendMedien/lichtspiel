@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { privacyMode } from "../privacyMode.svelte";
+import { guardedGetUserMedia } from "../sensorGuard";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -259,7 +260,7 @@ async function enableAsciiCamera() {
       ? { deviceId: { exact: _asciiCamDeviceId }, width: { ideal: 1280 } }
       : { width: { ideal: 1280 } };
     camStream?.getTracks().forEach(t => t.stop());
-    camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
+    camStream = await guardedGetUserMedia({ video: videoConstraint, audio: false });
     videoEl = document.createElement("video");
     videoEl.srcObject = camStream;
     videoEl.muted = true;

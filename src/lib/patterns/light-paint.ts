@@ -3,6 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 import { privacyMode } from "../privacyMode.svelte";
+import { guardedGetUserMedia } from "../sensorGuard";
 
 // ─── Shared camera device state (module-level, persists across pattern switches) ──
 let _lpDeviceId = '';
@@ -353,7 +354,7 @@ function createLightPainting(
       const videoConstraint: MediaTrackConstraints = _lpDeviceId
         ? { deviceId: { exact: _lpDeviceId }, width: { ideal: 1280 } }
         : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
-      const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
+      const s = await guardedGetUserMedia({ video: videoConstraint, audio: false });
       clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
       stream = s;

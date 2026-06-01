@@ -1,4 +1,5 @@
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { guardedGetUserMedia } from './sensorGuard';
 
 export interface PersonPoints {
   x: number; // normalized 0–1, mirrored (left hand = left side)
@@ -53,7 +54,7 @@ export async function startPoseTracking(): Promise<void> {
   video.playsInline = true;
   video.muted = true;
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const stream = await guardedGetUserMedia({
     video: { width: vw, height: vh, facingMode: "user" },
   });
   video.srcObject = stream;

@@ -24,6 +24,7 @@
   import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
+  import { killAllStreams } from "./lib/sensorGuard";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
 
@@ -1472,6 +1473,7 @@
               _sbSavedPoseActive = poseActive;
               if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
               privacyMode.active = true;
+              killAllStreams();
             } else {
               privacyMode.active = false;
               if (_sbSavedCameraEnabled) { cameraState.motionEnabled = _sbSavedMotionEnabled; cameraState.enabled = true; }
@@ -3021,6 +3023,8 @@
                 _sbSavedPoseActive = poseActive;
                 if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
                 privacyMode.active = true;
+                // Hard-kill every registered stream immediately
+                killAllStreams();
               } else {
                 // ── Deactivating Sensor Block — restore saved state ──
                 privacyMode.active = false;
@@ -3050,7 +3054,7 @@
           {#if !freezeAnim && Math.abs(timeScaleMirror - 1.0) > 0.05}
             <div
               class="mt-1 text-xs font-mono text-white/50 pointer-events-auto cursor-default"
-              title="Global speed (↑ ↓ keys or D-Pad). Click ↑↓ to adjust, or reset with Space."
+              title="Global speed — adjust with ↑ ↓ keys or D-Pad"
             >Speed: {timeScaleMirror.toFixed(1)}x</div>
           {/if}
         </div>

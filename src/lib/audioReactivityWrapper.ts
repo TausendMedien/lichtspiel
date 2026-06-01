@@ -13,6 +13,7 @@ import { BeatDetector } from './BeatDetector.svelte';
 import { EnergyBeatDetector } from './EnergyBeatDetector.svelte';
 import { interactionState, getPatternSettings, saveInteractionSettings } from './interactionState.svelte';
 import { privacyMode } from './privacyMode.svelte';
+import { guardedGetUserMedia } from './sensorGuard';
 
 
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -116,7 +117,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
         audio: deviceId ? { deviceId: { exact: deviceId } } : true,
         video: false,
       };
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream = await guardedGetUserMedia(constraints);
 
       // Lightweight analyser for level display
       audioCtx = new AudioContext();

@@ -1,5 +1,6 @@
 // Motion detection from webcam feed.
 // Separates "person motion" from background pattern motion using three algorithms.
+import { guardedGetUserMedia } from './sensorGuard';
 
 const W = 160;
 const H = 90;
@@ -52,7 +53,7 @@ export class MotionCamera {
     constraints: MediaStreamConstraints,
   ): Promise<MotionCamera | null> {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await guardedGetUserMedia(constraints);
       const video = document.createElement("video");
       video.srcObject = stream;
       video.setAttribute("playsinline", "");
