@@ -825,6 +825,7 @@
   }
 
   function toggleCamera() {
+    if (privacyMode.active) return; // Sensor Block prevents camera toggle
     cameraState.enabled = !cameraState.enabled;
     if (cameraState.enabled) {
       enumerateCameras();

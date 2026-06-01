@@ -209,6 +209,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     },
 
     update(dt: number, elapsed: number) {
+      // Hard kill: if Sensor Block is active, stop any live camera immediately
+      if (privacyMode.active && motionCamera) { stopCamera(); }
+
       // React to global enable/device changes and per-pattern toggle
       const nowEnabled        = cameraState.enabled;
       const nowDeviceId       = cameraState.deviceId;

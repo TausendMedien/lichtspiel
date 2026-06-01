@@ -184,6 +184,9 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     },
 
     update(dt: number, elapsed: number) {
+      // Hard kill: if Sensor Block is active, stop any live audio stream immediately
+      if (privacyMode.active && stream) { stopAudio(); }
+
       const nowEnabled        = audioState.enabled;
       const nowDeviceId       = audioState.deviceId;
       const nowPatternEnabled = audioState.patternAudioEnabled[pattern.id] ?? true;
