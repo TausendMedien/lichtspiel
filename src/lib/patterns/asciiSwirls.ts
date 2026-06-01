@@ -22,12 +22,24 @@ let charTex:   THREE.CanvasTexture | null = null;
 // Fallback 1×1 black texture used when camera is off
 let blackTex: THREE.DataTexture | null = null;
 
-// Camera mode state
-let cameraMode  = false;
+// Camera state
 let camBlend    = 0.5;
 let videoEl:    HTMLVideoElement | null = null;
 let videoTex:   THREE.VideoTexture | null = null;
 let camStream:  MediaStream | null = null;
+
+// Camera device state
+let _asciiCamDeviceId = '';
+const _asciiCamDevices: Array<{ deviceId: string; label: string }> = [];
+
+async function enumerateAsciiCameras(): Promise<void> {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    const cams = all.filter(d => d.kind === 'videoinput');
+    _asciiCamDevices.length = 0;
+    cams.forEach((d, i) => _asciiCamDevices.push({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+  } catch { /* ignore */ }
+}
 
 // Controls
 let signSize    = 8;   // px per character cell
@@ -238,7 +250,12 @@ function rebuildSwirlRT(w: number, h: number) {
 
 async function enableAsciiCamera() {
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    await enumerateAsciiCameras();
+    const videoConstraint: MediaTrackConstraints = _asciiCamDeviceId
+      ? { deviceId: { exact: _asciiCamDeviceId }, width: { ideal: 1280 } }
+      : { width: { ideal: 1280 } };
+    camStream?.getTracks().forEach(t => t.stop());
+    camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
     videoEl = document.createElement("video");
     videoEl.srcObject = camStream;
     videoEl.muted = true;
@@ -249,9 +266,7 @@ async function enableAsciiCamera() {
     videoTex.minFilter = THREE.LinearFilter;
     videoTex.magFilter = THREE.LinearFilter;
     if (asciiMat) asciiMat.uniforms.uCamera.value = videoTex;
-  } catch {
-    cameraMode = false;
-  }
+  } catch { /* ignore */ }
 }
 
 function disableAsciiCamera() {
@@ -283,11 +298,18 @@ export const asciiSwirls: Pattern = {
     { label: "Band Count",  type: "range", min: 2,   max: 20,   step: 1,     default: 13,   get: () => bandCount,  set: (v) => { bandCount = v; } },
     // Camera controls — shown in Interactive > Camera section
     {
-      label: "Camera",
-      type: "toggle",
+      label: "Camera Device",
+      type: "select" as const,
       interactive: 'camera' as const,
-      get: () => cameraMode,
-      set: (v) => { cameraMode = !!v; if (cameraMode) { enableAsciiCamera(); } else { disableAsciiCamera(); } },
+      options: () => _asciiCamDevices.length > 0 ? _asciiCamDevices.map(d => d.label) : ['Default'],
+      get: () => {
+        const idx = _asciiCamDevices.findIndex(d => d.deviceId === _asciiCamDeviceId);
+        return idx >= 0 ? idx : 0;
+      },
+      set: (idx: number) => {
+        _asciiCamDeviceId = _asciiCamDevices[idx]?.deviceId ?? '';
+        enableAsciiCamera();
+      },
     },
     {
       label: "Cam Blend",
@@ -359,7 +381,7 @@ export const asciiSwirls: Pattern = {
     ctx.camera.far  = 10;
     ctx.camera.updateProjectionMatrix();
 
-    if (cameraMode) enableAsciiCamera();
+    enableAsciiCamera();
   },
 
   update(dt: number, _elapsed: number) {
@@ -373,7 +395,7 @@ export const asciiSwirls: Pattern = {
     swirlMat.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     swirlMat.uniforms.uColorsV2.value = colorC2.colorsV2;
     asciiMat.uniforms.uColorMode.value  = colorMode;
-    asciiMat.uniforms.uCamBlend.value   = cameraMode && videoTex ? camBlend : 0.0;
+    asciiMat.uniforms.uCamBlend.value   = videoTex ? camBlend : 0.0;
 
     if (videoTex) videoTex.needsUpdate = true;
 

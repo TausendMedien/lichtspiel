@@ -2533,6 +2533,18 @@
                               {/each}
                             </select>
                           {/if}
+                        {:else if ctrl.type === 'range'}
+                          <div>
+                            <div class="flex justify-between mb-1 text-xs text-white/70">
+                              <span>{ctrl.label}</span>
+                              <span class="font-mono text-white/40">{Number(ctrlVals[ctrl.label] ?? ctrl.get()).toFixed(ctrl.step < 0.1 ? 2 : ctrl.step < 1 ? 1 : 0)}</span>
+                            </div>
+                            <input type="range" min={ctrl.min} max={ctrl.max} step={ctrl.step}
+                              value={ctrlVals[ctrl.label] ?? ctrl.get()}
+                              oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); ctrl.set(v); ctrlVals[ctrl.label] = v; }}
+                              onchange={() => saveSettings(patterns)}
+                              class="w-full accent-white cursor-pointer" />
+                          </div>
                         {/if}
                       {/each}
                     </div>
