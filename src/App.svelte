@@ -449,7 +449,7 @@
     if (isTouch) return;
     cursorHidden = false;
     if (cursorTimer) clearTimeout(cursorTimer);
-    cursorTimer = setTimeout(() => (cursorHidden = true), 3000);
+    cursorTimer = setTimeout(() => (cursorHidden = true), 1000);
   }
   $effect(() => {
     if (typeof document === 'undefined') return;
