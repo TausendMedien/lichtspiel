@@ -11,6 +11,8 @@ let colorRange2  = 1.0;
 let attractStrength = 0.4;
 let bodyTracking = true;
 
+const MAX_PARTICLES = 50000;
+
 let points: THREE.Points | null = null;
 let geometry: THREE.BufferGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
@@ -87,31 +89,38 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
-function buildParticleGeometry(count: number): THREE.BufferGeometry {
-  const positions = new Float32Array(count * 3);
-  const seeds = new Float32Array(count);
-  for (let i = 0; i < count; i++) {
-    const r = Math.cbrt(Math.random()) * 4;
+// Persistent position/seed store — grows up to MAX_PARTICLES, never shrinks.
+// Changing particleCount only adjusts the draw range so existing particle
+// positions stay stable and no jarring full-rebuild occurs.
+let posStore  = new Float32Array(MAX_PARTICLES * 3);
+let seedStore = new Float32Array(MAX_PARTICLES);
+let storedCount = 0;
+
+function ensureStore(n: number) {
+  while (storedCount < n) {
+    const i = storedCount;
+    const r     = Math.cbrt(Math.random()) * 4;
     const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
-    seeds[i] = Math.random();
+    const phi   = Math.acos(2 * Math.random() - 1);
+    posStore[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    posStore[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    posStore[i * 3 + 2] = r * Math.cos(phi);
+    seedStore[i] = Math.random();
+    storedCount++;
   }
+}
+
+function buildParticleGeometry(): THREE.BufferGeometry {
+  ensureStore(MAX_PARTICLES);
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+  geo.setAttribute("position", new THREE.BufferAttribute(posStore, 3));
+  geo.setAttribute("aSeed", new THREE.BufferAttribute(seedStore, 1));
+  geo.setDrawRange(0, particleCount);
   return geo;
 }
 
-function rebuildParticles(count: number) {
-  if (!sceneRef || !points || !material) return;
-  sceneRef.remove(points);
-  geometry?.dispose();
-  geometry = buildParticleGeometry(count);
-  points = new THREE.Points(geometry, material);
-  sceneRef.add(points);
+function applyParticleCount(count: number) {
+  geometry?.setDrawRange(0, count);
 }
 
 export const particlesBody: Pattern = {
@@ -122,7 +131,7 @@ export const particlesBody: Pattern = {
     { label: "Point Size",       type: "range", min: 1.0, max: 6.0,   step: 0.1,  default: 3,     get: () => pointSize,       set: (v) => { pointSize = v; } },
     { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
     { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,   step: 0.05, default: 0.4,   interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
-    { label: "Point Count",      type: "range", min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount,   set: (v) => { particleCount = v; rebuildParticles(v); } },
+    { label: "Point Count",      type: "range", min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount,   set: (v) => { particleCount = v; applyParticleCount(v); } },
   ],
 
   init(ctx: PatternContext) {
@@ -132,7 +141,7 @@ export const particlesBody: Pattern = {
     camera.lookAt(0, 0, 0);
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
 
-    geometry = buildParticleGeometry(particleCount);
+    geometry = buildParticleGeometry();
 
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -199,5 +208,6 @@ export const particlesBody: Pattern = {
     camera = null;
     sceneRef = null;
     accTime = 0;
+    storedCount = 0; // force fresh random positions on next init
   },
 };

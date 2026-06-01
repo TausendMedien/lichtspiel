@@ -168,7 +168,7 @@
       ["Options",              "O",                  "—"],
       ["Fullscreen",           "F",                  "—"],
       ["Demo mode",            "D",                  "—"],
-      ["Overview / back",      "Esc",                "Share / Back"],
+      ["Overview / back",      "Esc  ·  P",          "Share / Back"],
     ];
     return rows;
   })());
@@ -591,6 +591,7 @@
     hudVisible = false;
     if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
     demoVisible = false; // close the demo modal
+    fs.enter(document.documentElement); // go fullscreen when demo starts
     saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) clearTimeout(demoTimer);
 
@@ -655,6 +656,7 @@
         case "resetToDefault": // B / South → activate (confirm button)
         case "freeze":         // Space / Start / Enter → activate
         case "randomize":      // A → activate
+        case "toggleOverview":
           activatePattern(focusedIndex);
           break;
         case "fullscreen":
@@ -739,6 +741,9 @@
         case "escape":
           if (demoActive) { stopDemo(); poke(); } else { focusedIndex = index; appState = "overview"; overlayHidden = false; }
           break;
+        case "toggleOverview":
+          focusedIndex = index; appState = "overview"; overlayHidden = false;
+          break;
       }
     } else {
       // preview
@@ -759,6 +764,7 @@
         case "demo":
           demoVisible = !demoVisible; poke(); break;
         case "escape":
+        case "toggleOverview":
           focusedIndex = index; appState = "overview"; overlayHidden = false; break;
       }
     }

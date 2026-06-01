@@ -27,7 +27,8 @@ export type KeyAction =
   | { type: "pedalShort" }
   | { type: "pedalDouble" }
   | { type: "pedalLong" }
-  | { type: "activatePattern"; id: string };
+  | { type: "activatePattern"; id: string }
+  | { type: "toggleOverview" };
 
 const PEDAL_LONG_MS = 500;    // hold ≥ this → long press
 const PEDAL_DOUBLE_MS = 250;  // gap between releases ≤ this → double press
@@ -116,6 +117,9 @@ export function attachKeyboard(
         e.preventDefault(); return;
       case "t": case "T":
         handler({ type: "togglePose" });
+        e.preventDefault(); return;
+      case "p": case "P":
+        handler({ type: "toggleOverview" });
         e.preventDefault(); return;
       case "ArrowRight":
         handler({ type: "next" });
