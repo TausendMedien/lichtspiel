@@ -321,6 +321,7 @@ function createLightPainting(
 
   // DOM overlay
   let overlay: HTMLDivElement | null = null;
+  let overlayTimeout: ReturnType<typeof setTimeout> | null = null;
   let canvasRef: HTMLCanvasElement | null = null;
 
   // Resolution for brush radius / bloom texel conversion
@@ -329,6 +330,7 @@ function createLightPainting(
 
   function stopCamera() {
     ++startId; // invalidate any in-flight startCamera
+    if (overlayTimeout) { clearTimeout(overlayTimeout); overlayTimeout = null; }
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
     if (video) { video.pause(); video.srcObject = null; video = null; }
@@ -342,6 +344,10 @@ function createLightPainting(
   async function startCamera(canvas: HTMLCanvasElement) {
     if (privacyMode.active) return;
     const myId = ++startId;
+    // Show "Requesting…" only if camera hasn't started within 500ms (avoids a flash when already granted)
+    overlayTimeout = setTimeout(() => {
+      if (myId === startId) showOverlay(canvas, 'Requesting camera access…');
+    }, 500);
     // Enumerate cameras so device picker is populated on first use
     if (_lpDevices.length === 0) await enumerateLpCameras();
     try {
@@ -349,6 +355,7 @@ function createLightPainting(
         ? { deviceId: { exact: _lpDeviceId }, width: { ideal: 1280 } }
         : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
       const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
+      clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
       stream = s;
       video = document.createElement("video");
@@ -364,6 +371,7 @@ function createLightPainting(
       overlay?.remove();
       overlay = null;
     } catch {
+      clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) return;
       cameraReady = false;
       showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings and reload.");
@@ -682,7 +690,6 @@ function createLightPainting(
     activate() {
       if (canvasRef) {
         if (privacyMode.active) { showOverlay(canvasRef, "Camera blocked by Sensor Block"); return; }
-        showOverlay(canvasRef, "Requesting camera access…");
         startCamera(canvasRef);
       }
     },

@@ -28,6 +28,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   let prevEnabled        = false;
   let prevDeviceId       = '';
   let prevPatternEnabled = true;
+  let overlayTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // ── Identify the range controls to boost (existing per-pattern behaviour) ──
   type RangeCtrl = PatternControl & { type: "range" };
@@ -143,9 +144,15 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         : { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 180 } },
       audio: false,
     };
-    overlay = showMotionOverlay(canvasRef, 'Requesting camera…');
+    // Delay the overlay — only show if camera hasn't started within 500ms
+    // (avoids a flash when permission is already granted)
     const myId = ++startId;
+    const ref = canvasRef;
+    overlayTimeout = setTimeout(() => {
+      if (myId === startId) overlay = showMotionOverlay(ref, 'Requesting camera…');
+    }, 500);
     MotionCamera.createWithConstraints(canvasRef, constraints).then(async (cam) => {
+      clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) { cam?.dispose(); return; }
       overlay?.remove();
       overlay = null;
@@ -156,6 +163,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
 
   function stopCamera() {
     ++startId;
+    if (overlayTimeout) { clearTimeout(overlayTimeout); overlayTimeout = null; }
     motionCamera?.dispose();
     motionCamera = null;
     smoothedMotion = 0;
