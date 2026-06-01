@@ -204,6 +204,11 @@
   const sliderModeActive = $derived(kbRHeld);
   let screenshotFlash = $state(false);
   let isRecording = $state(false);
+  // Sensor Block — saved state for restore on unblock
+  let _sbSavedCameraEnabled  = false;
+  let _sbSavedMotionEnabled  = false;
+  let _sbSavedAudioEnabled   = false;
+  let _sbSavedPatternCams    = new Map<string, boolean>();
   let recorder: RecorderHandle | null = null;
   let timeScaleMirror = $state(1.0);
   let frozenPrevScale = $state(1.0);
@@ -2882,15 +2887,41 @@
                    {privacyMode.active ? 'border-purple-500/50 bg-purple-900/50 text-purple-300' : 'border-white/15 text-white/30 hover:border-white/30 hover:text-white/50'}"
             title="Sensor Block — overrides all camera and audio inputs globally. Individual pattern settings are preserved and resume when Sensor Block is turned off."
             onclick={() => {
-              privacyMode.active = !privacyMode.active;
-              if (privacyMode.active) {
+              if (!privacyMode.active) {
+                // ── Activating Sensor Block — save state, stop everything ──
+                _sbSavedCameraEnabled = cameraState.enabled;
+                _sbSavedMotionEnabled = cameraState.motionEnabled;
+                _sbSavedAudioEnabled  = audioState.enabled;
+                _sbSavedPatternCams.clear();
+                for (const c of (patterns[index].controls ?? [])) {
+                  if (c.type === 'toggle' && (c as any).interactive === 'camera') {
+                    _sbSavedPatternCams.set(c.label, c.get());
+                    (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(false);
+                    ctrlVals[c.label] = 0;
+                  }
+                }
                 cameraState.motionEnabled = false;
                 cameraState.enabled = false;
                 audioState.enabled = false;
+                privacyMode.active = true;
+              } else {
+                // ── Deactivating Sensor Block — restore saved state ──
+                privacyMode.active = false;
+                if (_sbSavedCameraEnabled) {
+                  cameraState.motionEnabled = _sbSavedMotionEnabled;
+                  cameraState.enabled = true;
+                }
+                if (_sbSavedAudioEnabled) {
+                  audioState.enabled = true;
+                  enumerateMicrophones();
+                }
                 for (const c of (patterns[index].controls ?? [])) {
-                  if (c.type === 'toggle' && (c as any).interactive === 'camera' && c.get()) {
-                    (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(false);
-                    ctrlVals[c.label] = 0;
+                  if (c.type === 'toggle' && (c as any).interactive === 'camera') {
+                    const wasOn = _sbSavedPatternCams.get(c.label) ?? false;
+                    if (wasOn) {
+                      (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(true);
+                      ctrlVals[c.label] = 1;
+                    }
                   }
                 }
               }

@@ -681,6 +681,7 @@ function createLightPainting(
 
     activate() {
       if (canvasRef) {
+        if (privacyMode.active) { showOverlay(canvasRef, "Camera blocked by Sensor Block"); return; }
         showOverlay(canvasRef, "Requesting camera access…");
         startCamera(canvasRef);
       }

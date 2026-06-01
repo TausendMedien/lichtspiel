@@ -132,6 +132,10 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   function startCamera() {
     stopCamera();
     if (!canvasRef) return;
+    if (privacyMode.active) {
+      overlay = showMotionOverlay(canvasRef, 'Camera blocked by Sensor Block');
+      return;
+    }
     const deviceId = cameraState.deviceId;
     const constraints: MediaStreamConstraints = {
       video: deviceId

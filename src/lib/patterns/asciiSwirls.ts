@@ -25,6 +25,7 @@ let blackTex: THREE.DataTexture | null = null;
 
 // Camera state
 let camBlend    = 0.5;
+let _cameraStarting = false;
 let videoEl:    HTMLVideoElement | null = null;
 let videoTex:   THREE.VideoTexture | null = null;
 let camStream:  MediaStream | null = null;
@@ -250,7 +251,8 @@ function rebuildSwirlRT(w: number, h: number) {
 }
 
 async function enableAsciiCamera() {
-  if (privacyMode.active) return;
+  if (privacyMode.active || _cameraStarting) return;
+  _cameraStarting = true;
   try {
     await enumerateAsciiCameras();
     const videoConstraint: MediaTrackConstraints = _asciiCamDeviceId
@@ -269,6 +271,7 @@ async function enableAsciiCamera() {
     videoTex.magFilter = THREE.LinearFilter;
     if (asciiMat) asciiMat.uniforms.uCamera.value = videoTex;
   } catch { /* ignore */ }
+  _cameraStarting = false;
 }
 
 function disableAsciiCamera() {
@@ -397,7 +400,11 @@ export const asciiSwirls: Pattern = {
     swirlMat.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     swirlMat.uniforms.uColorsV2.value = colorC2.colorsV2;
     asciiMat.uniforms.uColorMode.value  = colorMode;
-    if (privacyMode.active && videoTex) { disableAsciiCamera(); }
+    if (privacyMode.active && videoTex) {
+      disableAsciiCamera();
+    } else if (!privacyMode.active && !videoTex) {
+      enableAsciiCamera(); // guarded by _cameraStarting — safe to call every frame
+    }
     asciiMat.uniforms.uCamBlend.value   = videoTex ? camBlend : 0.0;
 
     if (videoTex) videoTex.needsUpdate = true;
