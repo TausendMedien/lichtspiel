@@ -1,0 +1,6 @@
+/** C2 global colour controls — reactive state read by renderer each frame. */
+export const colorC2 = $state({
+  saturation: 1.0,   // 0 = grayscale, 1 = full colour
+  hue:        0.0,   // 0–1, rotates all hues by up to 360°
+  brightness: 1.0,   // 0.75–2.0 scalar
+});

@@ -22,8 +22,9 @@ canvas {
   height: 100% !important;
 }
 
-:fullscreen,
-:fullscreen body,
-:fullscreen #app {
-  cursor: none;
+/* Cursor is hidden only after the mouse has been idle (toggled via JS),
+   so any mouse movement reveals it again — including in fullscreen. */
+body.cursor-hidden,
+body.cursor-hidden * {
+  cursor: none !important;
 }

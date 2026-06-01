@@ -128,6 +128,8 @@
   let snapshotFading = $state(false);
   let demoPointerVisible = $state(false);
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
+  let cursorHidden = $state(false);
+  let cursorTimer: ReturnType<typeof setTimeout> | null = null;
   const DEMO_HIDE_HUD_KEY = 'pp:demo-hide-hud';
   let demoHideHud = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_HIDE_HUD_KEY) !== 'false' : true);
   // Pedal ('b') behaviour — applies in and out of Demo mode.
@@ -441,6 +443,18 @@
     hudTimer = setTimeout(() => (hudVisible = false), 5000);
     scheduleAutoRestart(); // reset idle timer on any user interaction
   }
+
+  // Show the cursor on any mouse movement; hide it again after a short idle.
+  function pokeCursor() {
+    if (isTouch) return;
+    cursorHidden = false;
+    if (cursorTimer) clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(() => (cursorHidden = true), 3000);
+  }
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.toggle('cursor-hidden', cursorHidden);
+  });
 
   function demoPoke() {
     demoPointerVisible = true;
@@ -1318,7 +1332,7 @@
         syncCtrlVals();
       }
     });
-    function onMouseMove() { (demoActive && demoHideHud) ? demoPoke() : poke(); }
+    function onMouseMove() { pokeCursor(); (demoActive && demoHideHud) ? demoPoke() : poke(); }
     if (!isTouch) window.addEventListener("mousemove", onMouseMove);
 
     return () => {
