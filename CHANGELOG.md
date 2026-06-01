@@ -1,6 +1,20 @@
 # Changelog
 
-## v0.3.260601-0318 — Light Painting: mirror, Colorize/Colors v2 wiring, preset tiles
+## v0.5.260601-1911 — New patterns · Demo intensity modes · Audio & Camera rework
+
+**Four new static-image patterns** — **Two Feather**, **Root Wave**, **Purple Ornate** and **Flowing Dots** — join the Static Images category. Each shares the full image engine (Drift, Zoom Breathe, Ripple, Chromatic Aberration, Edge Pulse, Vignette), reacts to pose and audio, and ships with the same Chilled / Balanced / Active preset slots as the other image patterns.
+
+**Demo intensity modes (Pattern Start).** Demo / kiosk mode can now start every pattern at a chosen energy level instead of its plain default: **Chilled (slot 1)**, **Balanced (slot 2)** or **Active (slot 3)** — mapped to each pattern's three preset slots — plus **Default** and **Random**. Selecting an intensity mode automatically scopes the demo to your favourites. Also added: **Randomize order of patterns**, demo auto-fullscreen, and a **P** shortcut.
+
+**Audio module rework.** A **noise gate** now suppresses fan and room noise so reactivity only fires on real signal. Microphone access added to the Light Painting family, frequency-band targeting (Mid), and clearer per-pattern audio-control labels (Flow Lines, Curl Orbs, Tunnels, Light Painting).
+
+**Camera module rework.** Cameras now start **on-demand** from the Interactive section (with device pickers and a ↺ re-enumerate button) rather than grabbing the feed up front; the "Requesting camera…" flash is suppressed when permission is already granted, and a race condition on start/stop was fixed.
+
+**Sensor Block** — a global camera + microphone kill-switch in the top-left HUD. It hard-stops every sensor stream (camera, mic, pose tracking) via a central stream registry and shows a blocked-state overlay; toggling it off restores the previous state immediately.
+
+**Universal interaction architecture.** A shared Speed / Direction / Burst reactivity layer across patterns, a **Brightness Gain** slider (replacing the old on/off toggle), Colors v2 saved in preset slots, and **performance optimisations** for older machines.
+
+## v0.4.260601-0318 — Light Painting: mirror, Colorize/Colors v2 wiring, preset tiles
 
 **Mirror** toggle (default on) — the camera is now mirrored selfie-style, so moving a light left reads left on screen. Applies to trails, background and ghost consistently.
 
@@ -8,7 +22,7 @@
 
 **Seven preset tiles** under "Live Light Painting", each the same full toolbox with different starting defaults: **Light Paint**, **Light Trail** (sharp), **Light Paint Black** (trails on black), **Light Fly** (fly + vortex), **Kaleidoscope**, **Light Bloom**, **RGB Glitch**. Any tile can be tuned into any other look; each keeps its own saved settings.
 
-## v0.3.260601-0126 — Light Painting unified + new feedback/look effects
+## v0.4.260601-0126 — Light Painting unified + new feedback/look effects
 
 **Light Trail and Light Paint merged into one pattern, "Light Painting."** Brush Size = 0 reproduces the old sharp Light-Trail look; higher values give the soft Light-Paint brush. The redundant Gain/Brightness controls are now a single **Gain**.
 
