@@ -436,6 +436,17 @@ function createLightPainting(
           },
         },
         {
+          label: "Lock",
+          type: "toggle" as const,
+          title: "Apply to all Light Painting Patterns",
+          linkedTo: "Threshold",
+          get: () => _thresholdLocked,
+          set: (v: boolean) => {
+            _thresholdLocked = !!v;
+            if (v) { _lockedThreshold = threshold; _thresholdSetters.forEach(s => s(threshold)); }
+          },
+        },
+        {
           label: "Fade Speed",
           type: "range" as const, min: 0.0, max: 0.3, step: 0.005,
           default: D.decayRate,
