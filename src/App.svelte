@@ -2020,10 +2020,12 @@
           <button
             onclick={() => {
               const entries: string[] = [];
+              const validIds = new Set(patterns.map(p => p.id));
               for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i)!;
                 if (k.startsWith('pp:slots:')) {
                   const patternId = k.slice('pp:slots:'.length);
+                  if (!validIds.has(patternId)) continue; // skip zombie keys from renamed/removed patterns
                   const val = localStorage.getItem(k);
                   entries.push(`  '${patternId}': ${val},`);
                 }
