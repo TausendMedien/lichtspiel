@@ -247,11 +247,14 @@
   $effect(() => { if (demoActive || isFullscreenState) { wl.acquire(); } else { wl.release(); } });
 
   // Body pose tracking
-  let posePersonCount = $state(0);
-  let poseActive = $state(false);
-  let poseError = $state<string | null>(null);
-  let poseLoading = $state(false);
-  let poseDebug = $state(false);
+  let posePersonCount  = $state(0);
+  let poseActive       = $state(false);
+  let poseError        = $state<string | null>(null);
+  let poseLoading      = $state(false);
+  let poseDebug        = $state(false);
+  // Reactive mirrors of poseSettings (plain object — not Svelte state)
+  let poseLowRes       = $state(poseSettings.lowRes);
+  let poseSkipFrames   = $state(poseSettings.skipFrames);
   let interactionDebug = $state(false);
   let debugCanvas: HTMLCanvasElement | undefined = $state();
 
@@ -2675,19 +2678,20 @@
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div class="flex items-center gap-2 cursor-pointer" title="Half video resolution — reduces GPU load, requires restart"
                     onclick={async () => {
-                      poseSettings.lowRes = !poseSettings.lowRes;
+                      poseLowRes = !poseLowRes;
+                      poseSettings.lowRes = poseLowRes;
                       if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; poseLoading = true; try { await startPoseTracking(); poseActive = true; } catch(e) { poseError = e instanceof Error ? e.message : 'error'; } finally { poseLoading = false; } }
                     }}>
-                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSettings.lowRes ? 'bg-white/60' : 'bg-white/20'}">
-                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSettings.lowRes ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseLowRes ? 'bg-white/60' : 'bg-white/20'}">
+                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseLowRes ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                     </div>
                     <span class="text-xs text-white/70">Low Res (320×240)</span>
                   </div>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div class="flex items-center gap-2 cursor-pointer" title="Run pose inference every 2nd frame"
-                    onclick={() => { poseSettings.skipFrames = !poseSettings.skipFrames; }}>
-                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSettings.skipFrames ? 'bg-white/60' : 'bg-white/20'}">
-                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSettings.skipFrames ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                    onclick={() => { poseSkipFrames = !poseSkipFrames; poseSettings.skipFrames = poseSkipFrames; }}>
+                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSkipFrames ? 'bg-white/60' : 'bg-white/20'}">
+                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSkipFrames ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                     </div>
                     <span class="text-xs text-white/70">Skip Frames (every 2nd)</span>
                   </div>
