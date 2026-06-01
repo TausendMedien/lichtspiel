@@ -689,6 +689,8 @@ function createLightPainting(
     update(_dt: number, _elapsed: number) {
       if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
 
+      if (privacyMode.active && stream) { stopCamera(); }
+
       const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
       if (cameraReady && videoTexture) videoTexture.needsUpdate = true;
 
