@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
+import { interactionState } from "../interactionState.svelte";
 
 // ── "Light Painting" family ──────────────────────────────────────────────────
 // A webcam frame feeds a feedback loop: the accumulation pass adds pixels
@@ -111,8 +112,7 @@ const compositeFragmentShader = /* glsl */ `
   uniform sampler2D uTrail;
   uniform sampler2D uBloomTex;
   uniform sampler2D uLiveFrame;
-  uniform float uBgMode;
-  uniform float uDimLevel;
+  uniform float uBlack;        // 0 = full live feed, 1 = black
   uniform float uThreshold;
   uniform float uGhost;
   uniform float uColorize;     // 0 live colour … 1 custom palette
@@ -168,12 +168,7 @@ const compositeFragmentShader = /* glsl */ `
     // Background from the (optionally mirrored) live feed.
     vec2 bguv = vec2(uMirror > 0.5 ? 1.0 - suv.x : suv.x, suv.y);
     vec4 live = texture2D(uLiveFrame, bguv);
-    float lluma = dot(live.rgb, vec3(0.2126, 0.7152, 0.0722));
-    float darkness = 1.0 - smoothstep(0.0, uThreshold, lluma);
-    float t01 = clamp(uBgMode, 0.0, 1.0);
-    float t12 = clamp(uBgMode - 1.0, 0.0, 1.0);
-    vec3 bg = mix(vec3(0.0), live.rgb, t01);
-    bg = mix(bg, live.rgb * uDimLevel * darkness, t12);
+    vec3 bg = live.rgb * (1.0 - uBlack);
 
     vec3 outc = clamp(bg + colored, 0.0, 1.0);
     outc = mix(outc, live.rgb, uGhost);
@@ -189,8 +184,7 @@ interface LPDefaults {
   gain: number;
   colorize: number;
   brushRadius: number;
-  bgMode: number;
-  dimLevel: number;
+  black: number;
   ghostOpacity: number;
   flow: number;
   vortex: number;
@@ -201,14 +195,18 @@ interface LPDefaults {
   mirror: boolean;
 }
 
+// ─── Module-level threshold lock (shared across all instances) ────────────────
+let _thresholdLocked = false;
+let _lockedThreshold = 0.29;
+const _thresholdSetters: Array<(v: number) => void> = [];
+
 const BASE_DEFAULTS: LPDefaults = {
   threshold: 0.29,
   decayRate: 0.015,
   gain: 1.5,
   colorize: 0,
   brushRadius: 0.012,
-  bgMode: 2,        // 0=black, 1=live, 2=dimmed
-  dimLevel: 0.30,
+  black: 0.3,       // 0 = full live feed, 1 = black
   ghostOpacity: 0,
   flow: 0,
   vortex: 0,
@@ -225,6 +223,7 @@ function createLightPainting(
   id: string,
   name: string,
   overrides: Partial<LPDefaults> = {},
+  priorityLabels: string[] = [],
 ): Pattern {
   const D: LPDefaults = { ...BASE_DEFAULTS, ...overrides };
 
@@ -234,8 +233,7 @@ function createLightPainting(
   let gain = D.gain;
   let colorize = D.colorize;
   let brushRadius = D.brushRadius;
-  let bgMode = D.bgMode;
-  let dimLevel = D.dimLevel;
+  let black = D.black;
   let ghostOpacity = D.ghostOpacity;
   let flow = D.flow;
   let vortex = D.vortex;
@@ -342,132 +340,167 @@ function createLightPainting(
     overlay = div;
   }
 
+  // Register this instance's threshold setter for the lock mechanism (once, at creation).
+  const thresholdSetter = (v: number) => { threshold = v; };
+  _thresholdSetters.push(thresholdSetter);
+
+  const baseControls = [
+        {
+          label: "Camera",
+          type: "toggle" as const,
+          interactive: "camera" as const,
+          get: () => cameraOn,
+          set: (v: boolean) => {
+            cameraOn = !!v;
+            if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
+            else if (!cameraOn) stopCamera();
+          },
+        },
+        {
+          label: "Mirror",
+          type: "toggle" as const,
+          get: () => mirror,
+          set: (v: boolean) => { mirror = !!v; },
+        },
+        {
+          label: "Threshold",
+          type: "range" as const, min: 0.05, max: 0.95, step: 0.01,
+          default: D.threshold,
+          get: () => threshold,
+          set: (v: number) => {
+            threshold = v;
+            if (_thresholdLocked) {
+              _lockedThreshold = v;
+              _thresholdSetters.forEach(s => { if (s !== thresholdSetter) s(v); });
+            }
+          },
+        },
+        {
+          label: "Lock",
+          type: "toggle" as const,
+          title: "Apply to all Light Painting Patterns",
+          get: () => _thresholdLocked,
+          set: (v: boolean) => {
+            _thresholdLocked = !!v;
+            if (v) { _lockedThreshold = threshold; _thresholdSetters.forEach(s => s(threshold)); }
+          },
+        },
+        {
+          label: "Fade Speed",
+          type: "range" as const, min: 0.0, max: 0.3, step: 0.005,
+          default: D.decayRate,
+          get: () => decayRate,
+          set: (v: number) => { decayRate = v; },
+        },
+        {
+          label: "Colorize",
+          type: "range" as const, min: 0.0, max: 1.0, step: 0.05,
+          default: D.colorize,
+          get: () => colorize,
+          set: (v: number) => { colorize = v; },
+        },
+        {
+          label: "Black",
+          type: "range" as const, min: 0.0, max: 1.0, step: 0.01,
+          default: D.black,
+          get: () => black,
+          set: (v: number) => { black = v; },
+        },
+        // ─── Additional settings (collapsible) ───────────────────────────────
+        {
+          label: "Additional",
+          type: "section" as const,
+          get: () => true,
+          set: (_v: boolean) => {},
+        },
+        {
+          label: "Gain",
+          type: "range" as const, min: 0.5, max: 8.0, step: 0.1,
+          default: D.gain,
+          get: () => gain,
+          set: (v: number) => { gain = v; },
+        },
+        {
+          label: "Brush Size",
+          type: "range" as const, min: 0.0, max: 0.05, step: 0.001,
+          default: D.brushRadius,
+          get: () => brushRadius,
+          set: (v: number) => { brushRadius = v; },
+        },
+        {
+          label: "Ghost",
+          type: "range" as const, min: 0.0, max: 1.0, step: 0.05,
+          default: D.ghostOpacity,
+          get: () => ghostOpacity,
+          set: (v: number) => { ghostOpacity = v; },
+        },
+        {
+          label: "Bloom",
+          type: "range" as const, min: 0.0, max: 1.0, step: 0.05,
+          default: D.bloom,
+          get: () => bloom,
+          set: (v: number) => { bloom = v; },
+        },
+        // Separator ends the "Additional" section scope so controls below are always visible
+        { label: "", type: "separator" as const },
+        {
+          label: "Fly In/Out",
+          type: "range" as const, min: -1.0, max: 1.0, step: 0.01,
+          default: D.flow,
+          get: () => flow,
+          set: (v: number) => { flow = v; },
+        },
+        {
+          label: "Vortex",
+          type: "range" as const, min: -1.0, max: 1.0, step: 0.01,
+          default: D.vortex,
+          get: () => vortex,
+          set: (v: number) => { vortex = v; },
+        },
+        {
+          label: "RGB Split",
+          type: "range" as const, min: 0.0, max: 0.05, step: 0.001,
+          default: D.rgbSplit,
+          get: () => rgbSplit,
+          set: (v: number) => { rgbSplit = v; },
+        },
+        {
+          label: "Kaleidoscope",
+          type: "toggle" as const,
+          get: () => kaleidoOn,
+          set: (v: boolean) => { kaleidoOn = !!v; },
+        },
+        {
+          label: "Segments",
+          type: "range" as const, min: 2, max: 12, step: 1,
+          default: D.kaleidoSeg,
+          disabled: () => !kaleidoOn,
+          get: () => kaleidoSeg,
+          set: (v: number) => { kaleidoSeg = v; },
+        },
+        {
+          label: "Clear Canvas",
+          type: "button" as const,
+          action: () => { clearRequested = true; },
+        },
+      ];
+
+  // Move priority controls (by label) to position 2 (after Camera + Mirror).
+  const builtControls = (() => {
+    if (priorityLabels.length > 0) {
+      const priorityItems = baseControls.filter(c => priorityLabels.includes(c.label));
+      const rest = baseControls.filter(c => !priorityLabels.includes(c.label));
+      return [...rest.slice(0, 2), ...priorityItems, ...rest.slice(2)];
+    }
+    return baseControls;
+  })();
+
   return {
     id,
     name,
-    usesCameraBlend: true,
-
-    controls: [
-      {
-        label: "Camera",
-        type: "toggle",
-        interactive: "camera" as const,
-        get: () => cameraOn,
-        set: (v: boolean) => {
-          cameraOn = !!v;
-          if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
-          else if (!cameraOn) stopCamera();
-        },
-      },
-      {
-        label: "Mirror",
-        type: "toggle",
-        get: () => mirror,
-        set: (v) => { mirror = !!v; },
-      },
-      {
-        label: "Threshold",
-        type: "range", min: 0.05, max: 0.95, step: 0.01,
-        default: D.threshold,
-        get: () => threshold,
-        set: (v) => { threshold = v; },
-      },
-      {
-        label: "Fade Speed",
-        type: "range", min: 0.0, max: 0.3, step: 0.005,
-        default: D.decayRate,
-        get: () => decayRate,
-        set: (v) => { decayRate = v; },
-      },
-      {
-        label: "Gain",
-        type: "range", min: 0.5, max: 8.0, step: 0.1,
-        default: D.gain,
-        get: () => gain,
-        set: (v) => { gain = v; },
-      },
-      {
-        label: "Colorize",
-        type: "range", min: 0.0, max: 1.0, step: 0.05,
-        default: D.colorize,
-        get: () => colorize,
-        set: (v) => { colorize = v; },
-      },
-      {
-        label: "Brush Size",
-        type: "range", min: 0.0, max: 0.05, step: 0.001,
-        default: D.brushRadius,
-        get: () => brushRadius,
-        set: (v) => { brushRadius = v; },
-      },
-      {
-        label: "Background",
-        type: "select", options: ["Black", "Live", "Dimmed"],
-        get: () => bgMode,
-        set: (v) => { bgMode = v; },
-      },
-      {
-        label: "Dim Level",
-        type: "range", min: 0.0, max: 1.0, step: 0.05,
-        default: D.dimLevel,
-        get: () => dimLevel,
-        set: (v) => { dimLevel = v; },
-      },
-      {
-        label: "Ghost",
-        type: "range", min: 0.0, max: 1.0, step: 0.05,
-        default: D.ghostOpacity,
-        get: () => ghostOpacity,
-        set: (v) => { ghostOpacity = v; },
-      },
-      {
-        label: "Fly In/Out",
-        type: "range", min: -1.0, max: 1.0, step: 0.01,
-        default: D.flow,
-        get: () => flow,
-        set: (v) => { flow = v; },
-      },
-      {
-        label: "Vortex",
-        type: "range", min: -1.0, max: 1.0, step: 0.01,
-        default: D.vortex,
-        get: () => vortex,
-        set: (v) => { vortex = v; },
-      },
-      {
-        label: "Bloom",
-        type: "range", min: 0.0, max: 1.0, step: 0.05,
-        default: D.bloom,
-        get: () => bloom,
-        set: (v) => { bloom = v; },
-      },
-      {
-        label: "RGB Split",
-        type: "range", min: 0.0, max: 0.02, step: 0.0005,
-        default: D.rgbSplit,
-        get: () => rgbSplit,
-        set: (v) => { rgbSplit = v; },
-      },
-      {
-        label: "Kaleidoscope",
-        type: "toggle",
-        get: () => kaleidoOn,
-        set: (v) => { kaleidoOn = !!v; },
-      },
-      {
-        label: "Segments",
-        type: "range", min: 2, max: 12, step: 1,
-        default: D.kaleidoSeg,
-        disabled: () => !kaleidoOn,
-        get: () => kaleidoSeg,
-        set: (v) => { kaleidoSeg = v; },
-      },
-      {
-        label: "Clear Canvas",
-        type: "button",
-        action: () => { clearRequested = true; },
-      },
-    ],
+    audioControlLabels: [],
+    defaultCollapsedSections: ['Additional'],
+    controls: builtControls,
 
     init(ctx: PatternContext) {
       _renderer = ctx.renderer;
@@ -545,8 +578,7 @@ function createLightPainting(
           uTrail:      { value: trailA.texture },
           uBloomTex:   { value: blackTexture },
           uLiveFrame:  { value: blackTexture },
-          uBgMode:     { value: bgMode },
-          uDimLevel:   { value: dimLevel },
+          uBlack:      { value: black },
           uThreshold:  { value: threshold },
           uGhost:      { value: ghostOpacity },
           uColorize:   { value: colorize },
@@ -628,13 +660,12 @@ function createLightPainting(
       u.uTrail.value      = trailA.texture;
       u.uBloomTex.value   = bloomTex;
       u.uLiveFrame.value  = liveTex;
-      u.uBgMode.value     = bgMode;
-      u.uDimLevel.value   = dimLevel;
+      u.uBlack.value      = black;
       u.uThreshold.value  = threshold;
       u.uGhost.value      = ghostOpacity;
       u.uColorize.value   = colorize;
       u.uColorsV2.value   = colorC2.colorsV2;
-      u.uBrightness.value = colorShuffle.brightness;
+      u.uBrightness.value = colorShuffle.brightness * interactionState.brightnessMult;
       u.uBloom.value      = bloom;
       u.uRgbSplit.value   = rgbSplit;
       u.uMirror.value     = mirror ? 1.0 : 0.0;
@@ -692,9 +723,9 @@ function createLightPainting(
 // differ, so any tile can be tuned into any other look.
 
 export const lightPaint      = createLightPainting("lightPaint",      "Light Paint");
-export const lightTrail       = createLightPainting("lightTrail",       "Light Trail",       { brushRadius: 0 });
-export const lightPaintBlack  = createLightPainting("lightPaintBlack",  "Light Paint Black", { bgMode: 0, ghostOpacity: 0 });
-export const lightFly         = createLightPainting("lightFly",         "Light Fly",         { flow: 0.4, vortex: 0.3 });
-export const lightKaleido     = createLightPainting("lightKaleido",     "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 6 });
-export const lightBloom       = createLightPainting("lightBloom",       "Light Bloom",       { bloom: 0.7 });
-export const lightGlitch      = createLightPainting("lightGlitch",      "RGB Glitch",        { rgbSplit: 0.008 });
+export const lightTrail      = createLightPainting("lightTrail",      "Light Trail",       { decayRate: 0.01, brushRadius: 0 });
+export const lightPaintBlack = createLightPainting("lightPaintBlack", "Light Paint Black", { black: 1.0, ghostOpacity: 0 }, ["Black"]);
+export const lightFly        = createLightPainting("lightFly",        "Light Fly",         { flow: -0.20 }, ["Fly In/Out"]);
+export const lightVortex     = createLightPainting("lightVortex",     "Light Vortex",      { vortex: -0.10 }, ["Vortex"]);
+export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 3 }, ["Kaleidoscope", "Segments"]);
+export const lightGlitch     = createLightPainting("lightGlitch",     "RGB Glitch",        { rgbSplit: 0.020 }, ["RGB Split"]);

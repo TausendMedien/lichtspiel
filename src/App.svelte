@@ -2171,6 +2171,10 @@
             if (ctrl.type === 'section') {
               sectionOn = !!(ctrlVals[ctrl.label] ?? 0);
               currentSection = ctrl.label;
+            } else if (ctrl.type === 'separator') {
+              // A separator always ends the current section scope
+              currentSection = null;
+              sectionOn = true;
             }
             const groupDisabled = !sectionOn && ctrl.type !== 'section' && ctrl.type !== 'separator';
             const inSection = (ctrl.type !== 'section' && ctrl.type !== 'separator') ? currentSection : null;
@@ -2236,10 +2240,20 @@
               </div>
             {:else if ctrl.type === "section"}
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
-              <!-- Section header with integrated mini toggle (no individual collapse) -->
+              {@const isCollapsed = collapsedSections.has(ctrl.label)}
+              <!-- Section header: click label to collapse/expand, mini toggle enables/disables -->
               <div class="mt-1 flex items-center gap-2">
                 <div class="h-px flex-1 bg-white/20"></div>
-                <span class="text-[10px] uppercase tracking-widest text-white/40 flex items-center gap-1 select-none">{ctrl.label}</span>
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <span
+                  class="text-[10px] uppercase tracking-widest text-white/40 flex items-center gap-1 select-none cursor-pointer hover:text-white/60 transition-colors"
+                  onclick={() => {
+                    const next = new Set(collapsedSections);
+                    if (isCollapsed) next.delete(ctrl.label); else next.add(ctrl.label);
+                    collapsedSections = next;
+                    _perPatternCollapsed.set(patterns[index].id, next);
+                  }}
+                >{ctrl.label} <span class="text-[8px]">{isCollapsed ? '▶' : '▼'}</span></span>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
                   class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/60' : 'bg-white/20'}"
@@ -2252,7 +2266,7 @@
             {:else if !hidden && ctrl.type === "toggle"}
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
               <!-- Standalone toggle row -->
-              <div class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
+              <div title={(ctrl as any).title ?? ''} class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
                 <span class="flex items-center gap-1.5">
                   {ctrl.label}
                   {#if ctrl.label === 'Burst' && cameraState.burst > 0}

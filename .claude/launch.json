@@ -2,6 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "lichtspiel",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "lichtton",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/ulrich1000/Documents/vibep/lichtton && bun run dev"],
+      "port": 5174
+    },
+    {
       "name": "pattern-projector",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "dev"],

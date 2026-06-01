@@ -11,7 +11,7 @@ import { hyperMix } from "./hyperMix";
 import { flowLines } from "./flowLines";
 import { curlOrbsBody } from "./curlOrbsBody";
 import { baroqueSwirlsBody } from "./baroqueSwirlsBody";
-import { lightPaint, lightTrail, lightPaintBlack, lightFly, lightKaleido, lightBloom, lightGlitch } from "./light-paint";
+import { lightPaint, lightTrail, lightPaintBlack, lightFly, lightVortex, lightKaleido, lightGlitch } from "./light-paint";
 import { warpedSurfaces } from "./warpedSurfaces";
 import { wavySphere } from "./wavySphere";
 import { crystalGem } from "./crystalGem";
@@ -35,11 +35,11 @@ const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals',
 // Patterns that must NOT get the generic motion camera wrapper:
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
-const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightKaleido', 'lightBloom', 'lightGlitch'];
+const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightKaleido', 'lightGlitch'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls', 'typography3d']);
 
-// Patterns that skip audio reactivity wrapping (camera-based patterns)
-const NO_AUDIO = new Set([...LIGHT_IDS, 'typography3d']);
+// Light patterns get audio reactivity (Brightness via mic) but not motion camera
+const NO_AUDIO = new Set(['typography3d']);
 
 const rawPatterns: Pattern[] = [
   hyperMix,
@@ -63,8 +63,8 @@ const rawPatterns: Pattern[] = [
   lightTrail,
   lightPaintBlack,
   lightFly,
+  lightVortex,
   lightKaleido,
-  lightBloom,
   lightGlitch,
   imgTealLines,
   imgOrganicWeb,
