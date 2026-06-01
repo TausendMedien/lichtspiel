@@ -11,9 +11,18 @@ export const poseState = {
   active: false,
 };
 
+// Performance settings — change before or after startPoseTracking().
+// lowRes requires a restart (stopPoseTracking + startPoseTracking) to take effect.
+// skipFrames takes effect immediately on the next frame.
+export const poseSettings = {
+  lowRes:     false,  // 320×240 instead of 640×480 — lighter on older GPUs
+  skipFrames: false,  // run inference every 2nd frame, reuse last result otherwise
+};
+
 let landmarker: PoseLandmarker | null = null;
 let video: HTMLVideoElement | null = null;
 let rafId = 0;
+let frameCounter = 0;
 
 export async function startPoseTracking(): Promise<void> {
   if (poseState.active) return;
@@ -34,15 +43,18 @@ export async function startPoseTracking(): Promise<void> {
     minTrackingConfidence: 0.5,
   });
 
+  const vw = poseSettings.lowRes ? 320 : 640;
+  const vh = poseSettings.lowRes ? 240 : 480;
+
   video = document.createElement("video");
-  video.width = 640;
-  video.height = 480;
+  video.width = vw;
+  video.height = vh;
   video.autoplay = true;
   video.playsInline = true;
   video.muted = true;
 
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: 640, height: 480, facingMode: "user" },
+    video: { width: vw, height: vh, facingMode: "user" },
   });
   video.srcObject = stream;
   await new Promise<void>((resolve) => {
@@ -69,6 +81,13 @@ export async function startPoseTracking(): Promise<void> {
     if (video.readyState < 2) { rafId = requestAnimationFrame(detect); return; }
     if (video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
+      frameCounter++;
+      // Skip inference on odd frames when skipFrames is enabled — reuse last result.
+      // The EMA smoothing already masks the one-frame lag.
+      if (poseSettings.skipFrames && (frameCounter & 1) === 1) {
+        rafId = requestAnimationFrame(detect);
+        return;
+      }
       const results = landmarker.detectForVideo(video, performance.now());
       const raw = results.landmarks.map((lms) => {
         const lw = lms[15]; // left wrist
@@ -120,6 +139,7 @@ export async function startPoseTracking(): Promise<void> {
 export function stopPoseTracking(): void {
   poseState.active = false;
   cancelAnimationFrame(rafId);
+  frameCounter = 0;
   poseState.persons = [];
   if (video?.srcObject) {
     (video.srcObject as MediaStream).getTracks().forEach((t) => t.stop());

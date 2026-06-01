@@ -3,8 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
 import { colorC2 } from "../colorC2.svelte";
 
-const COUNT = 50000;
-
+let particleCount = 30000;
 let pointSize    = 3.0;
 let flowSpeed    = 0.2;
 let colorRange   = 1.0;
@@ -16,6 +15,7 @@ let points: THREE.Points | null = null;
 let geometry: THREE.BufferGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
+let sceneRef: THREE.Scene | null = null;
 let accTime = 0;
 let currentAspect = 1;
 
@@ -87,37 +87,52 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
+function buildParticleGeometry(count: number): THREE.BufferGeometry {
+  const positions = new Float32Array(count * 3);
+  const seeds = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const r = Math.cbrt(Math.random()) * 4;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+    seeds[i] = Math.random();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+  return geo;
+}
+
+function rebuildParticles(count: number) {
+  if (!sceneRef || !points || !material) return;
+  sceneRef.remove(points);
+  geometry?.dispose();
+  geometry = buildParticleGeometry(count);
+  points = new THREE.Points(geometry, material);
+  sceneRef.add(points);
+}
+
 export const particlesBody: Pattern = {
   id: "particlesBody",
   usesPose: true,
   name: "Particle Field",
   controls: [
-    { label: "Point Size",       type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,       set: (v) => { pointSize = v; } },
-    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
-    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 0.4, interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
+    { label: "Point Size",       type: "range", min: 1.0, max: 6.0,   step: 0.1,  default: 3,     get: () => pointSize,       set: (v) => { pointSize = v; } },
+    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
+    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,   step: 0.05, default: 0.4,   interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
+    { label: "Point Count",      type: "range", min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount,   set: (v) => { particleCount = v; rebuildParticles(v); } },
   ],
 
   init(ctx: PatternContext) {
     camera = ctx.camera;
+    sceneRef = ctx.scene;
     camera.position.set(0, 0, 4);
     camera.lookAt(0, 0, 0);
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
 
-    const positions = new Float32Array(COUNT * 3);
-    const seeds = new Float32Array(COUNT);
-    for (let i = 0; i < COUNT; i++) {
-      const r = Math.cbrt(Math.random()) * 4;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
-      seeds[i] = Math.random();
-    }
-
-    geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+    geometry = buildParticleGeometry(particleCount);
 
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -182,6 +197,7 @@ export const particlesBody: Pattern = {
     geometry = null;
     material = null;
     camera = null;
+    sceneRef = null;
     accTime = 0;
   },
 };

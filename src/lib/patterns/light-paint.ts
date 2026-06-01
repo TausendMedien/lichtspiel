@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
+import { privacyMode } from "../privacyMode.svelte";
 
 // ─── Shared camera device state (module-level, persists across pattern switches) ──
 let _lpDeviceId = '';
@@ -282,7 +283,8 @@ function createLightPainting(
   let kaleidoSeg = D.kaleidoSeg;
   let mirror = D.mirror;
   let clearRequested = false;
-  let cameraOn = true;
+  let halfResBlur = false;
+  let prevHalfResBlur = false;
 
   // THREE objects
   let _renderer: THREE.WebGLRenderer | null = null;
@@ -338,6 +340,7 @@ function createLightPainting(
   }
 
   async function startCamera(canvas: HTMLCanvasElement) {
+    if (privacyMode.active) return;
     const myId = ++startId;
     // Enumerate cameras so device picker is populated on first use
     if (_lpDevices.length === 0) await enumerateLpCameras();
@@ -385,19 +388,8 @@ function createLightPainting(
   const thresholdSetter = (v: number) => { threshold = v; };
   _thresholdSetters.push(thresholdSetter);
 
-  // Camera controls live in Interactive section (interactive:'camera'), not the main controls panel.
+  // Camera device picker lives in Interactive section; camera is always on for these patterns.
   const cameraControls = [
-    {
-      label: "Camera",
-      type: "toggle" as const,
-      interactive: "camera" as const,
-      get: () => cameraOn,
-      set: (v: boolean) => {
-        cameraOn = !!v;
-        if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
-        else if (!cameraOn) stopCamera();
-      },
-    },
     {
       label: "Camera Device",
       type: "select" as const,
@@ -409,7 +401,7 @@ function createLightPainting(
       },
       set: (idx: number) => {
         _lpDeviceId = _lpDevices[idx]?.deviceId ?? '';
-        if (cameraOn && canvasRef) startCamera(canvasRef);
+        if (canvasRef) startCamera(canvasRef);
       },
     },
   ];
@@ -511,6 +503,13 @@ function createLightPainting(
           get: () => bloom,
           set: (v: number) => { bloom = v; },
         },
+        {
+          label: "Half-res Blur",
+          type: "toggle" as const,
+          title: "Render bloom at half resolution — reduces GPU load on older machines",
+          get: () => halfResBlur,
+          set: (v: boolean) => { halfResBlur = !!v; },
+        },
         // Separator ends the "Additional" section scope so controls below are always visible
         { label: "", type: "separator" as const },
         {
@@ -555,13 +554,13 @@ function createLightPainting(
         },
       ];
 
-  // Move priority controls to position 2 (after the 2 camera controls that are in Interactive).
+  // Move priority controls to position 1 (after the 1 camera control that is in Interactive).
   // This puts the distinctive slider first in the Controls panel.
   const builtControls = (() => {
     if (priorityLabels.length > 0) {
       const priorityItems = baseControls.filter(c => priorityLabels.includes(c.label));
       const rest = baseControls.filter(c => !priorityLabels.includes(c.label));
-      return [...rest.slice(0, 2), ...priorityItems, ...rest.slice(2)];
+      return [...rest.slice(0, 1), ...priorityItems, ...rest.slice(1)];
     }
     return baseControls;
   })();
@@ -597,10 +596,12 @@ function createLightPainting(
         depthBuffer: false,
         stencilBuffer: false,
       };
+      const bw = halfResBlur ? Math.ceil(width / 2) : width;
+      const bh = halfResBlur ? Math.ceil(height / 2) : height;
       trailA = new THREE.WebGLRenderTarget(width, height, rtOpts);
       trailB = new THREE.WebGLRenderTarget(width, height, rtOpts);
-      bloomA = new THREE.WebGLRenderTarget(width, height, rtOpts);
-      bloomB = new THREE.WebGLRenderTarget(width, height, rtOpts);
+      bloomA = new THREE.WebGLRenderTarget(bw, bh, rtOpts);
+      bloomB = new THREE.WebGLRenderTarget(bw, bh, rtOpts);
 
       accumScene = new THREE.Scene();
       accumCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -680,7 +681,6 @@ function createLightPainting(
 
     activate() {
       if (canvasRef) {
-        cameraOn = true; // always enable camera when pattern is activated
         showOverlay(canvasRef, "Requesting camera access…");
         startCamera(canvasRef);
       }
@@ -716,17 +716,28 @@ function createLightPainting(
 
       [trailA, trailB] = [trailB!, trailA!];
 
+      // Resize bloom RTs if halfResBlur changed
+      if (halfResBlur !== prevHalfResBlur) {
+        prevHalfResBlur = halfResBlur;
+        const bw = halfResBlur ? Math.ceil(resX / 2) : resX;
+        const bh = halfResBlur ? Math.ceil(resY / 2) : resY;
+        bloomA?.setSize(bw, bh);
+        bloomB?.setSize(bw, bh);
+      }
+
       // Bloom: blur the fresh trail horizontally then vertically (skipped when off).
       let bloomTex: THREE.Texture = blackTexture!;
       if (bloom > 0 && bloomA && bloomB) {
         const spread = 2.0;
+        const blurResX = halfResBlur ? resX / 2 : resX;
+        const blurResY = halfResBlur ? resY / 2 : resY;
         blurMaterial.uniforms.uTex.value = trailA.texture;
-        blurMaterial.uniforms.uDir.value.set(spread / resX, 0);
+        blurMaterial.uniforms.uDir.value.set(spread / blurResX, 0);
         _renderer.setRenderTarget(bloomA);
         _renderer.render(blurScene!, accumCamera!);
 
         blurMaterial.uniforms.uTex.value = bloomA.texture;
-        blurMaterial.uniforms.uDir.value.set(0, spread / resY);
+        blurMaterial.uniforms.uDir.value.set(0, spread / blurResY);
         _renderer.setRenderTarget(bloomB);
         _renderer.render(blurScene!, accumCamera!);
         _renderer.setRenderTarget(null);
@@ -764,8 +775,10 @@ function createLightPainting(
       resY = height;
       trailA?.setSize(width, height);
       trailB?.setSize(width, height);
-      bloomA?.setSize(width, height);
-      bloomB?.setSize(width, height);
+      const bw = halfResBlur ? Math.ceil(width / 2) : width;
+      const bh = halfResBlur ? Math.ceil(height / 2) : height;
+      bloomA?.setSize(bw, bh);
+      bloomB?.setSize(bw, bh);
     },
 
     dispose() {

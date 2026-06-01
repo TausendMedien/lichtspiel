@@ -19,9 +19,10 @@
   import { encodeShare, decodeShare } from "./lib/shareUrl";
   import { getSlots, saveSlot } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
-  import { poseState, startPoseTracking, stopPoseTracking } from "./lib/pose";
+  import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
+  import { privacyMode } from "./lib/privacyMode.svelte";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
 
@@ -2446,7 +2447,7 @@
                 <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
                   onclick={() => { colorC2.colorsV2 = 3.0; saveColorC2(); }}
                   title="Click to reset"
-                >Colors v2</span>
+                >Colors</span>
                 <span class="text-xs text-white/50">{colorC2.colorsV2.toFixed(1)}</span>
               </div>
               <input type="range" min={0} max={3} step={0.1}
@@ -2657,6 +2658,29 @@
                 {:else if poseActive && posePersonCount > 0}
                   <div class="text-xs text-green-400/70">◉ {posePersonCount} person{posePersonCount > 1 ? 's' : ''} detected</div>
                 {/if}
+                <!-- Pose performance options -->
+                <div class="flex flex-col gap-1.5 pt-0.5">
+                  <div class="text-xs text-white/50">Performance (slower machines)</div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div class="flex items-center gap-2 cursor-pointer" title="Half video resolution — reduces GPU load, requires restart"
+                    onclick={async () => {
+                      poseSettings.lowRes = !poseSettings.lowRes;
+                      if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; poseLoading = true; try { await startPoseTracking(); poseActive = true; } catch(e) { poseError = e instanceof Error ? e.message : 'error'; } finally { poseLoading = false; } }
+                    }}>
+                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSettings.lowRes ? 'bg-white/60' : 'bg-white/20'}">
+                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSettings.lowRes ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                    </div>
+                    <span class="text-xs text-white/70">Low Res (320×240)</span>
+                  </div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div class="flex items-center gap-2 cursor-pointer" title="Run pose inference every 2nd frame"
+                    onclick={() => { poseSettings.skipFrames = !poseSettings.skipFrames; }}>
+                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSettings.skipFrames ? 'bg-white/60' : 'bg-white/20'}">
+                      <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSettings.skipFrames ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                    </div>
+                    <span class="text-xs text-white/70">Skip Frames (every 2nd)</span>
+                  </div>
+                </div>
                 {#if poseActive}
                   {@const poseControls = (patterns[index].controls ?? []).filter(c => c.type === 'range' && (c as any).interactive === 'pose')}
                   {#each poseControls as ctrl}

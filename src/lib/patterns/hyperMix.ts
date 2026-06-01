@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 
-const BASE_COUNT = 40000;
+const BASE_COUNT = 25000;
 const _c1 = new THREE.Color();
 const _c2 = new THREE.Color();
 const _cWhite = new THREE.Color(1, 1, 1);
@@ -14,8 +14,10 @@ const params = {
   spread: 2.1,
   pointSize: 0.8,
   blur: 0.50,
-  pointCount: 55000,
+  pointCount: 25000,
 };
+
+let qualityLow = false;
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
 
@@ -175,6 +177,19 @@ let material: THREE.ShaderMaterial | null = null;
 let cam: THREE.PerspectiveCamera | null = null;
 let sceneRef: THREE.Scene | null = null;
 
+function effectiveCount() {
+  return qualityLow ? Math.max(5000, Math.round(params.pointCount / 2)) : params.pointCount;
+}
+
+function rebuildPoints(count: number) {
+  if (!sceneRef || !points || !material) return;
+  sceneRef.remove(points);
+  geometry?.dispose();
+  geometry = buildGeometry(count);
+  points = new THREE.Points(geometry, material);
+  sceneRef.add(points);
+}
+
 function buildGeometry(count: number): THREE.BufferGeometry {
   const positions = new Float32Array(count * 3);
   const seeds     = new Float32Array(count);
@@ -205,7 +220,7 @@ export const hyperMix: Pattern = {
   controls: [
     {
       label: "Speed",
-      type: "range", min: 0, max: 0.6, step: 0.005,
+      type: "range", min: 0, max: 0.2, step: 0.005,
       default: 0.03,
       audioWeight: 0.35,
       get: () => params.speed,
@@ -235,18 +250,22 @@ export const hyperMix: Pattern = {
     },
     {
       label: "Point Count",
-      type: "range", min: 5000, max: 100000, step: 5000,
-      default: 55000,
+      type: "range", min: 5000, max: 30000, step: 1000,
+      default: 25000,
       get: () => params.pointCount,
       set: (v) => {
         params.pointCount = v;
-        if (sceneRef && points && material) {
-          sceneRef.remove(points);
-          geometry?.dispose();
-          geometry = buildGeometry(v);
-          points = new THREE.Points(geometry, material);
-          sceneRef.add(points);
-        }
+        rebuildPoints(effectiveCount());
+      },
+    },
+    {
+      label: "High Quality",
+      type: "toggle" as const,
+      title: "Off = half point count for slower machines",
+      get: () => !qualityLow,
+      set: (v: boolean) => {
+        qualityLow = !v;
+        rebuildPoints(effectiveCount());
       },
     },
   ],
@@ -306,5 +325,6 @@ export const hyperMix: Pattern = {
     cam = null;
     sceneRef = null;
     accTime = 0;
+    qualityLow = false;
   },
 };
