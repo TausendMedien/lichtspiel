@@ -283,8 +283,7 @@ function createLightPainting(
   let kaleidoSeg = D.kaleidoSeg;
   let mirror = D.mirror;
   let clearRequested = false;
-  let halfResBlur = false;
-  let prevHalfResBlur = false;
+  const halfResBlur = true;  // always on — saves ~75% of GPU blur work
 
   // THREE objects
   let _renderer: THREE.WebGLRenderer | null = null;
@@ -514,13 +513,6 @@ function createLightPainting(
         // Separator ends the "Additional" section scope so controls below are always visible
         { label: "", type: "separator" as const },
         {
-          label: "Half-res Blur",
-          type: "toggle" as const,
-          title: "Render bloom at half resolution — reduces GPU load on older machines",
-          get: () => halfResBlur,
-          set: (v: boolean) => { halfResBlur = !!v; },
-        },
-        {
           label: "Fly In/Out",
           type: "range" as const, min: -1.0, max: 1.0, step: 0.01,
           default: D.flow,
@@ -723,15 +715,6 @@ function createLightPainting(
       _renderer.setRenderTarget(null);
 
       [trailA, trailB] = [trailB!, trailA!];
-
-      // Resize bloom RTs if halfResBlur changed
-      if (halfResBlur !== prevHalfResBlur) {
-        prevHalfResBlur = halfResBlur;
-        const bw = halfResBlur ? Math.ceil(resX / 2) : resX;
-        const bh = halfResBlur ? Math.ceil(resY / 2) : resY;
-        bloomA?.setSize(bw, bh);
-        bloomB?.setSize(bw, bh);
-      }
 
       // Bloom: blur the fresh trail horizontally then vertically (skipped when off).
       let bloomTex: THREE.Texture = blackTexture!;
