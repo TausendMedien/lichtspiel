@@ -18,8 +18,8 @@ const colorDefaults = {
 
 const base: Snapshot = {
   Camera: true, Mirror: true, Threshold: 0.8, Lock: false,
-  "Fade Speed": 0.03, Colorize: 0, Black: 0.3,
-  Additional: false,
+  "Fade Speed": 0.03, Colorize: 0, Black: 0.5,
+  Additional: true,
   Gain: 0.5, "Brush Size": 0, Ghost: 0, Bloom: 0,
   "Fly In/Out": 0, Vortex: 0, "RGB Split": 0,
   Kaleidoscope: false, Segments: 5,
@@ -30,7 +30,7 @@ export const presetDefaults: Record<string, (Snapshot | null)[]> = {
   lightPaint:      [{ ...base }, null, null],
   lightTrail:      [{ ...base, "Fade Speed": 0.01 }, null, null],
   lightPaintBlack: [{ ...base, Black: 1.0 }, null, null],
-  lightFly:        [{ ...base, "Fly In/Out": -0.20 }, null, null],
+  lightFly:        [{ ...base, "Fly In/Out": -0.25 }, null, null],
   lightVortex:     [{ ...base, Vortex: -0.10 }, null, null],
   lightKaleido:    [{ ...base, Kaleidoscope: true, Segments: 3 }, null, null],
   lightGlitch:     [{ ...base, "RGB Split": 0.020 }, null, null],

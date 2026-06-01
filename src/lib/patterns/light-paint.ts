@@ -206,7 +206,7 @@ const BASE_DEFAULTS: LPDefaults = {
   gain: 1.5,
   colorize: 0,
   brushRadius: 0.012,
-  black: 0.3,       // 0 = full live feed, 1 = black
+  black: 0.5,       // 0 = full live feed, 1 = black
   ghostOpacity: 0,
   flow: 0,
   vortex: 0,
@@ -410,6 +410,7 @@ function createLightPainting(
         {
           label: "Additional",
           type: "section" as const,
+          collapsible: true,
           get: () => true,
           set: (_v: boolean) => {},
         },
@@ -725,7 +726,7 @@ function createLightPainting(
 export const lightPaint      = createLightPainting("lightPaint",      "Light Paint");
 export const lightTrail      = createLightPainting("lightTrail",      "Light Trail",       { decayRate: 0.01, brushRadius: 0 });
 export const lightPaintBlack = createLightPainting("lightPaintBlack", "Light Paint Black", { black: 1.0, ghostOpacity: 0 }, ["Black"]);
-export const lightFly        = createLightPainting("lightFly",        "Light Fly",         { flow: -0.20 }, ["Fly In/Out"]);
+export const lightFly        = createLightPainting("lightFly",        "Light Fly",         { flow: -0.25 }, ["Fly In/Out"]);
 export const lightVortex     = createLightPainting("lightVortex",     "Light Vortex",      { vortex: -0.10 }, ["Vortex"]);
 export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 3 }, ["Kaleidoscope", "Segments"]);
 export const lightGlitch     = createLightPainting("lightGlitch",     "RGB Glitch",        { rgbSplit: 0.020 }, ["RGB Split"]);

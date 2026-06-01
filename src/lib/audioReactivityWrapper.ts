@@ -59,13 +59,6 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       get:   () => ps().brightnessEnabled,
       set:   (v: boolean) => { ps().brightnessEnabled = v; saveInteractionSettings(); },
     },
-    {
-      label: 'Brightness Gain',
-      type:  'range' as const,
-      min:   0, max: 2, step: 0.1, default: 1.0,
-      get:   () => ps().brightnessGain,
-      set:   (v: number) => { ps().brightnessGain = v; saveInteractionSettings(); },
-    },
   ];
 
   // Lightweight analyser for smoothed-level display only

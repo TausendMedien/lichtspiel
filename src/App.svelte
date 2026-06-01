@@ -340,10 +340,10 @@
         : true;
       interactiveOn = _perPatternInteractiveOn.has(pat.id)
         ? _perPatternInteractiveOn.get(pat.id)!
-        : !!(pat.usesCameraBlend || pat.usesPose);  // camera/pose patterns default to interactive ON
+        : !!(pat.usesCameraBlend || pat.usesPose || pat.audioReactive);  // camera/pose/audio patterns default to interactive ON
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
-        : !(pat.usesCameraBlend || pat.usesPose);   // camera/pose patterns default to interactive expanded
+        : !(pat.usesCameraBlend || pat.usesPose || pat.audioReactive);   // camera/pose/audio patterns default to interactive expanded
       // Enforce camera/audio/pose based on the incoming pattern's interactive state.
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
@@ -2254,6 +2254,7 @@
                     _perPatternCollapsed.set(patterns[index].id, next);
                   }}
                 >{ctrl.label} <span class="text-[8px]">{isCollapsed ? '▶' : '▼'}</span></span>
+                {#if !(ctrl as any).collapsible}
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
                   class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/60' : 'bg-white/20'}"
@@ -2261,6 +2262,7 @@
                 >
                   <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                 </div>
+                {/if}
                 <div class="h-px flex-1 bg-white/20"></div>
               </div>
             {:else if !hidden && ctrl.type === "toggle"}
