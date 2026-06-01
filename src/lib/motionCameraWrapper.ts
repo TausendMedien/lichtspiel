@@ -200,11 +200,11 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       prevDeviceId       = cameraState.deviceId;
       prevPatternEnabled = cameraState.patternMotionEnabled[pattern.id] ?? true;
       pattern.init(ctx);
-      if (cameraState.enabled && prevPatternEnabled) startCamera();
+      if (cameraState.enabled && prevPatternEnabled && !privacyMode.active) startCamera();
     },
 
     activate() {
-      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true)) startCamera();
+      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
       pattern.activate?.();
     },
 

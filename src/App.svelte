@@ -210,6 +210,7 @@
   let _sbSavedMotionEnabled  = false;
   let _sbSavedAudioEnabled   = false;
   let _sbSavedPatternCams    = new Map<string, boolean>();
+  let _sbSavedPoseActive     = false;
   let recorder: RecorderHandle | null = null;
   let timeScaleMirror = $state(1.0);
   let frozenPrevScale = $state(1.0);
@@ -2966,6 +2967,9 @@
                 cameraState.motionEnabled = false;
                 cameraState.enabled = false;
                 audioState.enabled = false;
+                // Stop pose tracking (has its own camera stream)
+                _sbSavedPoseActive = poseActive;
+                if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
                 privacyMode.active = true;
               } else {
                 // ── Deactivating Sensor Block — restore saved state ──

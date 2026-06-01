@@ -180,7 +180,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       prevDeviceId       = audioState.deviceId;
       prevPatternEnabled = audioState.patternAudioEnabled[pattern.id] ?? true;
       pattern.init(ctx);
-      if (audioState.enabled && prevPatternEnabled) startAudio();
+      if (audioState.enabled && prevPatternEnabled && !privacyMode.active) startAudio();
     },
 
     update(dt: number, elapsed: number) {
