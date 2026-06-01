@@ -77,9 +77,16 @@ const accumFragmentShader = /* glsl */ `
     float s = sin(a), co = cos(a);
     fb = mat2(co, -s, s, co) * fb;
     fb *= (1.0 - uFlow * 0.02);   // -1 => content flies IN, +1 => flies OUT
+    // Skip trail blur on pixels currently lit by the camera — keeps static bright
+    // areas (faces, walls) sharp while only smoothing the fading motion trail.
+    vec2 liveUv = vec2(uMirror > 0.5 ? 1.0 - vUv.x : vUv.x, vUv.y);
+    vec4 liveCheck = texture2D(uLiveFrame, liveUv);
+    float liveBright = max(max(liveCheck.r, liveCheck.g), liveCheck.b);
+    bool currentlyLit = liveBright > uThreshold;
+
     vec2 center = fb + 0.5;
     vec4 trail;
-    if (uTrailSoftX > 0.001) {
+    if (uTrailSoftX > 0.001 && !currentlyLit) {
       vec2 d = vec2(uTrailSoftX, uTrailSoftY);
       trail  = texture2D(uTrail, center)                         * 0.36;
       trail += texture2D(uTrail, center + vec2( d.x,  0.0))     * 0.12;
@@ -228,11 +235,11 @@ interface LPDefaults {
 
 // ─── Module-level threshold lock (shared across all instances) ────────────────
 let _thresholdLocked = false;
-let _lockedThreshold = 0.29;
+let _lockedThreshold = 0.80;
 const _thresholdSetters: Array<(v: number) => void> = [];
 
 const BASE_DEFAULTS: LPDefaults = {
-  threshold: 0.29,
+  threshold: 0.80,
   decayRate: 0.015,
   gain: 1.5,
   colorize: 0,
@@ -432,6 +439,7 @@ function createLightPainting(
           label: "Lock",
           type: "toggle" as const,
           title: "Apply to all Light Painting Patterns",
+          linkedTo: "Threshold",
           get: () => _thresholdLocked,
           set: (v: boolean) => {
             _thresholdLocked = !!v;

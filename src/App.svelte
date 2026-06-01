@@ -2265,7 +2265,7 @@
                 {/if}
                 <div class="h-px flex-1 bg-white/20"></div>
               </div>
-            {:else if !hidden && ctrl.type === "toggle"}
+            {:else if !hidden && ctrl.type === "toggle" && !(ctrl as any).linkedTo}
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
               <!-- Standalone toggle row -->
               <div title={(ctrl as any).title ?? ''} class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
@@ -2295,6 +2295,22 @@
                   >{ctrl.label}</span>
                   {#if (ctrl as any).exp}
                     <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>
+                  {/if}
+                  {#if ctrl.type === "range"}
+                    {@const linkedToggle = (patterns[index].controls ?? []).find(c => c.type === 'toggle' && (c as any).linkedTo === ctrl.label) as (PatternControl & { type: 'toggle' }) | undefined}
+                    {#if linkedToggle}
+                      {@const isLinkedOn = !!(ctrlVals[linkedToggle.label] ?? linkedToggle.get())}
+                      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                      <div class="flex items-center gap-1 ml-1 mr-auto" title={linkedToggle.title ?? linkedToggle.label}>
+                        <span class="text-[10px] text-white/30">{linkedToggle.label}</span>
+                        <div
+                          class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isLinkedOn ? 'bg-white/60' : 'bg-white/20'}"
+                          onclick={() => { const nv = !linkedToggle.get(); linkedToggle.set(nv); ctrlVals[linkedToggle.label] = nv ? 1 : 0; saveSettings(patterns); }}
+                        >
+                          <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {isLinkedOn ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                        </div>
+                      </div>
+                    {/if}
                   {/if}
                   {#if ctrl.type === "range"}
                     <span class="font-mono text-white/40">

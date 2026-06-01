@@ -50,18 +50,11 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     c => c.type === 'separator' && c.label === 'Interactions'
   );
 
-  const brightnessControls: PatternControl[] = [
-    ...(hasInteractionsSeparator ? [] : [{
-      label: 'Interactions',
-      type:  'separator' as const,
-    }] as PatternControl[]),
-    {
-      label: 'Brightness',
-      type:  'toggle' as const,
-      get:   () => ps().brightnessEnabled,
-      set:   (v: boolean) => { ps().brightnessEnabled = v; saveInteractionSettings(); },
-    },
-  ];
+  // Brightness is always active when audio is enabled — no toggle needed.
+  const brightnessControls: PatternControl[] = hasInteractionsSeparator ? [] : [{
+    label: 'Interactions',
+    type:  'separator' as const,
+  }] as PatternControl[];
 
   // Lightweight analyser for smoothed-level display only
   let audioCtx: AudioContext | null = null;
@@ -264,7 +257,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
 
       // ── Tier 1: Universal Brightness (audio level → brighter) ────────────
       const settings = getPatternSettings(pattern.id);
-      if (audioState.enabled && settings.brightnessEnabled) {
+      if (audioState.enabled) {
         const gain = settings.brightnessGain;
         const str  = interactionState.strength;
         // Use gated smoothed level for brightness — more sustained and less jarring

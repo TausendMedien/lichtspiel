@@ -10,7 +10,7 @@ export interface PatternContext {
 export type PatternControl =
   | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose' | 'camera' | 'internal'; audioWeight?: number; exp?: true; get(): number; set(v: number): void }
   | { label: string; type: "select"; options: string[] | (() => string[]); disabled?: () => boolean; interactive?: 'camera'; get(): number; set(v: number): void }
-  | { label: string; type: "toggle"; disabled?: () => boolean; interactive?: 'camera'; title?: string; get(): boolean; set(v: boolean): void }
+  | { label: string; type: "toggle"; disabled?: () => boolean; interactive?: 'camera'; title?: string; linkedTo?: string; get(): boolean; set(v: boolean): void }
   /** Section header with an integrated on/off toggle. Controls below are dimmed while off.
    *  Set collapsible:true to get a collapse-only header with no on/off toggle. */
   | { label: string; type: "section"; collapsible?: boolean; get(): boolean; set(v: boolean): void }
