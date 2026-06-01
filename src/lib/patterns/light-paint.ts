@@ -1,75 +1,18 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
-import { colorC2 } from "../colorC2.svelte";
+import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 
-// ── Unified "Light Painting" pattern ─────────────────────────────────────────
+// ── "Light Painting" family ──────────────────────────────────────────────────
 // A webcam frame feeds a feedback loop: the accumulation pass adds pixels
 // brighter than a threshold onto a decaying buffer (with a soft brush + spatial
 // feedback transforms), the composite pass tone-maps it with background / ghost
 // / colour / glow / split / kaleidoscope looks.
-// Brush Size = 0 gives the sharp "Light Trail" look; raise it for a soft brush.
+//
+// `createLightPainting()` builds an independent pattern instance (its own state +
+// GL objects) so several preset tiles can coexist. Brush Size = 0 gives a sharp
+// "Light Trail" look; raise it for a soft brush.
 
-// Controls state
-let threshold = 0.29;
-let decayRate = 0.015;       // 0 = forever, >0 = fade per frame
-let gain = 1.5;
-let trailColor = 0;          // 0 = live/natural colour, 1 = full custom palette
-let brushRadius = 0.0;       // glow spread in UV space (0 = sharp trail)
-let bgMode = 2;              // 0=black, 1=live, 2=dimmed
-let dimLevel = 0.30;
-let ghostOpacity = 0.0;      // live camera overlay
-let flow = 0;                // -1 fly in fast … 0 none … 1 fly out fast
-let vortex = 0;              // -1 … 1 rotational feedback
-let bloom = 0;               // 0 … 1 soft glow amount
-let rgbSplit = 0;            // 0 … 0.02 chromatic offset (UV)
-let kaleidoOn = false;
-let kaleidoSeg = 6;          // mirror segments
-let clearRequested = false;
-let cameraOn = true;         // user-facing camera toggle (persisted)
-
-// THREE objects
-let _renderer: THREE.WebGLRenderer | null = null;
-
-// Video / texture
-let stream: MediaStream | null = null;
-let video: HTMLVideoElement | null = null;
-let videoTexture: THREE.VideoTexture | null = null;
-let blackTexture: THREE.DataTexture | null = null;
-let cameraReady = false;
-let startId = 0;             // incremented on every startCamera/stopCamera to cancel stale async calls
-
-// Ping-pong render targets
-let trailA: THREE.WebGLRenderTarget | null = null;
-let trailB: THREE.WebGLRenderTarget | null = null;
-// Bloom blur targets
-let bloomA: THREE.WebGLRenderTarget | null = null;
-let bloomB: THREE.WebGLRenderTarget | null = null;
-
-// Accumulation pass (offscreen scene)
-let accumScene: THREE.Scene | null = null;
-let accumCamera: THREE.OrthographicCamera | null = null;
-let accumGeometry: THREE.PlaneGeometry | null = null;
-let accumMaterial: THREE.ShaderMaterial | null = null;
-
-// Blur pass (reuses accumScene/Camera by swapping the mesh material)
-let blurScene: THREE.Scene | null = null;
-let blurGeometry: THREE.PlaneGeometry | null = null;
-let blurMaterial: THREE.ShaderMaterial | null = null;
-
-// Composite pass (main scene)
-let compositeGeometry: THREE.PlaneGeometry | null = null;
-let compositeMaterial: THREE.ShaderMaterial | null = null;
-let compositeMesh: THREE.Mesh | null = null;
-
-// DOM overlay
-let overlay: HTMLDivElement | null = null;
-let canvasRef: HTMLCanvasElement | null = null;
-
-// Resolution for brush radius / bloom texel conversion
-let resX = 1280;
-let resY = 720;
-
-// ─── Shaders ────────────────────────────────────────────────────────────────
+// ─── Shaders (shared, immutable) ──────────────────────────────────────────────
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -96,13 +39,15 @@ const accumFragmentShader = /* glsl */ `
   uniform float uRadiusY;  // brushRadius / resY
   uniform float uFlow;     // -1 fly in … 1 fly out
   uniform float uVortex;   // rotation radians/frame
+  uniform float uMirror;   // >0.5 = mirror live feed horizontally
 
   vec3 detectAt(vec2 uv) {
-    vec4 live = texture2D(uLiveFrame, uv);
+    vec2 luv = vec2(uMirror > 0.5 ? 1.0 - uv.x : uv.x, uv.y);
+    vec4 live = texture2D(uLiveFrame, luv);
     float brightness = max(max(live.r, live.g), live.b);
     float weight = clamp((brightness - uThreshold) / max(1.0 - uThreshold, 0.01), 0.0, 1.0);
     weight = weight * weight;
-    // Natural camera colour (no chroma boost) — Trail Color is applied at composite.
+    // Natural camera colour (no chroma boost) — colour styling happens at composite.
     vec3 c = live.rgb * weight * uGain;
     // Reinhard soft-saturation: preserves hue, prevents single-frame white slam.
     float peak = max(max(c.r, c.g), c.b) + 0.001;
@@ -155,6 +100,11 @@ const blurFragmentShader = /* glsl */ `
   }
 `;
 
+// Colour styling reuses the app-wide "Colors v2" curve (uColorsV2):
+//   v2=0 grayscale · v2=1 single main-colour tint · v2=3 = the Colorize result.
+// Colorize blends Live (0) ↔ the 3-colour Custom palette gradient (1), so v2=3
+// gives live (Colorize 0) or full custom colours (Colorize 1). Colorize=0 makes
+// the whole expression collapse back to the stock pipeline (v2=3 = untouched live).
 const compositeFragmentShader = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
@@ -165,12 +115,15 @@ const compositeFragmentShader = /* glsl */ `
   uniform float uDimLevel;
   uniform float uThreshold;
   uniform float uGhost;
-  uniform float uTrailColor;   // 0 live colour … 1 custom palette
-  uniform vec3  uPal0;         // main
-  uniform vec3  uPal1;         // contrast
-  uniform vec3  uPal2;         // glow
+  uniform float uColorize;     // 0 live colour … 1 custom palette
+  uniform float uColorsV2;     // global recolor curve (0 gray … 3 = colorize result)
+  uniform float uBrightness;   // palette brightness scale
+  uniform vec3  uPal0;         // shuffle-assigned colour 0
+  uniform vec3  uPal1;         // shuffle-assigned colour 1
+  uniform vec3  uPal2;         // shuffle-assigned colour 2
   uniform float uBloom;
   uniform float uRgbSplit;
+  uniform float uMirror;       // >0.5 = mirror live feed horizontally
   uniform float uKaleido;      // >0.5 = on
   uniform float uKaleidoSeg;
 
@@ -200,15 +153,21 @@ const compositeFragmentShader = /* glsl */ `
     toned.g = tonedAt(suv).g;
     toned.b = tonedAt(suv - vec2(uRgbSplit, 0.0)).b;
 
-    // Palette map: brightness-driven gradient across the custom colours.
+    // Colour styling: Colors v2 curve with the Colorize blend as its v2=3 endpoint.
     float luma = dot(toned, vec3(0.299, 0.587, 0.114));
-    vec3 pal = luma < 0.5
+    vec3 palGrad = ((luma < 0.5)
       ? mix(uPal0, uPal1, luma * 2.0)
-      : mix(uPal1, uPal2, (luma - 0.5) * 2.0);
-    vec3 colored = mix(toned, pal * luma, uTrailColor);
+      : mix(uPal1, uPal2, (luma - 0.5) * 2.0)) * luma * uBrightness;
+    vec3 colorizeResult = mix(toned, palGrad, uColorize);
+    vec3 gray = vec3(luma);
+    vec3 mono = uPal0 * (0.2 + luma * 0.8) * uBrightness;
+    float ph1 = clamp(uColorsV2, 0.0, 1.0);
+    float ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
+    vec3 colored = mix(mix(gray, mono, ph1), colorizeResult, ph2);
 
-    // Background from the live feed.
-    vec4 live = texture2D(uLiveFrame, suv);
+    // Background from the (optionally mirrored) live feed.
+    vec2 bguv = vec2(uMirror > 0.5 ? 1.0 - suv.x : suv.x, suv.y);
+    vec4 live = texture2D(uLiveFrame, bguv);
     float lluma = dot(live.rgb, vec3(0.2126, 0.7152, 0.0722));
     float darkness = 1.0 - smoothstep(0.0, uThreshold, lluma);
     float t01 = clamp(uBgMode, 0.0, 1.0);
@@ -222,387 +181,520 @@ const compositeFragmentShader = /* glsl */ `
   }
 `;
 
-// ─── Camera ──────────────────────────────────────────────────────────────────
+// ─── Preset defaults ──────────────────────────────────────────────────────────
 
-function stopCamera() {
-  ++startId; // invalidate any in-flight startCamera
-  stream?.getTracks().forEach((t) => t.stop());
-  stream = null;
-  if (video) { video.pause(); video.srcObject = null; video = null; }
-  videoTexture?.dispose();
-  videoTexture = null;
-  cameraReady = false;
-  overlay?.remove();
-  overlay = null;
+interface LPDefaults {
+  threshold: number;
+  decayRate: number;
+  gain: number;
+  colorize: number;
+  brushRadius: number;
+  bgMode: number;
+  dimLevel: number;
+  ghostOpacity: number;
+  flow: number;
+  vortex: number;
+  bloom: number;
+  rgbSplit: number;
+  kaleidoOn: boolean;
+  kaleidoSeg: number;
+  mirror: boolean;
 }
 
-async function startCamera(canvas: HTMLCanvasElement) {
-  const myId = ++startId;
-  try {
-    const s = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
-      audio: false,
-    });
-    if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
-    stream = s;
-    video = document.createElement("video");
-    video.srcObject = stream;
-    video.setAttribute("playsinline", "");
-    video.muted = true;
-    await video.play();
-    if (myId !== startId) { stopCamera(); return; }
-    videoTexture = new THREE.VideoTexture(video);
-    videoTexture.minFilter = THREE.LinearFilter;
-    videoTexture.magFilter = THREE.LinearFilter;
-    cameraReady = true;
+const BASE_DEFAULTS: LPDefaults = {
+  threshold: 0.29,
+  decayRate: 0.015,
+  gain: 1.5,
+  colorize: 0,
+  brushRadius: 0.012,
+  bgMode: 2,        // 0=black, 1=live, 2=dimmed
+  dimLevel: 0.30,
+  ghostOpacity: 0,
+  flow: 0,
+  vortex: 0,
+  bloom: 0,
+  rgbSplit: 0,
+  kaleidoOn: false,
+  kaleidoSeg: 6,
+  mirror: true,     // default mirrored (selfie-correct: move left → reads left)
+};
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
+function createLightPainting(
+  id: string,
+  name: string,
+  overrides: Partial<LPDefaults> = {},
+): Pattern {
+  const D: LPDefaults = { ...BASE_DEFAULTS, ...overrides };
+
+  // Controls state
+  let threshold = D.threshold;
+  let decayRate = D.decayRate;
+  let gain = D.gain;
+  let colorize = D.colorize;
+  let brushRadius = D.brushRadius;
+  let bgMode = D.bgMode;
+  let dimLevel = D.dimLevel;
+  let ghostOpacity = D.ghostOpacity;
+  let flow = D.flow;
+  let vortex = D.vortex;
+  let bloom = D.bloom;
+  let rgbSplit = D.rgbSplit;
+  let kaleidoOn = D.kaleidoOn;
+  let kaleidoSeg = D.kaleidoSeg;
+  let mirror = D.mirror;
+  let clearRequested = false;
+  let cameraOn = true;
+
+  // THREE objects
+  let _renderer: THREE.WebGLRenderer | null = null;
+
+  // Video / texture
+  let stream: MediaStream | null = null;
+  let video: HTMLVideoElement | null = null;
+  let videoTexture: THREE.VideoTexture | null = null;
+  let blackTexture: THREE.DataTexture | null = null;
+  let cameraReady = false;
+  let startId = 0;
+
+  // Ping-pong render targets
+  let trailA: THREE.WebGLRenderTarget | null = null;
+  let trailB: THREE.WebGLRenderTarget | null = null;
+  let bloomA: THREE.WebGLRenderTarget | null = null;
+  let bloomB: THREE.WebGLRenderTarget | null = null;
+
+  // Accumulation pass (offscreen scene)
+  let accumScene: THREE.Scene | null = null;
+  let accumCamera: THREE.OrthographicCamera | null = null;
+  let accumGeometry: THREE.PlaneGeometry | null = null;
+  let accumMaterial: THREE.ShaderMaterial | null = null;
+
+  // Blur pass
+  let blurScene: THREE.Scene | null = null;
+  let blurGeometry: THREE.PlaneGeometry | null = null;
+  let blurMaterial: THREE.ShaderMaterial | null = null;
+
+  // Composite pass (main scene)
+  let compositeGeometry: THREE.PlaneGeometry | null = null;
+  let compositeMaterial: THREE.ShaderMaterial | null = null;
+  let compositeMesh: THREE.Mesh | null = null;
+
+  // DOM overlay
+  let overlay: HTMLDivElement | null = null;
+  let canvasRef: HTMLCanvasElement | null = null;
+
+  // Resolution for brush radius / bloom texel conversion
+  let resX = 1280;
+  let resY = 720;
+
+  function stopCamera() {
+    ++startId; // invalidate any in-flight startCamera
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = null;
+    if (video) { video.pause(); video.srcObject = null; video = null; }
+    videoTexture?.dispose();
+    videoTexture = null;
+    cameraReady = false;
     overlay?.remove();
     overlay = null;
-  } catch {
-    if (myId !== startId) return;
-    cameraReady = false;
-    showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings and reload.");
   }
-}
 
-function showOverlay(canvas: HTMLCanvasElement, message: string) {
-  overlay?.remove();
-  const div = document.createElement("div");
-  div.style.cssText = `
-    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    color:#fff;font-family:sans-serif;font-size:16px;text-align:center;
-    pointer-events:none;white-space:pre-line;padding:24px;
-    background:rgba(0,0,0,0.55);
-  `;
-  div.textContent = message;
-  canvas.parentElement?.appendChild(div);
-  overlay = div;
-}
-
-// ─── Pattern ─────────────────────────────────────────────────────────────────
-
-export const lightPaint: Pattern = {
-  id: "lightPaint",
-  name: "Light Painting",
-  usesCameraBlend: true,
-
-  controls: [
-    {
-      label: "Camera",
-      type: "toggle",
-      interactive: "camera" as const,
-      get: () => cameraOn,
-      set: (v: boolean) => {
-        cameraOn = !!v;
-        if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
-        else if (!cameraOn) stopCamera();
-      },
-    },
-    {
-      label: "Threshold",
-      type: "range", min: 0.05, max: 0.95, step: 0.01,
-      default: 0.29,
-      get: () => threshold,
-      set: (v) => { threshold = v; },
-    },
-    {
-      label: "Fade Speed",
-      type: "range", min: 0.0, max: 0.3, step: 0.005,
-      default: 0.015,
-      get: () => decayRate,
-      set: (v) => { decayRate = v; },
-    },
-    {
-      label: "Gain",
-      type: "range", min: 0.5, max: 8.0, step: 0.1,
-      default: 1.5,
-      get: () => gain,
-      set: (v) => { gain = v; },
-    },
-    {
-      label: "Trail Color",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0,
-      get: () => trailColor,
-      set: (v) => { trailColor = v; },
-    },
-    {
-      label: "Brush Size",
-      type: "range", min: 0.0, max: 0.05, step: 0.001,
-      default: 0,
-      get: () => brushRadius,
-      set: (v) => { brushRadius = v; },
-    },
-    {
-      label: "Background",
-      type: "select", options: ["Black", "Live", "Dimmed"],
-      get: () => bgMode,
-      set: (v) => { bgMode = v; },
-    },
-    {
-      label: "Dim Level",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0.3,
-      get: () => dimLevel,
-      set: (v) => { dimLevel = v; },
-    },
-    {
-      label: "Ghost",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0,
-      get: () => ghostOpacity,
-      set: (v) => { ghostOpacity = v; },
-    },
-    {
-      label: "Fly In/Out",
-      type: "range", min: -1.0, max: 1.0, step: 0.01,
-      default: 0,
-      get: () => flow,
-      set: (v) => { flow = v; },
-    },
-    {
-      label: "Vortex",
-      type: "range", min: -1.0, max: 1.0, step: 0.01,
-      default: 0,
-      get: () => vortex,
-      set: (v) => { vortex = v; },
-    },
-    {
-      label: "Bloom",
-      type: "range", min: 0.0, max: 1.0, step: 0.05,
-      default: 0,
-      get: () => bloom,
-      set: (v) => { bloom = v; },
-    },
-    {
-      label: "RGB Split",
-      type: "range", min: 0.0, max: 0.02, step: 0.0005,
-      default: 0,
-      get: () => rgbSplit,
-      set: (v) => { rgbSplit = v; },
-    },
-    {
-      label: "Kaleidoscope",
-      type: "toggle",
-      get: () => kaleidoOn,
-      set: (v) => { kaleidoOn = !!v; },
-    },
-    {
-      label: "Segments",
-      type: "range", min: 2, max: 12, step: 1,
-      default: 6,
-      disabled: () => !kaleidoOn,
-      get: () => kaleidoSeg,
-      set: (v) => { kaleidoSeg = v; },
-    },
-    {
-      label: "Clear Canvas",
-      type: "button",
-      action: () => { clearRequested = true; },
-    },
-  ],
-
-  init(ctx: PatternContext) {
-    _renderer = ctx.renderer;
-    const { width, height } = ctx.size;
-    resX = width;
-    resY = height;
-    canvasRef = ctx.renderer.domElement;
-
-    blackTexture = new THREE.DataTexture(
-      new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat
-    );
-    blackTexture.needsUpdate = true;
-
-    const rtType = _renderer.capabilities.isWebGL2
-      ? THREE.HalfFloatType
-      : THREE.UnsignedByteType;
-    const rtOpts: THREE.RenderTargetOptions = {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      type: rtType,
-      depthBuffer: false,
-      stencilBuffer: false,
-    };
-    trailA = new THREE.WebGLRenderTarget(width, height, rtOpts);
-    trailB = new THREE.WebGLRenderTarget(width, height, rtOpts);
-    bloomA = new THREE.WebGLRenderTarget(width, height, rtOpts);
-    bloomB = new THREE.WebGLRenderTarget(width, height, rtOpts);
-
-    accumScene = new THREE.Scene();
-    accumCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    accumGeometry = new THREE.PlaneGeometry(2, 2);
-    accumMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTrail:      { value: blackTexture },
-        uLiveFrame:  { value: blackTexture },
-        uThreshold:  { value: threshold },
-        uDecay:      { value: decayRate },
-        uGain:       { value: gain },
-        uClear:      { value: 0.0 },
-        uRadiusX:    { value: brushRadius / resX },
-        uRadiusY:    { value: brushRadius / resY },
-        uFlow:       { value: flow },
-        uVortex:     { value: vortex },
-      },
-      vertexShader,
-      fragmentShader: accumFragmentShader,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const accumMesh = new THREE.Mesh(accumGeometry, accumMaterial);
-    accumMesh.frustumCulled = false;
-    accumScene.add(accumMesh);
-
-    blurScene = new THREE.Scene();
-    blurGeometry = new THREE.PlaneGeometry(2, 2);
-    blurMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTex: { value: blackTexture },
-        uDir: { value: new THREE.Vector2() },
-      },
-      vertexShader,
-      fragmentShader: blurFragmentShader,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const blurMesh = new THREE.Mesh(blurGeometry, blurMaterial);
-    blurMesh.frustumCulled = false;
-    blurScene.add(blurMesh);
-
-    compositeGeometry = new THREE.PlaneGeometry(2, 2);
-    compositeMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTrail:      { value: trailA.texture },
-        uBloomTex:   { value: blackTexture },
-        uLiveFrame:  { value: blackTexture },
-        uBgMode:     { value: bgMode },
-        uDimLevel:   { value: dimLevel },
-        uThreshold:  { value: threshold },
-        uGhost:      { value: ghostOpacity },
-        uTrailColor: { value: trailColor },
-        uPal0:       { value: new THREE.Vector3() },
-        uPal1:       { value: new THREE.Vector3() },
-        uPal2:       { value: new THREE.Vector3() },
-        uBloom:      { value: bloom },
-        uRgbSplit:   { value: rgbSplit },
-        uKaleido:    { value: 0.0 },
-        uKaleidoSeg: { value: kaleidoSeg },
-      },
-      vertexShader,
-      fragmentShader: compositeFragmentShader,
-      depthTest: false,
-      depthWrite: false,
-    });
-    compositeMesh = new THREE.Mesh(compositeGeometry, compositeMaterial);
-    compositeMesh.frustumCulled = false;
-    ctx.scene.add(compositeMesh);
-  },
-
-  activate() {
-    if (canvasRef) {
-      cameraOn = true; // always enable camera when pattern is activated
-      showOverlay(canvasRef, "Requesting camera access…");
-      startCamera(canvasRef);
+  async function startCamera(canvas: HTMLCanvasElement) {
+    const myId = ++startId;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
+        audio: false,
+      });
+      if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
+      stream = s;
+      video = document.createElement("video");
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "");
+      video.muted = true;
+      await video.play();
+      if (myId !== startId) { stopCamera(); return; }
+      videoTexture = new THREE.VideoTexture(video);
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+      cameraReady = true;
+      overlay?.remove();
+      overlay = null;
+    } catch {
+      if (myId !== startId) return;
+      cameraReady = false;
+      showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings and reload.");
     }
-  },
+  }
 
-  update(_dt, _elapsed) {
-    if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
+  function showOverlay(canvas: HTMLCanvasElement, message: string) {
+    overlay?.remove();
+    const div = document.createElement("div");
+    div.style.cssText = `
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      color:#fff;font-family:sans-serif;font-size:16px;text-align:center;
+      pointer-events:none;white-space:pre-line;padding:24px;
+      background:rgba(0,0,0,0.55);
+    `;
+    div.textContent = message;
+    canvas.parentElement?.appendChild(div);
+    overlay = div;
+  }
 
-    const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
-    if (cameraReady && videoTexture) videoTexture.needsUpdate = true;
+  return {
+    id,
+    name,
+    usesCameraBlend: true,
 
-    const doClear = clearRequested ? 1.0 : 0.0;
-    clearRequested = false;
+    controls: [
+      {
+        label: "Camera",
+        type: "toggle",
+        interactive: "camera" as const,
+        get: () => cameraOn,
+        set: (v: boolean) => {
+          cameraOn = !!v;
+          if (cameraOn && canvasRef) { showOverlay(canvasRef, "Requesting camera access…"); startCamera(canvasRef); }
+          else if (!cameraOn) stopCamera();
+        },
+      },
+      {
+        label: "Mirror",
+        type: "toggle",
+        get: () => mirror,
+        set: (v) => { mirror = !!v; },
+      },
+      {
+        label: "Threshold",
+        type: "range", min: 0.05, max: 0.95, step: 0.01,
+        default: D.threshold,
+        get: () => threshold,
+        set: (v) => { threshold = v; },
+      },
+      {
+        label: "Fade Speed",
+        type: "range", min: 0.0, max: 0.3, step: 0.005,
+        default: D.decayRate,
+        get: () => decayRate,
+        set: (v) => { decayRate = v; },
+      },
+      {
+        label: "Gain",
+        type: "range", min: 0.5, max: 8.0, step: 0.1,
+        default: D.gain,
+        get: () => gain,
+        set: (v) => { gain = v; },
+      },
+      {
+        label: "Colorize",
+        type: "range", min: 0.0, max: 1.0, step: 0.05,
+        default: D.colorize,
+        get: () => colorize,
+        set: (v) => { colorize = v; },
+      },
+      {
+        label: "Brush Size",
+        type: "range", min: 0.0, max: 0.05, step: 0.001,
+        default: D.brushRadius,
+        get: () => brushRadius,
+        set: (v) => { brushRadius = v; },
+      },
+      {
+        label: "Background",
+        type: "select", options: ["Black", "Live", "Dimmed"],
+        get: () => bgMode,
+        set: (v) => { bgMode = v; },
+      },
+      {
+        label: "Dim Level",
+        type: "range", min: 0.0, max: 1.0, step: 0.05,
+        default: D.dimLevel,
+        get: () => dimLevel,
+        set: (v) => { dimLevel = v; },
+      },
+      {
+        label: "Ghost",
+        type: "range", min: 0.0, max: 1.0, step: 0.05,
+        default: D.ghostOpacity,
+        get: () => ghostOpacity,
+        set: (v) => { ghostOpacity = v; },
+      },
+      {
+        label: "Fly In/Out",
+        type: "range", min: -1.0, max: 1.0, step: 0.01,
+        default: D.flow,
+        get: () => flow,
+        set: (v) => { flow = v; },
+      },
+      {
+        label: "Vortex",
+        type: "range", min: -1.0, max: 1.0, step: 0.01,
+        default: D.vortex,
+        get: () => vortex,
+        set: (v) => { vortex = v; },
+      },
+      {
+        label: "Bloom",
+        type: "range", min: 0.0, max: 1.0, step: 0.05,
+        default: D.bloom,
+        get: () => bloom,
+        set: (v) => { bloom = v; },
+      },
+      {
+        label: "RGB Split",
+        type: "range", min: 0.0, max: 0.02, step: 0.0005,
+        default: D.rgbSplit,
+        get: () => rgbSplit,
+        set: (v) => { rgbSplit = v; },
+      },
+      {
+        label: "Kaleidoscope",
+        type: "toggle",
+        get: () => kaleidoOn,
+        set: (v) => { kaleidoOn = !!v; },
+      },
+      {
+        label: "Segments",
+        type: "range", min: 2, max: 12, step: 1,
+        default: D.kaleidoSeg,
+        disabled: () => !kaleidoOn,
+        get: () => kaleidoSeg,
+        set: (v) => { kaleidoSeg = v; },
+      },
+      {
+        label: "Clear Canvas",
+        type: "button",
+        action: () => { clearRequested = true; },
+      },
+    ],
 
-    accumMaterial.uniforms.uTrail.value      = trailA!.texture;
-    accumMaterial.uniforms.uLiveFrame.value  = liveTex;
-    accumMaterial.uniforms.uThreshold.value  = threshold;
-    accumMaterial.uniforms.uDecay.value      = decayRate;
-    accumMaterial.uniforms.uGain.value       = gain;
-    accumMaterial.uniforms.uClear.value      = doClear;
-    accumMaterial.uniforms.uRadiusX.value    = brushRadius / resX;
-    accumMaterial.uniforms.uRadiusY.value    = brushRadius / resY;
-    accumMaterial.uniforms.uFlow.value       = flow;
-    accumMaterial.uniforms.uVortex.value     = vortex * 0.05;
+    init(ctx: PatternContext) {
+      _renderer = ctx.renderer;
+      const { width, height } = ctx.size;
+      resX = width;
+      resY = height;
+      canvasRef = ctx.renderer.domElement;
 
-    _renderer.setRenderTarget(trailB);
-    _renderer.render(accumScene!, accumCamera!);
-    _renderer.setRenderTarget(null);
+      blackTexture = new THREE.DataTexture(
+        new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat
+      );
+      blackTexture.needsUpdate = true;
 
-    [trailA, trailB] = [trailB!, trailA!];
+      const rtType = _renderer.capabilities.isWebGL2
+        ? THREE.HalfFloatType
+        : THREE.UnsignedByteType;
+      const rtOpts: THREE.RenderTargetOptions = {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        type: rtType,
+        depthBuffer: false,
+        stencilBuffer: false,
+      };
+      trailA = new THREE.WebGLRenderTarget(width, height, rtOpts);
+      trailB = new THREE.WebGLRenderTarget(width, height, rtOpts);
+      bloomA = new THREE.WebGLRenderTarget(width, height, rtOpts);
+      bloomB = new THREE.WebGLRenderTarget(width, height, rtOpts);
 
-    // Bloom: blur the fresh trail horizontally then vertically (skipped when off).
-    let bloomTex: THREE.Texture = blackTexture!;
-    if (bloom > 0 && bloomA && bloomB) {
-      const spread = 2.0;
-      blurMaterial.uniforms.uTex.value = trailA.texture;
-      blurMaterial.uniforms.uDir.value.set(spread / resX, 0);
-      _renderer.setRenderTarget(bloomA);
-      _renderer.render(blurScene!, accumCamera!);
+      accumScene = new THREE.Scene();
+      accumCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      accumGeometry = new THREE.PlaneGeometry(2, 2);
+      accumMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTrail:      { value: blackTexture },
+          uLiveFrame:  { value: blackTexture },
+          uThreshold:  { value: threshold },
+          uDecay:      { value: decayRate },
+          uGain:       { value: gain },
+          uClear:      { value: 0.0 },
+          uRadiusX:    { value: brushRadius / resX },
+          uRadiusY:    { value: brushRadius / resY },
+          uFlow:       { value: flow },
+          uVortex:     { value: vortex },
+          uMirror:     { value: mirror ? 1.0 : 0.0 },
+        },
+        vertexShader,
+        fragmentShader: accumFragmentShader,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const accumMesh = new THREE.Mesh(accumGeometry, accumMaterial);
+      accumMesh.frustumCulled = false;
+      accumScene.add(accumMesh);
 
-      blurMaterial.uniforms.uTex.value = bloomA.texture;
-      blurMaterial.uniforms.uDir.value.set(0, spread / resY);
-      _renderer.setRenderTarget(bloomB);
-      _renderer.render(blurScene!, accumCamera!);
+      blurScene = new THREE.Scene();
+      blurGeometry = new THREE.PlaneGeometry(2, 2);
+      blurMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTex: { value: blackTexture },
+          uDir: { value: new THREE.Vector2() },
+        },
+        vertexShader,
+        fragmentShader: blurFragmentShader,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const blurMesh = new THREE.Mesh(blurGeometry, blurMaterial);
+      blurMesh.frustumCulled = false;
+      blurScene.add(blurMesh);
+
+      compositeGeometry = new THREE.PlaneGeometry(2, 2);
+      compositeMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTrail:      { value: trailA.texture },
+          uBloomTex:   { value: blackTexture },
+          uLiveFrame:  { value: blackTexture },
+          uBgMode:     { value: bgMode },
+          uDimLevel:   { value: dimLevel },
+          uThreshold:  { value: threshold },
+          uGhost:      { value: ghostOpacity },
+          uColorize:   { value: colorize },
+          uColorsV2:   { value: colorC2.colorsV2 },
+          uBrightness: { value: colorShuffle.brightness },
+          uPal0:       { value: new THREE.Vector3() },
+          uPal1:       { value: new THREE.Vector3() },
+          uPal2:       { value: new THREE.Vector3() },
+          uBloom:      { value: bloom },
+          uRgbSplit:   { value: rgbSplit },
+          uMirror:     { value: mirror ? 1.0 : 0.0 },
+          uKaleido:    { value: 0.0 },
+          uKaleidoSeg: { value: kaleidoSeg },
+        },
+        vertexShader,
+        fragmentShader: compositeFragmentShader,
+        depthTest: false,
+        depthWrite: false,
+      });
+      compositeMesh = new THREE.Mesh(compositeGeometry, compositeMaterial);
+      compositeMesh.frustumCulled = false;
+      ctx.scene.add(compositeMesh);
+    },
+
+    activate() {
+      if (canvasRef) {
+        cameraOn = true; // always enable camera when pattern is activated
+        showOverlay(canvasRef, "Requesting camera access…");
+        startCamera(canvasRef);
+      }
+    },
+
+    update(_dt: number, _elapsed: number) {
+      if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
+
+      const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
+      if (cameraReady && videoTexture) videoTexture.needsUpdate = true;
+
+      const doClear = clearRequested ? 1.0 : 0.0;
+      clearRequested = false;
+
+      const au = accumMaterial.uniforms;
+      au.uTrail.value     = trailA!.texture;
+      au.uLiveFrame.value = liveTex;
+      au.uThreshold.value = threshold;
+      au.uDecay.value     = decayRate;
+      au.uGain.value      = gain;
+      au.uClear.value     = doClear;
+      au.uRadiusX.value   = brushRadius / resX;
+      au.uRadiusY.value   = brushRadius / resY;
+      au.uFlow.value      = flow;
+      au.uVortex.value    = vortex * 0.05;
+      au.uMirror.value    = mirror ? 1.0 : 0.0;
+
+      _renderer.setRenderTarget(trailB);
+      _renderer.render(accumScene!, accumCamera!);
       _renderer.setRenderTarget(null);
-      bloomTex = bloomB.texture;
-    }
 
-    const u = compositeMaterial.uniforms;
-    u.uTrail.value      = trailA.texture;
-    u.uBloomTex.value   = bloomTex;
-    u.uLiveFrame.value  = liveTex;
-    u.uBgMode.value     = bgMode;
-    u.uDimLevel.value   = dimLevel;
-    u.uThreshold.value  = threshold;
-    u.uGhost.value      = ghostOpacity;
-    u.uTrailColor.value = trailColor;
-    u.uBloom.value      = bloom;
-    u.uRgbSplit.value   = rgbSplit;
-    u.uKaleido.value    = kaleidoOn ? 1.0 : 0.0;
-    u.uKaleidoSeg.value = kaleidoSeg;
-    const p0 = new THREE.Color(colorC2.main);
-    const p1 = new THREE.Color(colorC2.contrast);
-    const p2 = new THREE.Color(colorC2.glow);
-    u.uPal0.value.set(p0.r, p0.g, p0.b);
-    u.uPal1.value.set(p1.r, p1.g, p1.b);
-    u.uPal2.value.set(p2.r, p2.g, p2.b);
-  },
+      [trailA, trailB] = [trailB!, trailA!];
 
-  resize(width, height) {
-    resX = width;
-    resY = height;
-    trailA?.setSize(width, height);
-    trailB?.setSize(width, height);
-    bloomA?.setSize(width, height);
-    bloomB?.setSize(width, height);
-  },
+      // Bloom: blur the fresh trail horizontally then vertically (skipped when off).
+      let bloomTex: THREE.Texture = blackTexture!;
+      if (bloom > 0 && bloomA && bloomB) {
+        const spread = 2.0;
+        blurMaterial.uniforms.uTex.value = trailA.texture;
+        blurMaterial.uniforms.uDir.value.set(spread / resX, 0);
+        _renderer.setRenderTarget(bloomA);
+        _renderer.render(blurScene!, accumCamera!);
 
-  dispose() {
-    stopCamera();
-    blackTexture?.dispose();
-    blackTexture = null;
+        blurMaterial.uniforms.uTex.value = bloomA.texture;
+        blurMaterial.uniforms.uDir.value.set(0, spread / resY);
+        _renderer.setRenderTarget(bloomB);
+        _renderer.render(blurScene!, accumCamera!);
+        _renderer.setRenderTarget(null);
+        bloomTex = bloomB.texture;
+      }
 
-    trailA?.dispose(); trailA = null;
-    trailB?.dispose(); trailB = null;
-    bloomA?.dispose(); bloomA = null;
-    bloomB?.dispose(); bloomB = null;
+      const u = compositeMaterial.uniforms;
+      u.uTrail.value      = trailA.texture;
+      u.uBloomTex.value   = bloomTex;
+      u.uLiveFrame.value  = liveTex;
+      u.uBgMode.value     = bgMode;
+      u.uDimLevel.value   = dimLevel;
+      u.uThreshold.value  = threshold;
+      u.uGhost.value      = ghostOpacity;
+      u.uColorize.value   = colorize;
+      u.uColorsV2.value   = colorC2.colorsV2;
+      u.uBrightness.value = colorShuffle.brightness;
+      u.uBloom.value      = bloom;
+      u.uRgbSplit.value   = rgbSplit;
+      u.uMirror.value     = mirror ? 1.0 : 0.0;
+      u.uKaleido.value    = kaleidoOn ? 1.0 : 0.0;
+      u.uKaleidoSeg.value = kaleidoSeg;
+      // Palette ordered by the Color-Shuffle assignment (Apply Colors / Shuffle apply).
+      const a = colorShuffle.assign;
+      const p0 = new THREE.Color(getColorByIndex(a[0]));
+      const p1 = new THREE.Color(getColorByIndex(a[1]));
+      const p2 = new THREE.Color(getColorByIndex(a[2]));
+      u.uPal0.value.set(p0.r, p0.g, p0.b);
+      u.uPal1.value.set(p1.r, p1.g, p1.b);
+      u.uPal2.value.set(p2.r, p2.g, p2.b);
+    },
 
-    accumGeometry?.dispose(); accumGeometry = null;
-    accumMaterial?.dispose(); accumMaterial = null;
-    accumScene = null; accumCamera = null;
+    resize(width: number, height: number) {
+      resX = width;
+      resY = height;
+      trailA?.setSize(width, height);
+      trailB?.setSize(width, height);
+      bloomA?.setSize(width, height);
+      bloomB?.setSize(width, height);
+    },
 
-    blurGeometry?.dispose(); blurGeometry = null;
-    blurMaterial?.dispose(); blurMaterial = null;
-    blurScene = null;
+    dispose() {
+      stopCamera();
+      blackTexture?.dispose();
+      blackTexture = null;
 
-    compositeGeometry?.dispose(); compositeGeometry = null;
-    compositeMaterial?.dispose(); compositeMaterial = null;
-    compositeMesh = null;
+      trailA?.dispose(); trailA = null;
+      trailB?.dispose(); trailB = null;
+      bloomA?.dispose(); bloomA = null;
+      bloomB?.dispose(); bloomB = null;
 
-    overlay?.remove(); overlay = null;
-    _renderer = null;
-  },
-};
+      accumGeometry?.dispose(); accumGeometry = null;
+      accumMaterial?.dispose(); accumMaterial = null;
+      accumScene = null; accumCamera = null;
+
+      blurGeometry?.dispose(); blurGeometry = null;
+      blurMaterial?.dispose(); blurMaterial = null;
+      blurScene = null;
+
+      compositeGeometry?.dispose(); compositeGeometry = null;
+      compositeMaterial?.dispose(); compositeMaterial = null;
+      compositeMesh = null;
+
+      overlay?.remove(); overlay = null;
+      _renderer = null;
+    },
+  };
+}
+
+// ─── Preset tiles ─────────────────────────────────────────────────────────────
+// Every preset exposes the identical full control set; only starting defaults
+// differ, so any tile can be tuned into any other look.
+
+export const lightPaint      = createLightPainting("lightPaint",      "Light Paint");
+export const lightTrail       = createLightPainting("lightTrail",       "Light Trail",       { brushRadius: 0 });
+export const lightPaintBlack  = createLightPainting("lightPaintBlack",  "Light Paint Black", { bgMode: 0, ghostOpacity: 0 });
+export const lightFly         = createLightPainting("lightFly",         "Light Fly",         { flow: 0.4, vortex: 0.3 });
+export const lightKaleido     = createLightPainting("lightKaleido",     "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 6 });
+export const lightBloom       = createLightPainting("lightBloom",       "Light Bloom",       { bloom: 0.7 });
+export const lightGlitch      = createLightPainting("lightGlitch",      "RGB Glitch",        { rgbSplit: 0.008 });

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.260601-0318 — Light Painting: mirror, Colorize/Colors v2 wiring, preset tiles
+
+**Mirror** toggle (default on) — the camera is now mirrored selfie-style, so moving a light left reads left on screen. Applies to trails, background and ghost consistently.
+
+**"Trail Color" renamed to "Colorize"** and re-wired to the app-wide colour system. Colorize blends **Live (0) → your 3 Custom Colours (1)**, and it now sits at the `v2 = 3` end of the global **Colors v2** curve, so for Light Painting: **v2 = 0** grayscale · **v2 = 1** single main-colour tint · **v2 = 3** (default) = the Colorize result. Color Shuffle reorders the palette and Brightness scales it. At Colorize = 0 the output is identical to before (untouched live), so nothing else changes. Colors v2 affects these patterns again (it previously did nothing here).
+
+**Seven preset tiles** under "Live Light Painting", each the same full toolbox with different starting defaults: **Light Paint**, **Light Trail** (sharp), **Light Paint Black** (trails on black), **Light Fly** (fly + vortex), **Kaleidoscope**, **Light Bloom**, **RGB Glitch**. Any tile can be tuned into any other look; each keeps its own saved settings.
+
 ## v0.3.260601-0126 — Light Painting unified + new feedback/look effects
 
 **Light Trail and Light Paint merged into one pattern, "Light Painting."** Brush Size = 0 reproduces the old sharp Light-Trail look; higher values give the soft Light-Paint brush. The redundant Gain/Brightness controls are now a single **Gain**.

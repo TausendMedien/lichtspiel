@@ -27,7 +27,6 @@
 
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
-    'lightPaint',
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
   ]);
 
@@ -218,7 +217,7 @@
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
     { label: 'Generative',        ids: ['hyperMix','particlesBody','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
-    { label: 'Live Light Painting',ids: ['lightPaint'] },
+    { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightKaleido','lightBloom','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
