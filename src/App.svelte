@@ -2293,6 +2293,9 @@
                     title={ctrl.type === "range" && !ctrl.readonly && ctrl.default !== undefined ? "Click to reset" : undefined}
                     onclick={() => { if (ctrl.type === "range" && !ctrl.readonly) resetCtrl(ctrl); }}
                   >{ctrl.label}</span>
+                  {#if (ctrl as any).exp}
+                    <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>
+                  {/if}
                   {#if ctrl.type === "range"}
                     <span class="font-mono text-white/40">
                       {Number(ctrlVals[ctrl.label] ?? ctrl.get()).toFixed(ctrl.step < 0.01 ? 3 : ctrl.step < 0.1 ? 2 : ctrl.step < 1 ? 1 : 0)}

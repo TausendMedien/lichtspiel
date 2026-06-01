@@ -49,8 +49,10 @@ const accumFragmentShader = /* glsl */ `
   uniform float uDecay;
   uniform float uGain;
   uniform float uClear;
-  uniform float uRadiusX;  // brushRadius / resX
-  uniform float uRadiusY;  // brushRadius / resY
+  uniform float uRadiusX;    // brushRadius / resX
+  uniform float uRadiusY;    // brushRadius / resY
+  uniform float uTrailSoftX; // trailSoft / resX
+  uniform float uTrailSoftY; // trailSoft / resY
   uniform float uFlow;     // -1 fly in … 1 fly out
   uniform float uVortex;   // rotation radians/frame
   uniform float uMirror;   // >0.5 = mirror live feed horizontally
@@ -75,7 +77,22 @@ const accumFragmentShader = /* glsl */ `
     float s = sin(a), co = cos(a);
     fb = mat2(co, -s, s, co) * fb;
     fb *= (1.0 - uFlow * 0.02);   // -1 => content flies IN, +1 => flies OUT
-    vec4 trail = texture2D(uTrail, fb + 0.5);
+    vec2 center = fb + 0.5;
+    vec4 trail;
+    if (uTrailSoftX > 0.001) {
+      vec2 d = vec2(uTrailSoftX, uTrailSoftY);
+      trail  = texture2D(uTrail, center)                         * 0.36;
+      trail += texture2D(uTrail, center + vec2( d.x,  0.0))     * 0.12;
+      trail += texture2D(uTrail, center + vec2(-d.x,  0.0))     * 0.12;
+      trail += texture2D(uTrail, center + vec2( 0.0,  d.y))     * 0.12;
+      trail += texture2D(uTrail, center + vec2( 0.0, -d.y))     * 0.12;
+      trail += texture2D(uTrail, center + vec2( d.x,  d.y))     * 0.04;
+      trail += texture2D(uTrail, center + vec2(-d.x,  d.y))     * 0.04;
+      trail += texture2D(uTrail, center + vec2( d.x, -d.y))     * 0.04;
+      trail += texture2D(uTrail, center + vec2(-d.x, -d.y))     * 0.04;
+    } else {
+      trail = texture2D(uTrail, center);
+    }
 
     // 9-tap disc (centre + 8 diagonal/cardinal offsets)
     float r = 0.707;
@@ -247,6 +264,7 @@ function createLightPainting(
   let gain = D.gain;
   let colorize = D.colorize;
   let brushRadius = D.brushRadius;
+  let trailSoft = 0.0;
   let black = D.black;
   let ghostOpacity = D.ghostOpacity;
   let flow = D.flow;
@@ -464,6 +482,14 @@ function createLightPainting(
           set: (v: number) => { brushRadius = v; },
         },
         {
+          label: "Trail Soft",
+          type: "range" as const, min: 0.0, max: 2.0, step: 0.25,
+          default: 0,
+          exp: true as const,
+          get: () => trailSoft,
+          set: (v: number) => { trailSoft = v; },
+        },
+        {
           label: "Ghost",
           type: "range" as const, min: 0.0, max: 1.0, step: 0.05,
           default: D.ghostOpacity,
@@ -581,6 +607,8 @@ function createLightPainting(
           uClear:      { value: 0.0 },
           uRadiusX:    { value: brushRadius / resX },
           uRadiusY:    { value: brushRadius / resY },
+          uTrailSoftX: { value: 0.0 },
+          uTrailSoftY: { value: 0.0 },
           uFlow:       { value: flow },
           uVortex:     { value: vortex },
           uMirror:     { value: mirror ? 1.0 : 0.0 },
@@ -668,6 +696,8 @@ function createLightPainting(
       au.uClear.value     = doClear;
       au.uRadiusX.value   = brushRadius / resX;
       au.uRadiusY.value   = brushRadius / resY;
+      au.uTrailSoftX.value = trailSoft / resX;
+      au.uTrailSoftY.value = trailSoft / resY;
       au.uFlow.value      = flow;
       au.uVortex.value    = vortex * 0.05;
       au.uMirror.value    = mirror ? 1.0 : 0.0;
