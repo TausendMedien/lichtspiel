@@ -87,14 +87,15 @@ export const parallelLinesWave: Pattern = {
   id: "parallelLinesWave",
   name: "Parallel Waves",
   controls: [
-    { label: "Line Count",      type: "range", min: 10,  max: 120,  step: 1, default: 59,     get: () => lineCount,   set: (v) => { lineCount = v; } },
-    { label: "Scroll Speed",    type: "range", min: 0.02,max: 1.0,  step: 0.01, default: 0.02,  audioWeight: 0.35, get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
-    { label: "Line Width",      type: "range", min: 0.02,max: 0.4,  step: 0.01, default: 0.14,  get: () => lineWidth,   set: (v) => { lineWidth = v; } },
+    { label: "Line Count",      type: "range", min: 10,  max: 120,  step: 1,     default: 59,    get: () => lineCount,   set: (v) => { lineCount = v; } },
+    { label: "Scroll Speed",    type: "range", min: 0,   max: 1.0,  step: 0.01,  default: 0.02,  audioWeight: 0.35, get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
+    { label: "Line Width",      type: "range", min: 0.05,max: 0.4,  step: 0.01,  default: 0.14,  get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Wave Amplitude",  type: "range", min: 0.0, max: 0.15, step: 0.005, default: 0.015, get: () => waveAmp,     set: (v) => { waveAmp = v; } },
-    { label: "Wave Speed",      type: "range", min: 0.0, max: 2.0,  step: 0.05, default: 1,  audioWeight: 0.3, get: () => waveSpeed,   set: (v) => { waveSpeed = v; } },
-    { label: "Color Speed",     type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 1,  get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Rotate",          type: "range", min: 0.0, max: 0.5,  step: 0.01, default: 0.02,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Wave Speed",      type: "range", min: 0.0, max: 8.0,  step: 0.1,   default: 1,     audioWeight: 0.3, get: () => waveSpeed,   set: (v) => { waveSpeed = v; } },
+    { label: "Color Speed",     type: "range", min: 0.0, max: 1.0,  step: 0.05,  default: 1,     get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
+    { label: "Rotate",          type: "range", min: 0.0, max: 0.5,  step: 0.01,  default: 0.02,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
+  motionControlLabels: ["Scroll Speed", "Rotate"],
 
   init(ctx: PatternContext) {
     geometry = new THREE.PlaneGeometry(2, 2);

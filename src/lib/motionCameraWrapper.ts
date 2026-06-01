@@ -230,8 +230,8 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         if (diff) {
           rawMotion = Math.min(detector.update(diff), 1.0);
           smoothedMotion = rawMotion > smoothedMotion
-            ? 0.80 * smoothedMotion + 0.20 * rawMotion   // fast rise
-            : 0.80 * smoothedMotion + 0.20 * rawMotion;  // fast fall (2× previous)
+            ? 0.75 * smoothedMotion + 0.25 * rawMotion   // fast rise
+            : 0.55 * smoothedMotion + 0.45 * rawMotion;  // fast fall
         }
       } else if (!cameraState.motionEnabled) {
         smoothedMotion = Math.max(0, smoothedMotion * 0.95);
