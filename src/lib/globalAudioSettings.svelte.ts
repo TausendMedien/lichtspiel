@@ -11,7 +11,7 @@ export const audioState = $state({
   deviceId:   '',
   devices:    [] as DeviceInfo[],
   sensitivity: 30,
-  bandIndex:   0,   // 0=Bass 1=Mid 2=High 3=Full
+  bandIndex:   1,   // 0=Bass 1=Mid 2=High 3=Full
   level:       0,
   beat:            0,     // 0–100 combined beat pulse (max of enabled detectors)
   energyBeat:      0,     // 0–100 beat pulse from Energy Ratio detector only

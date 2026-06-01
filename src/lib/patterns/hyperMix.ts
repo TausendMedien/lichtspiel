@@ -199,6 +199,8 @@ function buildGeometry(count: number): THREE.BufferGeometry {
 export const hyperMix: Pattern = {
   id: "hyperMix",
   name: "Hyper Mix",
+  motionControlLabels: ['Speed', 'Spread'],
+  audioControlLabels:  ['Speed', 'Spread'],
 
   controls: [
     {

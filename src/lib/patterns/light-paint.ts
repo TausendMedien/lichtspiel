@@ -117,7 +117,8 @@ const compositeFragmentShader = /* glsl */ `
   uniform float uGhost;
   uniform float uColorize;     // 0 live colour … 1 custom palette
   uniform float uColorsV2;     // global recolor curve (0 gray … 3 = colorize result)
-  uniform float uBrightness;   // palette brightness scale
+  uniform float uBrightness;    // palette brightness scale (colorShuffle)
+  uniform float uBrightnessMult; // audio-driven output multiplier
   uniform vec3  uPal0;         // shuffle-assigned colour 0
   uniform vec3  uPal1;         // shuffle-assigned colour 1
   uniform vec3  uPal2;         // shuffle-assigned colour 2
@@ -170,7 +171,7 @@ const compositeFragmentShader = /* glsl */ `
     vec4 live = texture2D(uLiveFrame, bguv);
     vec3 bg = live.rgb * (1.0 - uBlack);
 
-    vec3 outc = clamp(bg + colored, 0.0, 1.0);
+    vec3 outc = clamp((bg + colored) * uBrightnessMult, 0.0, 1.0);
     outc = mix(outc, live.rgb, uGhost);
     gl_FragColor = vec4(outc, 1.0);
   }
@@ -584,7 +585,8 @@ function createLightPainting(
           uGhost:      { value: ghostOpacity },
           uColorize:   { value: colorize },
           uColorsV2:   { value: colorC2.colorsV2 },
-          uBrightness: { value: colorShuffle.brightness },
+          uBrightness:     { value: colorShuffle.brightness },
+          uBrightnessMult: { value: 1.0 },
           uPal0:       { value: new THREE.Vector3() },
           uPal1:       { value: new THREE.Vector3() },
           uPal2:       { value: new THREE.Vector3() },
@@ -666,7 +668,8 @@ function createLightPainting(
       u.uGhost.value      = ghostOpacity;
       u.uColorize.value   = colorize;
       u.uColorsV2.value   = colorC2.colorsV2;
-      u.uBrightness.value = colorShuffle.brightness * interactionState.brightnessMult;
+      u.uBrightness.value     = colorShuffle.brightness;
+      u.uBrightnessMult.value = interactionState.brightnessMult;
       u.uBloom.value      = bloom;
       u.uRgbSplit.value   = rgbSplit;
       u.uMirror.value     = mirror ? 1.0 : 0.0;
