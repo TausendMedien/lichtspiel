@@ -11,6 +11,7 @@
   import * as fs from "./lib/fullscreen";
   import { createWakeLock } from "./lib/wakelock";
   import { loadSettings, saveSettings, loadDemoSettings, saveDemoSettings } from "./lib/settings";
+  import type { DemoStartBehavior } from "./lib/settings";
   import type { PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
   import { createMIDIController } from "./lib/midi";
@@ -120,7 +121,7 @@
   function applyDemoPatternIds(next: Set<string>) {
     demoPatternIds = next;    // plain assignment — always current everywhere
     _demoPatternTick++;       // trigger UI re-render
-    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...next]);
+    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...next], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
   }
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
   let snapshotUrl = $state<string | null>(null);
@@ -218,7 +219,8 @@
   let cheatsheetVisible = $state(false);
   let optionsVisible    = $state(false);
   let demoVisible       = $state(false);
-  let demoRandomize     = $state(false);
+  let demoStartBehavior = $state<DemoStartBehavior>('default');
+  let demoRandomizeOrder = $state(false);
   let demoFavoritesOnly = $state(false);
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
@@ -227,6 +229,14 @@
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
+  const DEFAULT_FAVORITES = [
+    'hyperMix', 'particlesBody', 'particleLines', 'parallelLinesWave',
+    'tunnelEdge', 'baroqueSwirlsBody', 'shaderGradient', 'asciiSwirls',
+    'wavySphere', 'crystalGem', 'typography3d',
+    'lightPaint', 'lightPaintBlack', 'lightFly', 'lightKaleido', 'lightGlitch',
+    'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
+  ] as const;
+
   let collapsedSections = $state(new Set<string>());
   const _perPatternCollapsed = new Map<string, Set<string>>();
   const _perPatternColourCollapsed = new Map<string, boolean>();
@@ -500,6 +510,13 @@
 
   function nextDemoIndex(from: number, delta: 1 | -1 = 1): number {
     const count = patterns.length;
+    if (demoRandomizeOrder) {
+      const pool = patterns
+        .map((p, i) => i)
+        .filter(i => i !== from && demoPatternIds.has(patterns[i].id) && (!demoFavoritesOnly || favorites.has(patterns[i].id)));
+      if (!pool.length) return from;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
     for (let i = 1; i <= count; i++) {
       const next = ((from + delta * i) % count + count) % count;
       const id = patterns[next].id;
@@ -516,7 +533,18 @@
     // Switch pattern while snapshot covers the canvas
     index = switchTo(n);
     focusedIndex = index;
-    if (demoRandomize) randomizeControls();
+    if (demoActive) {
+      if (demoStartBehavior === 'random') {
+        randomizeControls();
+      } else if (demoStartBehavior !== 'default') {
+        const slotIdx = ({ slot1: 0, slot2: 1, slot3: 2 } as Record<string, number>)[demoStartBehavior];
+        const slots = getSlots(patterns[n].id);
+        if (slots[slotIdx]) {
+          presetSlots = slots;
+          restorePreset(slotIdx);
+        }
+      }
+    }
     // Unfreeze so the incoming pattern plays at normal speed
     if (freezeAnim?.to === 0 || (!freezeAnim && (handle?.getTimeScale() ?? 1) === 0)) {
       handle?.setTimeScale(1);
@@ -547,7 +575,7 @@
     hudVisible = false;
     if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
     demoVisible = false; // close the demo modal
-    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds]);
+    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) clearTimeout(demoTimer);
 
     const startIdx = firstDemoIndex();
@@ -566,7 +594,7 @@
 
   function stopDemo() {
     demoActive = false;
-    saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds]);
+    saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
     scheduleAutoRestart(); // begin idle countdown after demo stops
   }
@@ -974,7 +1002,13 @@
 
   function loadFavorites() {
     const raw = localStorage.getItem(FAVORITES_KEY);
-    favorites = new Set(raw ? raw.split(',').filter(Boolean) : []);
+    if (raw === null) {
+      // First launch — pre-populate with curated default set
+      favorites = new Set(DEFAULT_FAVORITES);
+      localStorage.setItem(FAVORITES_KEY, [...favorites].join(','));
+    } else {
+      favorites = new Set(raw.split(',').filter(Boolean));
+    }
   }
 
   function toggleFavorite(patternId: string) {
@@ -1083,6 +1117,9 @@
     const demo = loadDemoSettings(patterns.map(p => p.id));
     demoDwell = demo.demoDwell;
     pedalDwell = demo.pedalDwell;
+    demoStartBehavior = demo.demoStartBehavior;
+    demoRandomizeOrder = demo.demoRandomizeOrder;
+    demoFavoritesOnly = demo.demoFavoritesOnly;
     // Exclude experimental patterns from demo by default when experimental is off
     const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
     demoPatternIds = new Set(filteredDemoIds);
@@ -1977,7 +2014,7 @@
         </div>
         <input
           type="range" min={5} max={240} step={5} value={demoDwell}
-          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds]); if (demoActive) resetDemoTimer(); }}
+          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly); if (demoActive) resetDemoTimer(); }}
           class="w-full accent-white cursor-pointer"
         />
       </div>
@@ -2060,7 +2097,7 @@
         {/if}
       </div>
 
-      <!-- Toggles: hide HUD + randomize -->
+      <!-- Toggles: hide HUD + randomize order -->
       <div class="mb-4 flex flex-col gap-2.5">
         <div class="flex items-center justify-between text-xs text-white/70">
           <span>Hide HUD in Demo Mode</span>
@@ -2073,14 +2110,33 @@
           </div>
         </div>
         <div class="flex items-center justify-between text-xs text-white/70">
-          <span>Randomize settings on pattern change</span>
+          <span>Randomize order of patterns</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
-            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoRandomize ? 'bg-white/70' : 'bg-white/20'}"
-            onclick={() => { demoRandomize = !demoRandomize; }}
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoRandomizeOrder ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => { demoRandomizeOrder = !demoRandomizeOrder; saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly); }}
           >
-            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomize ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomizeOrder ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Pattern start behavior selector -->
+      <div class="mb-4">
+        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Pattern Start</div>
+        <div class="flex flex-wrap gap-1">
+          {#each ([['default','Default'],['slot1','Chilled 1'],['slot2','Balanced 2'],['slot3','Active 3'],['random','Random']] as const) as [val, label]}
+            <button
+              class="rounded-full border px-2.5 py-0.5 text-[11px] transition-colors cursor-pointer {demoStartBehavior === val ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
+              onclick={() => {
+                demoStartBehavior = val;
+                if (val === 'slot1' || val === 'slot2' || val === 'slot3') {
+                  demoFavoritesOnly = true;
+                }
+                saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+              }}
+            >{label}</button>
+          {/each}
         </div>
       </div>
 
@@ -2088,13 +2144,14 @@
       <div class="mb-3 flex gap-2">
         <button
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {!demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-          onclick={() => { demoFavoritesOnly = false; }}
+          onclick={() => { demoFavoritesOnly = false; saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, false); }}
         >All</button>
         <button
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
           onclick={() => {
             demoFavoritesOnly = true;
             applyDemoPatternIds(new Set([...demoPatternIds].filter(id => favorites.has(id))));
+            saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, true);
           }}
         >★ Favorites</button>
       </div>

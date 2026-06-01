@@ -56,17 +56,23 @@ export function loadSettings(patterns: Pattern[]): void {
 
 const DEMO_KEY = "lichtspiel-demo";
 
+const DEMO_START_BEHAVIORS = ['default', 'slot1', 'slot2', 'slot3', 'random'] as const;
+export type DemoStartBehavior = typeof DEMO_START_BEHAVIORS[number];
+
 const DemoSchema = z.object({
   demoActive: z.boolean(),
   demoDwell: z.number().min(5).max(240),
   pedalDwell: z.number().min(10).max(600).optional(),
   demoPatternIds: z.array(z.string()).optional(),
+  demoStartBehavior: z.enum(DEMO_START_BEHAVIORS).optional(),
+  demoRandomizeOrder: z.boolean().optional(),
+  demoFavoritesOnly: z.boolean().optional(),
 });
 
-export function loadDemoSettings(allPatternIds: string[]): { demoActive: boolean; demoDwell: number; pedalDwell: number; demoPatternIds: string[] } {
+export function loadDemoSettings(allPatternIds: string[]): { demoActive: boolean; demoDwell: number; pedalDwell: number; demoPatternIds: string[]; demoStartBehavior: DemoStartBehavior; demoRandomizeOrder: boolean; demoFavoritesOnly: boolean } {
   try {
     const raw = localStorage.getItem(DEMO_KEY);
-    if (!raw) return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds };
+    if (!raw) return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
     const parsed = DemoSchema.parse(JSON.parse(raw));
     // Filter saved IDs to only those that still exist; fall back to all if none saved
     const saved = parsed.demoPatternIds?.filter(id => allPatternIds.includes(id));
@@ -75,15 +81,18 @@ export function loadDemoSettings(allPatternIds: string[]): { demoActive: boolean
       demoDwell: parsed.demoDwell,
       pedalDwell: parsed.pedalDwell ?? 180,
       demoPatternIds: saved?.length ? saved : allPatternIds,
+      demoStartBehavior: parsed.demoStartBehavior ?? 'default',
+      demoRandomizeOrder: parsed.demoRandomizeOrder ?? false,
+      demoFavoritesOnly: parsed.demoFavoritesOnly ?? false,
     };
   } catch {
-    return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds };
+    return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
   }
 }
 
-export function saveDemoSettings(demoActive: boolean, demoDwell: number, pedalDwell: number, demoPatternIds: string[]): void {
+export function saveDemoSettings(demoActive: boolean, demoDwell: number, pedalDwell: number, demoPatternIds: string[], demoStartBehavior: DemoStartBehavior, demoRandomizeOrder: boolean, demoFavoritesOnly: boolean): void {
   try {
-    localStorage.setItem(DEMO_KEY, JSON.stringify({ demoActive, demoDwell, pedalDwell, demoPatternIds }));
+    localStorage.setItem(DEMO_KEY, JSON.stringify({ demoActive, demoDwell, pedalDwell, demoPatternIds, demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly }));
   } catch {}
 }
 
