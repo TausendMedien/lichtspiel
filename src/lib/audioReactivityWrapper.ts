@@ -51,11 +51,20 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
     c => c.type === 'separator' && c.label === 'Interactions'
   );
 
-  // Brightness is always active when audio is enabled — no toggle needed.
-  const brightnessControls: PatternControl[] = hasInteractionsSeparator ? [] : [{
-    label: 'Interactions',
-    type:  'separator' as const,
-  }] as PatternControl[];
+  // Brightness is always active when audio is enabled; expose gain for fine-tuning.
+  const brightnessControls: PatternControl[] = [
+    ...(hasInteractionsSeparator ? [] : [{
+      label: 'Interactions',
+      type:  'separator' as const,
+    }] as PatternControl[]),
+    {
+      label: 'Brightness Gain',
+      type:  'range' as const,
+      min: 0, max: 2, step: 0.1, default: 1.0,
+      get:  () => ps().brightnessGain,
+      set:  (v: number) => { ps().brightnessGain = v; saveInteractionSettings(); },
+    },
+  ];
 
   // Lightweight analyser for smoothed-level display only
   let audioCtx: AudioContext | null = null;
