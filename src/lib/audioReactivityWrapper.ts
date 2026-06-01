@@ -12,6 +12,7 @@ import { audioState, enumerateMicrophones } from './globalAudioSettings.svelte';
 import { BeatDetector } from './BeatDetector.svelte';
 import { EnergyBeatDetector } from './EnergyBeatDetector.svelte';
 import { interactionState, getPatternSettings, saveInteractionSettings } from './interactionState.svelte';
+import { privacyMode } from './privacyMode.svelte';
 
 
 const BAND_OPTIONS = ['Bass', 'Mid', 'High', 'Full'] as const;
@@ -177,7 +178,7 @@ export function addAudioReactivity(pattern: Pattern): Pattern {
       const nowEnabled        = audioState.enabled;
       const nowDeviceId       = audioState.deviceId;
       const nowPatternEnabled = audioState.patternAudioEnabled[pattern.id] ?? true;
-      const shouldRun     = nowEnabled && nowPatternEnabled;
+      const shouldRun     = nowEnabled && nowPatternEnabled && !privacyMode.active;
       const prevShouldRun = prevEnabled && prevPatternEnabled;
 
       if (shouldRun !== prevShouldRun) {

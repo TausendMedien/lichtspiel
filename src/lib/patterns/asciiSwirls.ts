@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { privacyMode } from "../privacyMode.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -249,6 +250,7 @@ function rebuildSwirlRT(w: number, h: number) {
 }
 
 async function enableAsciiCamera() {
+  if (privacyMode.active) return;
   try {
     await enumerateAsciiCameras();
     const videoConstraint: MediaTrackConstraints = _asciiCamDeviceId
@@ -395,6 +397,7 @@ export const asciiSwirls: Pattern = {
     swirlMat.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     swirlMat.uniforms.uColorsV2.value = colorC2.colorsV2;
     asciiMat.uniforms.uColorMode.value  = colorMode;
+    if (privacyMode.active && videoTex) { disableAsciiCamera(); }
     asciiMat.uniforms.uCamBlend.value   = videoTex ? camBlend : 0.0;
 
     if (videoTex) videoTex.needsUpdate = true;

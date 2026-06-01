@@ -9,6 +9,7 @@
 import type { Pattern, PatternControl, PatternContext } from "./patterns/types";
 import { MotionCamera, SpatialPatchinessDetector, showMotionOverlay } from "./motionDetector";
 import { cameraState, enumerateCameras } from "./globalCameraSettings.svelte";
+import { privacyMode } from "./privacyMode.svelte";
 import { colorC2 } from "./colorC2.svelte";
 import { interactionState, getPatternSettings, saveInteractionSettings } from "./interactionState.svelte";
 
@@ -200,7 +201,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       const nowEnabled        = cameraState.enabled;
       const nowDeviceId       = cameraState.deviceId;
       const nowPatternEnabled = cameraState.patternMotionEnabled[pattern.id] ?? true;
-      const shouldRun     = nowEnabled && nowPatternEnabled;
+      const shouldRun     = nowEnabled && nowPatternEnabled && !privacyMode.active;
       const prevShouldRun = prevEnabled && prevPatternEnabled;
       if (shouldRun !== prevShouldRun) {
         if (shouldRun) startCamera(); else stopCamera();

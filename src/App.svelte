@@ -2519,9 +2519,15 @@
           {#if !interactiveCollapsed}
             <div class="flex flex-col gap-2.5 mt-1 transition-opacity duration-200 {interactiveOn ? '' : 'opacity-40 pointer-events-none'}">
 
+              {#if privacyMode.active}
+                <div class="flex items-center gap-1.5 rounded border border-purple-500/30 bg-purple-900/40 px-2 py-1.5 text-[11px] text-purple-300">
+                  <span>⊘</span><span>Sensors blocked by Sensor Block</span>
+                </div>
+              {/if}
+
               <!-- Camera section -->
               {#if patterns[index].motionReactive || patterns[index].usesPose || patterns[index].usesCameraBlend}
-                <div>
+                <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''}">
                   <div class="mb-1 text-xs text-white/70">Camera</div>
                   {#if patterns[index].usesCameraBlend}
                     <!-- Light-painting patterns: render interactive:'camera' controls from pattern -->
@@ -2595,7 +2601,7 @@
 
               <!-- Motion Detection -->
               {#if patterns[index].motionReactive}
-                <div class="flex items-center justify-between text-xs text-white/70">
+                <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''} flex items-center justify-between text-xs text-white/70">
                   <span class="flex items-center gap-1.5">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
@@ -2704,6 +2710,7 @@
 
               <!-- Audio Reactivity -->
               {#if patterns[index].audioReactive}
+                <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''}">
                 <div class="flex items-center justify-between text-xs text-white/70">
                   <span class="flex items-center gap-1.5">Audio <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -2809,6 +2816,7 @@
                     </div>
                   </div>
                 {/if}
+                </div><!-- /privacy wrapper -->
               {/if}
 
             </div>
@@ -2835,7 +2843,7 @@
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
   >
-    <div class="rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+    <div class="rounded-md border bg-black/60 px-4 py-3 text-white backdrop-blur-sm transition-colors duration-300 {privacyMode.active ? 'border-purple-500/40' : 'border-white/10'}">
       <div class="flex items-start justify-between gap-4">
         <div>
           <div class="text-[10px] font-semibold tracking-[0.3em] text-white/25 mb-1">LICHTSPIEL</div>
@@ -2867,6 +2875,30 @@
           {#if midiEnabled && midiConnected}
             <div class="mt-1 text-xs text-white/30">♪ MIDI</div>
           {/if}
+          <!-- Sensor Block toggle -->
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="pointer-events-auto mt-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] cursor-pointer select-none transition-all duration-200
+                   {privacyMode.active ? 'border-purple-500/50 bg-purple-900/50 text-purple-300' : 'border-white/15 text-white/30 hover:border-white/30 hover:text-white/50'}"
+            title="Sensor Block — overrides all camera and audio inputs globally. Individual pattern settings are preserved and resume when Sensor Block is turned off."
+            onclick={() => {
+              privacyMode.active = !privacyMode.active;
+              if (privacyMode.active) {
+                cameraState.motionEnabled = false;
+                cameraState.enabled = false;
+                audioState.enabled = false;
+                for (const c of (patterns[index].controls ?? [])) {
+                  if (c.type === 'toggle' && (c as any).interactive === 'camera' && c.get()) {
+                    (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(false);
+                    ctrlVals[c.label] = 0;
+                  }
+                }
+              }
+            }}
+          >
+            <span>⊘</span>
+            <span>{privacyMode.active ? 'Sensor Block' : 'Sensor Block'}</span>
+          </div>
         </div>
         <div class="flex flex-col items-end gap-1.5">
           {#if isIosBrowser}
