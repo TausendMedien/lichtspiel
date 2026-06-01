@@ -1448,6 +1448,43 @@
           class="rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
           onclick={() => { optionsVisible = true; }}
         >⚙ Options</button>
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div
+          class="rounded-md border px-3 py-1.5 text-xs cursor-pointer select-none transition-all duration-200
+                 {privacyMode.active ? 'border-purple-500/50 bg-purple-900/50 text-purple-300' : 'border-white/15 bg-white/[0.07] text-white/60 hover:border-white/40 hover:bg-white/15'}"
+          title="Sensor Block — overrides all camera and audio inputs globally."
+          onclick={() => {
+            if (!privacyMode.active) {
+              _sbSavedCameraEnabled = cameraState.enabled;
+              _sbSavedMotionEnabled = cameraState.motionEnabled;
+              _sbSavedAudioEnabled  = audioState.enabled;
+              _sbSavedPatternCams.clear();
+              for (const c of (patterns[index].controls ?? [])) {
+                if (c.type === 'toggle' && (c as any).interactive === 'camera') {
+                  _sbSavedPatternCams.set(c.label, c.get());
+                  (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(false);
+                  ctrlVals[c.label] = 0;
+                }
+              }
+              cameraState.motionEnabled = false;
+              cameraState.enabled = false;
+              audioState.enabled = false;
+              _sbSavedPoseActive = poseActive;
+              if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+              privacyMode.active = true;
+            } else {
+              privacyMode.active = false;
+              if (_sbSavedCameraEnabled) { cameraState.motionEnabled = _sbSavedMotionEnabled; cameraState.enabled = true; }
+              if (_sbSavedAudioEnabled) { audioState.enabled = true; enumerateMicrophones(); }
+              for (const c of (patterns[index].controls ?? [])) {
+                if (c.type === 'toggle' && (c as any).interactive === 'camera') {
+                  const wasOn = _sbSavedPatternCams.get(c.label) ?? false;
+                  if (wasOn) { (c as import('./lib/patterns/types').PatternControl & { type: 'toggle' }).set(true); ctrlVals[c.label] = 1; }
+                }
+              }
+            }
+          }}
+        >⊘ Sensor Block</div>
         <button
           class="rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
           onclick={() => { cheatsheetVisible = true; }}
@@ -2944,8 +2981,6 @@
           <div class="mt-1 text-xs text-white/40">{index + 1} / {patterns.length}</div>
           {#if isFreezing}
             <div class="mt-1 text-xs font-mono text-amber-400/80">FREEZE</div>
-          {:else if !freezeAnim && Math.abs(timeScaleMirror - 1.0) > 0.05}
-            <div class="mt-1 text-xs font-mono text-white/50">{timeScaleMirror.toFixed(1)}×</div>
           {/if}
           {#if Math.abs(interactionState.speedMult - 1.0) > 0.05}
             <div class="mt-0.5 text-xs font-mono text-blue-400/60">spd ×{interactionState.speedMult.toFixed(2)}</div>
@@ -3012,6 +3047,12 @@
             <span>⊘</span>
             <span>{privacyMode.active ? 'Sensor Block' : 'Sensor Block'}</span>
           </div>
+          {#if !freezeAnim && Math.abs(timeScaleMirror - 1.0) > 0.05}
+            <div
+              class="mt-1 text-xs font-mono text-white/50 pointer-events-auto cursor-default"
+              title="Global speed (↑ ↓ keys or D-Pad). Click ↑↓ to adjust, or reset with Space."
+            >Speed: {timeScaleMirror.toFixed(1)}x</div>
+          {/if}
         </div>
         <div class="flex flex-col items-end gap-1.5">
           {#if isIosBrowser}
