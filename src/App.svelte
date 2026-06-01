@@ -31,6 +31,7 @@
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
+    'img-twoFeather', 'img-rootWave', 'img-purpleOrnate', 'img-flowingDots',
   ]);
 
   // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
@@ -230,7 +231,7 @@
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
     { label: 'Generative',        ids: ['hyperMix','particlesBody','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightKaleido','lightBloom','lightGlitch'] },
-    { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals'] },
+    { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [
@@ -239,6 +240,7 @@
     'wavySphere', 'crystalGem', 'typography3d',
     'lightPaint', 'lightPaintBlack', 'lightFly', 'lightKaleido', 'lightGlitch',
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
+    'img-twoFeather', 'img-rootWave', 'img-purpleOrnate', 'img-flowingDots',
   ] as const;
 
   let collapsedSections = $state(new Set<string>());

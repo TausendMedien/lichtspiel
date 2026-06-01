@@ -31,6 +31,10 @@ const imgOrganicWeb    = makeImagePattern('img-organicWeb',    'Organic Web',   
 const imgDotWaves      = makeImagePattern('img-dotWaves',      'Dot Waves',      `${_base}images/dot-waves.webp`);
 const imgBaroqueVines  = makeImagePattern('img-baroqueVines',  'Baroque Vines',  `${_base}images/baroque-vines.webp`);
 const imgThinVerticals = makeImagePattern('img-thinVerticals', 'Thin Verticals', `${_base}images/thin-verticals.webp`);
+const imgTwoFeather    = makeImagePattern('img-twoFeather',    'Two Feather',    `${_base}images/two-feather.webp`);
+const imgRootWave      = makeImagePattern('img-rootWave',      'Root Wave',      `${_base}images/root-wave.webp`);
+const imgPurpleOrnate  = makeImagePattern('img-purpleOrnate',  'Purple Ornate',  `${_base}images/purple-ornate.webp`);
+const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',   `${_base}images/flowing-dots.webp`);
 
 // Patterns that must NOT get the generic motion camera wrapper:
 // - light* family  (camera-based themselves)
@@ -71,6 +75,10 @@ const rawPatterns: Pattern[] = [
   imgDotWaves,
   imgBaroqueVines,
   imgThinVerticals,
+  imgTwoFeather,
+  imgRootWave,
+  imgPurpleOrnate,
+  imgFlowingDots,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,

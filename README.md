@@ -49,6 +49,11 @@ export const myPattern: Pattern = {
 
 2. Append it to the array in `src/lib/patterns/index.ts`. Done.
 
+## Adding your own images
+
+Want to use your own photos or artwork as live, reactive visuals? See
+**[docs/adding-images.md](docs/adding-images.md)** for a step-by-step, no-coding-required guide.
+
 ## Deployment
 
 The included `.github/workflows/pages.yml` builds and publishes `dist/` to GitHub Pages on every push to `main`. Enable Pages in your repo settings (source: **GitHub Actions**).
