@@ -192,6 +192,15 @@ const fragmentShader = /* glsl */`
     float _ph1 = clamp(uColorsV2, 0.0, 1.0);
     float _ph2 = clamp((uColorsV2 - 1.0) / 2.0, 0.0, 1.0);
     col = mix(mix(vec3(_luma2), uMainColor * (0.2 + _luma2 * 0.8), _ph1), _orig2, _ph2);
+
+    // Out-of-frame → black (instead of smearing the edge pixel when pose/motion
+    // push the sampling coordinate past the image border)
+    float feather = 0.0025;
+    vec2 lo = smoothstep(vec2(0.0), vec2(feather), uv);
+    vec2 hi = smoothstep(vec2(0.0), vec2(feather), 1.0 - uv);
+    float frameMask = lo.x * lo.y * hi.x * hi.y;
+    col *= frameMask;
+
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
@@ -346,7 +355,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
         for (const pt of person) { cx += pt.x; cy += pt.y; }
         if (person.length > 0) {
           cx /= person.length; cy /= person.length;
-          const dx = (cx - 0.5) * 0.06, dy = (cy - 0.5) * 0.06;
+          const dx = (cx - 0.5) * 0.06, dy = (0.5 - cy) * 0.06;
           // Counter-rotate parallax so screen direction stays constant despite image rotation
           if      (rotation === 1) u.uParallaxShift.value.set( dy, -dx);
           else if (rotation === 2) u.uParallaxShift.value.set(-dx, -dy);
