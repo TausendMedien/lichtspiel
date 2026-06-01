@@ -65,13 +65,13 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     },
     // ── Color v2 ────────────────────────────────────────────────────────────
     {
-      label: 'Color v2',
+      label: 'Colors',
       type:  'toggle' as const,
       get:   () => ps().colorsV2Enabled,
       set:   (v: boolean) => { ps().colorsV2Enabled = v; saveInteractionSettings(); },
     },
     {
-      label: 'Color v2 Gain',
+      label: 'Colors Gain',
       type:  'range' as const,
       min:   0, max: 2, step: 0.1, default: 1.0,
       get:   () => ps().colorsV2Gain,

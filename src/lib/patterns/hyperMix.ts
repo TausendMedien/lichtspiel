@@ -214,8 +214,8 @@ function buildGeometry(count: number): THREE.BufferGeometry {
 export const hyperMix: Pattern = {
   id: "hyperMix",
   name: "Hyper Mix",
-  motionControlLabels: ['Speed', 'Spread'],
-  audioControlLabels:  ['Speed', 'Spread'],
+  motionControlLabels: ['Speed'],
+  audioControlLabels:  ['Speed', 'Point Size'],
 
   controls: [
     {
@@ -245,6 +245,7 @@ export const hyperMix: Pattern = {
       label: "Point Size",
       type: "range", min: 0.2, max: 3.0, step: 0.1,
       default: 0.8,
+      audioWeight: 0.3,
       get: () => params.pointSize,
       set: (v) => { params.pointSize = v; if (material) material.uniforms.uPtSize.value = v; },
     },

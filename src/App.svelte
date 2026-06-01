@@ -1856,7 +1856,7 @@
               oninput={(e) => { interactionState.strength = parseFloat((e.target as HTMLInputElement).value); saveInteractionSettings(); }}
               class="w-full accent-white cursor-pointer"
             />
-            <div class="mt-0.5 text-[10px] text-white/30">Scales all universal reactions (Brightness, Color v2, Speed)</div>
+            <div class="mt-0.5 text-[10px] text-white/30">Scales all universal reactions (Brightness, Colors, Speed)</div>
           </div>
           <!-- Presence Timeout -->
           <div>
