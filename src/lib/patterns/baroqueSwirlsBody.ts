@@ -125,6 +125,8 @@ export const baroqueSwirlsBody: Pattern = {
   id: "baroqueSwirlsBody",
   usesPose: true,
   name: "Baroque Swirls",
+  audioControlLabels: ["Flow Speed", "Teal"],
+  motionControlLabels: ["Rotate", "Purple"],
   controls: [
     { label: "Body Warp",      type: "range", min: 0.0, max: 2.0, step: 0.05, default: 0.5, interactive: 'pose' as const, get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
     { label: "Band Count",     type: "range", min: 2,   max: 20,  step: 1, default: 13,    get: () => bandCount,   set: (v) => { bandCount = v; } },

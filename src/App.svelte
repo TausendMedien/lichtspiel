@@ -128,6 +128,7 @@
   let demoTimer: ReturnType<typeof setTimeout> | null = null;
   let snapshotUrl = $state<string | null>(null);
   let snapshotFading = $state(false);
+  let snapshotImg = $state<HTMLImageElement | null>(null);
   let demoPointerVisible = $state(false);
   let demoPointerTimer: ReturnType<typeof setTimeout> | null = null;
   let cursorHidden = $state(false);
@@ -548,6 +549,11 @@
     snapshotUrl = canvas.toDataURL();
     snapshotFading = false;
     await tick(); // ensure snapshot img is in DOM before canvas switches
+    // Ensure the snapshot img is fully decoded AND painted before switching the
+    // canvas — otherwise (notably on iPad/Safari) the data-URL decode is async
+    // and the incoming pattern flashes through for a frame before the cover appears.
+    try { await snapshotImg?.decode(); } catch { /* ignore decode errors */ }
+    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     // Switch pattern while snapshot covers the canvas
     index = switchTo(n);
     focusedIndex = index;
@@ -1415,6 +1421,7 @@
 {#if snapshotUrl}
   <img
     src={snapshotUrl}
+    bind:this={snapshotImg}
     class="pointer-events-none fixed inset-0 z-[5] h-full w-full object-cover transition-opacity duration-[1500ms]"
     class:opacity-0={snapshotFading}
     class:opacity-100={!snapshotFading}
