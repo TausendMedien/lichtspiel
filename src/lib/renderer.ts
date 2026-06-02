@@ -190,6 +190,44 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   let last = performance.now();
   const start = last;
 
+  // ── WebGL context loss/restore ────────────────────────────────────────────
+  // Mobile GPUs (notably low/mid-end Android) drop the GL context under memory
+  // pressure or when backgrounding the tab. Without handling, the canvas goes
+  // black and never recovers. preventDefault() on the lost event tells the
+  // browser a restore is wanted; on restore we rebuild GPU-side resources.
+  let contextLost = false;
+
+  function onContextLost(e: Event) {
+    e.preventDefault();
+    contextLost = true;
+    cancelAnimationFrame(raf);
+  }
+
+  function onContextRestored() {
+    if (!contextLost) return;
+    contextLost = false;
+    // The old render target's GPU texture is gone — recreate it and re-point
+    // the post pass at the new texture.
+    rt.dispose();
+    rt = new THREE.WebGLRenderTarget(Math.max(1, size.width), Math.max(1, size.height), {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      samples: 4,
+    });
+    postUniforms.uScene.value = rt.texture;
+    // Rebuild the active pattern's GPU resources from scratch.
+    current.dispose();
+    clearScene();
+    current.init(ctx);
+    current.resize(size.width, size.height);
+    last = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
+
+  canvas.addEventListener("webglcontextlost", onContextLost as EventListener, false);
+  canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+
   function loop(now: number) {
     const dt = (now - last) / 1000;
     const elapsed = (now - start) / 1000;
@@ -230,6 +268,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     getCanvas() { return canvas; },
     dispose() {
       cancelAnimationFrame(raf);
+      canvas.removeEventListener("webglcontextlost", onContextLost as EventListener);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
       ro.disconnect();
       current.dispose();
       clearScene();
