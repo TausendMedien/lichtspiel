@@ -548,6 +548,13 @@
     // Capture current frame BEFORE switching so snapshot covers the transition
     snapshotUrl = canvas.toDataURL();
     snapshotFading = false;
+    // Freeze the renderer immediately so the canvas stays on the captured frame
+    // while decode() runs. On iPad/Safari, toDataURL() is slow (~30–80 ms) and
+    // decode() is async (~50–200 ms), so the canvas advances well past F0 before
+    // the snapshot covers it — producing a visible "jump back" when it finally
+    // appears. Freezing ensures canvas and snapshot always show the same frame.
+    handle?.setTimeScale(0);
+    freezeAnim = null;
     await tick(); // ensure snapshot img is in DOM before canvas switches
     // Ensure the snapshot img is fully decoded AND painted before switching the
     // canvas — otherwise (notably on iPad/Safari) the data-URL decode is async
@@ -569,12 +576,11 @@
         }
       }
     }
-    // Unfreeze so the incoming pattern plays at normal speed
-    if (freezeAnim?.to === 0 || (!freezeAnim && (handle?.getTimeScale() ?? 1) === 0)) {
-      handle?.setTimeScale(1);
-      timeScaleMirror = 1;
-      freezeAnim = null;
-    }
+    // Unfreeze so the incoming pattern plays at normal speed.
+    // crossFadeTo is only ever called in demo mode, so always reset to 1×.
+    handle?.setTimeScale(1);
+    timeScaleMirror = 1;
+    freezeAnim = null;
     // Let new pattern render a couple frames, then fade out snapshot
     requestAnimationFrame(() => requestAnimationFrame(() => { snapshotFading = true; }));
   }
