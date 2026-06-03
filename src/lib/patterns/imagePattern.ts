@@ -355,7 +355,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
         for (const pt of person) { cx += pt.x; cy += pt.y; }
         if (person.length > 0) {
           cx /= person.length; cy /= person.length;
-          const dx = (cx - 0.5) * 0.06, dy = (0.5 - cy) * 0.06;
+          const dx = (cx - 0.5) * 0.06, dy = (cy - 0.5) * 0.06;
           // Counter-rotate parallax so screen direction stays constant despite image rotation
           if      (rotation === 1) u.uParallaxShift.value.set( dy, -dx);
           else if (rotation === 2) u.uParallaxShift.value.set(-dx, -dy);
@@ -366,10 +366,14 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
         for (let i = 0; i < 8; i++) {
           const pt = person[i];
           if (!pt) { joints[i].set(0, 0); continue; }
-          let jx = pt.x, jy = pt.y;
-          if      (rotation === 1) { const t = jx; jx = 1 - jy; jy = t; }
-          else if (rotation === 2) { jx = 1 - jx; jy = 1 - jy; }
-          else if (rotation === 3) { const t = jy; jy = 1 - jx; jx = t; }
+          // Pose y=0 is the top of the camera, but UV y=0 is the bottom of the
+          // screen — flip y so the warp tracks the hand's real vertical position.
+          const sx = pt.x, sy = 1 - pt.y;
+          let jx: number, jy: number;
+          if      (rotation === 1) { jx = 1 - sy; jy = sx; }
+          else if (rotation === 2) { jx = 1 - sx; jy = 1 - sy; }
+          else if (rotation === 3) { jx = sy;     jy = 1 - sx; }
+          else                     { jx = sx;     jy = sy; }
           joints[i].set(jx, jy);
         }
         u.uPoseDistort.value = 1.0;
