@@ -2139,7 +2139,7 @@
         {/if}
 
         <!-- Device pickers — camera when Motion or Pose active, mic when Audio active -->
-        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0 || audioState.enabled && audioState.devices.length > 0}
+        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0 || audioState.enabled}
           <div class="mt-2.5 flex flex-col gap-2">
             {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0}
               <div class="flex items-center gap-2">
@@ -2156,18 +2156,24 @@
                 <button onclick={() => enumerateCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect cameras">↺</button>
               </div>
             {/if}
-            {#if audioState.enabled && audioState.devices.length > 1}
+            {#if audioState.enabled}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
-                <select
-                  value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
-                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
-                  class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                >
-                  {#each audioState.devices as d, i}
-                    <option value={i}>{d.label}</option>
-                  {/each}
-                </select>
+                {#if audioState.devices.length > 1}
+                  <select
+                    value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
+                    onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
+                    class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                  >
+                    {#each audioState.devices as d, i}
+                      <option value={i}>{d.label}</option>
+                    {/each}
+                  </select>
+                {:else if audioState.devices.length === 1}
+                  <span class="min-w-0 flex-1 text-xs text-white/60">{audioState.devices[0].label || 'Default microphone'}</span>
+                {:else}
+                  <span class="min-w-0 flex-1 text-xs text-white/30">No microphones found</span>
+                {/if}
                 <button onclick={() => enumerateMicrophones()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect microphones">↺</button>
               </div>
             {/if}
