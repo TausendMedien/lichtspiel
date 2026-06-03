@@ -16,6 +16,9 @@ let rotateSpeed = 0.01;
 let colorPhase = 0;
 let rotAngle   = 0;
 let accTime    = 0;
+let warpDisplay = warpAmount; // eased toward warpAmount so slider drags morph instead of flash-jumping
+
+const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -111,7 +114,7 @@ export const flowLines: Pattern = {
   audioControlLabels:  ["Flow Speed", "Rotate"],
   controls: [
     { label: "Line Count",   type: "range", min: 10,  max: 150, step: 1, default: 124,    get: () => lineCount,   set: (v) => { lineCount = v; } },
-    { label: "Flow Speed",   type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.35, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
+    { label: "Flow Speed",   type: "range", min: 0.0, max: 0.20, step: 0.01, default: 0.02, audioWeight: 0.35, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Warp Amount",  type: "range", min: 0.0, max: 3.0, step: 0.05, default: 0.5, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
     { label: "Line Width",   type: "range", min: 0.1, max: 0.9, step: 0.01, default: 0.45, get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
@@ -138,6 +141,7 @@ export const flowLines: Pattern = {
     });
     mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
+    warpDisplay = warpAmount;
     ctx.scene.add(mesh);
   },
 
@@ -146,9 +150,11 @@ export const flowLines: Pattern = {
     accTime    += dt * flowSpeed;
     colorPhase += dt * colorSpeed * 0.5;
     rotAngle   += dt * rotateSpeed * 1.5;
+    // Ease the warp toward its target so dragging the slider morphs instead of flashing
+    warpDisplay += (warpAmount - warpDisplay) * (1 - Math.exp(-dt * MORPH_RATE));
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uLineCount.value  = lineCount;
-    material.uniforms.uWarpAmount.value = warpAmount;
+    material.uniforms.uWarpAmount.value = warpDisplay;
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
@@ -166,5 +172,6 @@ export const flowLines: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
+    warpDisplay = warpAmount;
   },
 };

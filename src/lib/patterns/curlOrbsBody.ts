@@ -21,6 +21,9 @@ let colorPhase = 0;
 let rotAngle   = 0;
 let accTime    = 0;
 let currentAspect = 1;
+let lineCountDisplay = lineCount; // eased toward lineCount so slider drags morph instead of strobing
+
+const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
 
 // Pre-allocated pool for person-point uniforms (up to 15 points: 5 persons × 3 points each)
 const personPoints = Array.from({ length: 15 }, () => new THREE.Vector2());
@@ -155,7 +158,7 @@ export const curlOrbsBody: Pattern = {
     { label: "Line Count",   type: "range", min: 10,   max: 100,  step: 1, default: 45,    get: () => lineCount,   set: (v) => { lineCount = v; } },
     { label: "Line Width",   type: "range", min: 0.05, max: 0.9,  step: 0.01, default: 0.37, get: () => lineWidth,  set: (v) => { lineWidth = v; } },
     { label: "Flow Scale",   type: "range", min: 0.5,  max: 5.0,  step: 0.1, default: 3.1,  get: () => flowScale,  set: (v) => { flowScale = v; } },
-    { label: "Flow Speed",   type: "range", min: 0.0,  max: 0.3,  step: 0.005, default: 0.02, get: () => flowSpeed, set: (v) => { flowSpeed = v; } },
+    { label: "Flow Speed",   type: "range", min: 0.0,  max: 0.050, step: 0.001, default: 0.02, get: () => flowSpeed, set: (v) => { flowSpeed = v; } },
     { label: "Orb Count",    type: "range", min: 0,    max: 20,   step: 1, default: 16,    get: () => orbCount,   set: (v) => { orbCount = v; } },
     { label: "Orb Size",     type: "range", min: 0.01, max: 0.15, step: 0.001, default: 0.06, get: () => orbSize,  set: (v) => { orbSize = v; } },
     { label: "Color Speed",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.05, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
@@ -184,6 +187,7 @@ export const curlOrbsBody: Pattern = {
     });
     mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
+    lineCountDisplay = lineCount;
     ctx.scene.add(mesh);
   },
 
@@ -192,6 +196,8 @@ export const curlOrbsBody: Pattern = {
     accTime    += dt * flowSpeed;
     colorPhase += dt * colorSpeed * 0.5;
     rotAngle   += dt * rotateSpeed * 1.5;
+    // Ease line count toward its target so dragging the slider morphs instead of strobing
+    lineCountDisplay += (lineCount - lineCountDisplay) * (1 - Math.exp(-dt * MORPH_RATE));
 
     // Convert pose landmarks to shader coordinate space
     let count = 0;
@@ -210,7 +216,7 @@ export const curlOrbsBody: Pattern = {
     }
 
     material.uniforms.uTime.value       = accTime;
-    material.uniforms.uLineCount.value  = lineCount;
+    material.uniforms.uLineCount.value  = lineCountDisplay;
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uFlowScale.value  = flowScale;
     material.uniforms.uOrbCount.value   = orbCount;
@@ -230,5 +236,6 @@ export const curlOrbsBody: Pattern = {
     geometry?.dispose(); material?.dispose();
     mesh = null; geometry = null; material = null;
     accTime = 0; rotAngle = 0; colorPhase = 0;
+    lineCountDisplay = lineCount;
   },
 };
