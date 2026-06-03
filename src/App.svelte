@@ -269,6 +269,9 @@
   let poseError        = $state<string | null>(null);
   let poseLoading      = $state(false);
   let poseDebug        = $state(false);
+  // Which camera deviceId pose tracking was started with (plain var, not $state —
+  // only read inside $effect, never needed in template).
+  let _poseDeviceId    = '';
   // Reactive mirrors of poseSettings (plain object — not Svelte state)
   let poseLowRes       = $state(poseSettings.lowRes);
   let poseSkipFrames   = $state(poseSettings.skipFrames);
@@ -281,6 +284,7 @@
       stopPoseTracking();
       poseActive = false;
       poseError = null;
+      _poseDeviceId = '';
       // Turn camera off in Options if motion detection isn't also using it
       if (!cameraState.motionEnabled) cameraState.enabled = false;
     } else {
@@ -290,7 +294,9 @@
       await tick();
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       try {
-        await startPoseTracking();
+        const devId = cameraState.deviceId || undefined;
+        await startPoseTracking(devId);
+        _poseDeviceId = devId ?? '';
         poseActive = true;
         // Reflect that camera is now active in the Options panel
         if (!cameraState.enabled) cameraState.enabled = true;
@@ -303,6 +309,29 @@
       }
     }
   }
+
+  // Restart pose tracking when the selected camera device changes while pose is active.
+  // This ensures the camera picker has effect on pose (not just motion detection).
+  $effect(() => {
+    const deviceId = cameraState.deviceId;
+    if (!poseActive || !poseState.active || !deviceId || deviceId === _poseDeviceId) return;
+    _poseDeviceId = deviceId;
+    untrack(async () => {
+      stopPoseTracking();
+      poseLoading = true;
+      poseError = null;
+      try {
+        await startPoseTracking(deviceId);
+        poseActive = true;
+      } catch (e) {
+        poseError = e instanceof Error ? e.message : 'Camera error';
+        poseActive = false;
+        _poseDeviceId = '';
+      } finally {
+        poseLoading = false;
+      }
+    });
+  });
 
   type RandAnim  = { from: number; to: number; startMs: number };
   type FreezeAnim = { from: number; to: number; startMs: number };
