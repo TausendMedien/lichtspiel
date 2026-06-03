@@ -25,7 +25,7 @@ let video: HTMLVideoElement | null = null;
 let rafId = 0;
 let frameCounter = 0;
 
-export async function startPoseTracking(): Promise<void> {
+export async function startPoseTracking(deviceId?: string): Promise<void> {
   if (poseState.active) return;
 
   const vision = await FilesetResolver.forVisionTasks(
@@ -55,10 +55,16 @@ export async function startPoseTracking(): Promise<void> {
   video.muted = true;
 
   const stream = await guardedGetUserMedia({
-    video: { width: vw, height: vh, facingMode: "user" },
+    video: deviceId
+      ? { deviceId: { exact: deviceId }, width: vw, height: vh }
+      : { width: vw, height: vh, facingMode: "user" },
   });
   video.srcObject = stream;
+  // autoplay is unreliable on iOS Safari for off-DOM video elements — call
+  // play() explicitly so the video actually starts before we wait for frames.
+  try { await video.play(); } catch { /* detect() retries via readyState */ }
   await new Promise<void>((resolve) => {
+    if (video!.readyState >= 2) { resolve(); return; }
     video!.onloadeddata = () => resolve();
   });
 
