@@ -243,7 +243,7 @@ const _thresholdSetters: Array<(v: number) => void> = [];
 const BASE_DEFAULTS: LPDefaults = {
   threshold: 0.80,
   decayRate: 0.015,
-  gain: 1.5,
+  gain: 0.5,
   colorize: 0,
   brushRadius: 0.012,
   black: 0.5,       // 0 = full live feed, 1 = black
