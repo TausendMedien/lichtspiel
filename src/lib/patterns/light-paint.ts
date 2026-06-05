@@ -234,7 +234,7 @@ const _thresholdSetters: Array<(v: number) => void> = [];
 
 const BASE_DEFAULTS: LPDefaults = {
   threshold: 0.80,
-  decayRate: 0.10,
+  decayRate: 0.01,
   gain: 0.5,
   colorize: 0,
   brushRadius: 0.012,
