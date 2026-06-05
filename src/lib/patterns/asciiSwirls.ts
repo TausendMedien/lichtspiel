@@ -3,7 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
-import { cameraState, enumerateCameras } from "../globalCameraSettings.svelte";
+import { cameraState, enumerateCameras, saveCameraDevice } from "../globalCameraSettings.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -306,6 +306,7 @@ export const asciiSwirls: Pattern = {
       },
       set: (idx: number) => {
         cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
+        saveCameraDevice();
         enableAsciiCamera();
       },
     },

@@ -21,7 +21,7 @@
   import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
-  import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
+  import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
   import { killAllStreams } from "./lib/sensorGuard";
@@ -513,6 +513,12 @@
   $effect(() => {
     if (typeof document === 'undefined') return;
     document.body.classList.toggle('cursor-hidden', cursorHidden);
+  });
+
+  // Populate the camera picker whenever the Demo modal opens — the camera is used by
+  // Light Painting/ASCII patterns too, so the picker is always offered there.
+  $effect(() => {
+    if (demoVisible) enumerateCameras();
   });
 
   function demoPoke() {
@@ -2258,24 +2264,26 @@
           <div class="mt-1.5 text-[11px] text-red-400/80">{poseError}</div>
         {/if}
 
-        <!-- Device pickers — camera when Motion or Pose active, mic when Audio active -->
-        {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0 || audioState.enabled}
-          <div class="mt-2.5 flex flex-col gap-2">
-            {#if (cameraState.motionEnabled || poseActive) && cameraState.devices.length > 0}
-              <div class="flex items-center gap-2">
-                <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
+        <!-- Device pickers — camera is always available (Light Painting/ASCII patterns
+             use it too, not just Motion/Pose); mic shown when Audio active. -->
+        <div class="mt-2.5 flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
+              {#if cameraState.devices.length > 0}
                 <select
                   value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
-                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = cameraState.devices[i]?.deviceId ?? ''; }}
+                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = cameraState.devices[i]?.deviceId ?? ''; saveCameraDevice(); }}
                   class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
                 >
                   {#each cameraState.devices as d, i}
                     <option value={i}>{d.label}</option>
                   {/each}
                 </select>
-                <button onclick={() => enumerateCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect cameras">↺</button>
-              </div>
-            {/if}
+              {:else}
+                <span class="min-w-0 flex-1 text-xs text-white/30">No cameras detected — tap ↺</span>
+              {/if}
+              <button onclick={() => detectCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Detect cameras">↺</button>
+            </div>
             {#if audioState.enabled}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
@@ -2295,8 +2303,7 @@
                 <button onclick={() => enumerateMicrophones()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Re-detect microphones">↺</button>
               </div>
             {/if}
-          </div>
-        {/if}
+        </div>
       </div>
 
       <!-- Toggles: hide HUD + randomize order -->

@@ -4,7 +4,7 @@ import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
-import { cameraState, enumerateCameras } from "../globalCameraSettings.svelte";
+import { cameraState, enumerateCameras, saveCameraDevice } from "../globalCameraSettings.svelte";
 
 // ─── Shared camera device state ───────────────────────────────────────────────
 // Backed by the global cameraState so every pattern honors the user's chosen
@@ -402,6 +402,7 @@ function createLightPainting(
       },
       set: (idx: number) => {
         cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
+        saveCameraDevice();
         if (canvasRef) startCamera(canvasRef);
       },
     },
