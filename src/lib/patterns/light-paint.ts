@@ -4,19 +4,11 @@ import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
+import { cameraState, enumerateCameras } from "../globalCameraSettings.svelte";
 
-// ─── Shared camera device state (module-level, persists across pattern switches) ──
-let _lpDeviceId = '';
-const _lpDevices: Array<{ deviceId: string; label: string }> = [];
-
-async function enumerateLpCameras(): Promise<void> {
-  try {
-    const all = await navigator.mediaDevices.enumerateDevices();
-    const cams = all.filter(d => d.kind === 'videoinput');
-    _lpDevices.length = 0;
-    cams.forEach((d, i) => _lpDevices.push({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
-  } catch { /* ignore */ }
-}
+// ─── Shared camera device state ───────────────────────────────────────────────
+// Backed by the global cameraState so every pattern honors the user's chosen
+// device (see globalCameraSettings.svelte.ts).
 
 // ── "Light Painting" family ──────────────────────────────────────────────────
 // A webcam frame feeds a feedback loop: the accumulation pass adds pixels
@@ -349,10 +341,11 @@ function createLightPainting(
       if (myId === startId) showOverlay(canvas, 'Requesting camera access…');
     }, 500);
     // Enumerate cameras so device picker is populated on first use
-    if (_lpDevices.length === 0) await enumerateLpCameras();
+    if (cameraState.devices.length === 0) await enumerateCameras();
     try {
-      const videoConstraint: MediaTrackConstraints = _lpDeviceId
-        ? { deviceId: { exact: _lpDeviceId }, width: { ideal: 1280 } }
+      const deviceId = cameraState.deviceId;
+      const videoConstraint: MediaTrackConstraints = deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 1280 } }
         : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
       const s = await guardedGetUserMedia({ video: videoConstraint, audio: false });
       clearTimeout(overlayTimeout!); overlayTimeout = null;
@@ -402,13 +395,13 @@ function createLightPainting(
       label: "Camera Device",
       type: "select" as const,
       interactive: "camera" as const,
-      options: () => _lpDevices.length > 0 ? _lpDevices.map(d => d.label) : ['Default'],
+      options: () => cameraState.devices.length > 0 ? cameraState.devices.map(d => d.label) : ['Default'],
       get: () => {
-        const idx = _lpDevices.findIndex(d => d.deviceId === _lpDeviceId);
+        const idx = cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId);
         return idx >= 0 ? idx : 0;
       },
       set: (idx: number) => {
-        _lpDeviceId = _lpDevices[idx]?.deviceId ?? '';
+        cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
         if (canvasRef) startCamera(canvasRef);
       },
     },

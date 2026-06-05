@@ -72,7 +72,7 @@ const DemoSchema = z.object({
 export function loadDemoSettings(allPatternIds: string[]): { demoActive: boolean; demoDwell: number; pedalDwell: number; demoPatternIds: string[]; demoStartBehavior: DemoStartBehavior; demoRandomizeOrder: boolean; demoFavoritesOnly: boolean } {
   try {
     const raw = localStorage.getItem(DEMO_KEY);
-    if (!raw) return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
+    if (!raw) return { demoActive: false, demoDwell: 60, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
     const parsed = DemoSchema.parse(JSON.parse(raw));
     // Filter saved IDs to only those that still exist; fall back to all if none saved
     const saved = parsed.demoPatternIds?.filter(id => allPatternIds.includes(id));
@@ -86,7 +86,7 @@ export function loadDemoSettings(allPatternIds: string[]): { demoActive: boolean
       demoFavoritesOnly: parsed.demoFavoritesOnly ?? false,
     };
   } catch {
-    return { demoActive: false, demoDwell: 30, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
+    return { demoActive: false, demoDwell: 60, pedalDwell: 180, demoPatternIds: allPatternIds, demoStartBehavior: 'default', demoRandomizeOrder: false, demoFavoritesOnly: false };
   }
 }
 

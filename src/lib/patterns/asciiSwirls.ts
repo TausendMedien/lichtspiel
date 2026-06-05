@@ -3,6 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
+import { cameraState, enumerateCameras } from "../globalCameraSettings.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -31,18 +32,8 @@ let videoEl:    HTMLVideoElement | null = null;
 let videoTex:   THREE.VideoTexture | null = null;
 let camStream:  MediaStream | null = null;
 
-// Camera device state
-let _asciiCamDeviceId = '';
-const _asciiCamDevices: Array<{ deviceId: string; label: string }> = [];
-
-async function enumerateAsciiCameras(): Promise<void> {
-  try {
-    const all = await navigator.mediaDevices.enumerateDevices();
-    const cams = all.filter(d => d.kind === 'videoinput');
-    _asciiCamDevices.length = 0;
-    cams.forEach((d, i) => _asciiCamDevices.push({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
-  } catch { /* ignore */ }
-}
+// Camera device state — backed by the global cameraState so every pattern shares
+// the user's chosen device (see globalCameraSettings.svelte.ts).
 
 // Controls
 let signSize    = 8;   // px per character cell
@@ -255,10 +246,11 @@ async function enableAsciiCamera() {
   if (privacyMode.active || _cameraStarting) return;
   _cameraStarting = true;
   try {
-    await enumerateAsciiCameras();
-    const videoConstraint: MediaTrackConstraints = _asciiCamDeviceId
-      ? { deviceId: { exact: _asciiCamDeviceId }, width: { ideal: 1280 } }
-      : { width: { ideal: 1280 } };
+    if (cameraState.devices.length === 0) await enumerateCameras();
+    const deviceId = cameraState.deviceId;
+    const videoConstraint: MediaTrackConstraints = deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1280 } }
+      : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
     camStream?.getTracks().forEach(t => t.stop());
     camStream = await guardedGetUserMedia({ video: videoConstraint, audio: false });
     videoEl = document.createElement("video");
@@ -307,13 +299,13 @@ export const asciiSwirls: Pattern = {
       label: "Camera Device",
       type: "select" as const,
       interactive: 'camera' as const,
-      options: () => _asciiCamDevices.length > 0 ? _asciiCamDevices.map(d => d.label) : ['Default'],
+      options: () => cameraState.devices.length > 0 ? cameraState.devices.map(d => d.label) : ['Default'],
       get: () => {
-        const idx = _asciiCamDevices.findIndex(d => d.deviceId === _asciiCamDeviceId);
+        const idx = cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId);
         return idx >= 0 ? idx : 0;
       },
       set: (idx: number) => {
-        _asciiCamDeviceId = _asciiCamDevices[idx]?.deviceId ?? '';
+        cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
         enableAsciiCamera();
       },
     },
