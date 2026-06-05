@@ -35,3 +35,15 @@ export function clearSlot(patternId: string, idx: number): void {
   slots[idx] = null;
   localStorage.setItem(key(patternId), JSON.stringify(slots));
 }
+
+// Remove this pattern's saved slots so getSlots() falls back to factory presetDefaults.
+export function resetSlots(patternId: string): void {
+  localStorage.removeItem(key(patternId));
+}
+
+// Remove every pattern's saved slots (full factory reset of all preset tiles).
+export function resetAllSlots(): void {
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith("pp:slots:")) localStorage.removeItem(k);
+  }
+}

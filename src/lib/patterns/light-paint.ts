@@ -234,11 +234,11 @@ const _thresholdSetters: Array<(v: number) => void> = [];
 
 const BASE_DEFAULTS: LPDefaults = {
   threshold: 0.80,
-  decayRate: 0.015,
+  decayRate: 0.10,
   gain: 0.5,
   colorize: 0,
   brushRadius: 0.012,
-  black: 0.5,       // 0 = full live feed, 1 = black
+  black: 0.70,      // 0 = full live feed, 1 = black
   ghostOpacity: 0,
   flow: 0,
   vortex: 0,
@@ -801,9 +801,9 @@ function createLightPainting(
 // differ, so any tile can be tuned into any other look.
 
 export const lightPaint      = createLightPainting("lightPaint",      "Light Paint");
-export const lightTrail      = createLightPainting("lightTrail",      "Light Trail",       { decayRate: 0.01, brushRadius: 0 });
+export const lightTrail      = createLightPainting("lightTrail",      "Light Trail",       { brushRadius: 0 });
 export const lightPaintBlack = createLightPainting("lightPaintBlack", "Light Paint Black", { black: 1.0, ghostOpacity: 0 }, ["Black"]);
 export const lightFly        = createLightPainting("lightFly",        "Light Fly",         { flow: -0.25 }, ["Fly In/Out"]);
 export const lightVortex     = createLightPainting("lightVortex",     "Light Vortex",      { vortex: -0.10 }, ["Vortex"]);
-export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 3 }, ["Kaleidoscope", "Segments"]);
+export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true, kaleidoSeg: 3, flow: 0.03 }, ["Kaleidoscope", "Segments"]);
 export const lightGlitch     = createLightPainting("lightGlitch",     "RGB Glitch",        { rgbSplit: 0.020 }, ["RGB Split"]);

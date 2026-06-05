@@ -18,7 +18,7 @@
   import type { MIDIAction } from "./lib/midi";
   import { popUndo, setUndoing } from "./lib/undo";
   import { encodeShare, decodeShare } from "./lib/shareUrl";
-  import { getSlots, saveSlot } from "./lib/presets";
+  import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
@@ -113,7 +113,7 @@
 
   // Demo mode
   let demoActive = $state(false);
-  let demoDwell = $state(30);
+  let demoDwell = $state(60);
   let pedalDwell = $state(180);
   // Plain let (NOT $state) — plain JS closures always read the current value, even
   // inside setTimeout callbacks where $state signal reads can be stale in Svelte 5.
@@ -138,13 +138,33 @@
   // Pedal ('b') behaviour — applies in and out of Demo mode.
   // Short press → randomize (+ change pattern when pedalChangesPattern is on).
   // Double press → change pattern (when pedalDoubleChangesPattern is on).
-  // Long press → Light Paint, or Screenshot when pedalLongScreenshot is on.
+  // Long press → one of: nothing, Light Paint, Screenshot, or a 10-second recording.
   const PEDAL_CHANGES_PATTERN_KEY = 'pp:pedal-changes-pattern';
   let pedalChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_CHANGES_PATTERN_KEY) !== 'false' : true);
   const PEDAL_DOUBLE_CHANGES_PATTERN_KEY = 'pp:pedal-double-changes-pattern';
   let pedalDoubleChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_DOUBLE_CHANGES_PATTERN_KEY) === 'true' : false);
-  const PEDAL_LONG_SCREENSHOT_KEY = 'pp:pedal-long-screenshot';
-  let pedalLongScreenshot = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_LONG_SCREENSHOT_KEY) === 'true' : false);
+  // Pedal long-press action: 'none' | 'lightPaint' | 'screenshot' | 'record10'.
+  // Migrates the old boolean key (true→screenshot, false→lightPaint); default 'none'.
+  type PedalLongAction = 'none' | 'lightPaint' | 'screenshot' | 'record10';
+  const PEDAL_LONG_ACTION_KEY = 'pp:pedal-long-action';
+  function loadPedalLongAction(): PedalLongAction {
+    if (typeof localStorage === 'undefined') return 'none';
+    const stored = localStorage.getItem(PEDAL_LONG_ACTION_KEY);
+    if (stored === 'none' || stored === 'lightPaint' || stored === 'screenshot' || stored === 'record10') return stored;
+    const legacy = localStorage.getItem('pp:pedal-long-screenshot');
+    if (legacy === 'true') return 'screenshot';
+    if (legacy === 'false') return 'lightPaint';
+    return 'none';
+  }
+  let pedalLongAction = $state<PedalLongAction>(loadPedalLongAction());
+  const pedalLongLabels: Record<PedalLongAction, string> = {
+    none: 'Nothing', lightPaint: 'Light Paint', screenshot: 'Screenshot', record10: 'Record 10s',
+  };
+  // Short-press (b key / pedal) behavior: 'cycle' steps through saved presets 1·2·3,
+  // 'random' randomizes the current pattern's sliders.
+  const RANDOMIZE_MODE_KEY = 'pp:randomize-mode';
+  let randomizeMode = $state<'cycle' | 'random'>(typeof localStorage !== 'undefined' && localStorage.getItem(RANDOMIZE_MODE_KEY) === 'random' ? 'random' : 'cycle');
+  let presetCycleIdx = $state(-1); // cursor over filled slots; reset on pattern change
 
   const cheatsheetRows = $derived((() => {
     const rows: [string, string, string][] = [
@@ -159,8 +179,9 @@
       ...(pedalDoubleChangesPattern
         ? [["Change pattern",  "B B  · Pedal",       "—"] as [string, string, string]]
         : []),
-      [pedalLongScreenshot ? "Screenshot" : "Light Paint",
-       "B (hold)  · Pedal",   "—"],
+      ...(pedalLongAction !== 'none'
+        ? [[pedalLongLabels[pedalLongAction], "B (hold)  · Pedal", "—"] as [string, string, string]]
+        : []),
       ["Blackout toggle",      "X",                  "△ / Y"],
       ["Hide / show HUD",      "Y",                  "□ / X"],
       ["Screenshot",           "S  ·  L  ·  2 (R2)", "R2 / RT"],
@@ -178,8 +199,9 @@
   // Demo auto-restart after idle
   const DEMO_AUTORESTART_KEY = 'pp:demo-autorestart';
   const DEMO_AUTORESTART_TIME_KEY = 'pp:demo-autorestart-time';
-  let demoAutoRestart = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_AUTORESTART_KEY) === 'true' : false);
-  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:30') : '00:30');
+  // Default ON: an idle kiosk relaunches the demo automatically. Respect a stored choice.
+  let demoAutoRestart = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_KEY) ?? 'true') === 'true' : true);
+  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:03') : '00:03');
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Screenshot / recording toggles
@@ -414,7 +436,7 @@
       }
     }
   });
-  $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); });
+  $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); presetCycleIdx = -1; });
 
   function resetCtrl(ctrl: PatternControl & { type: "range" }) {
     if (ctrl.default === undefined) return;
@@ -469,6 +491,10 @@
   }
 
   function poke() {
+    // While a demo runs, explicit interaction keeps the current pattern up — reset the
+    // dwell countdown so an engaged visitor isn't yanked to the next pattern mid-play.
+    // (Passive camera motion / audio don't call poke(), so a noisy empty room still advances.)
+    if (demoActive) resetDemoTimer();
     if (demoActive && demoHideHud) { scheduleAutoRestart(); return; } // HUD hidden in demo mode
     hudVisible = true;
     overlayHidden = false;
@@ -827,8 +853,11 @@
     }
   }
 
-  // Pedal short press: randomize, optionally changing pattern first.
+  // Pedal short press / b key. In 'cycle' mode (default) step through the saved
+  // presets 1·2·3 of the current pattern; in 'random' mode randomize (optionally
+  // changing pattern first).
   function applyPedalShort() {
+    if (randomizeMode === 'cycle') { cyclePreset(); return; }
     if (pedalChangesPattern) {
       pedalChangePattern(() => startRandomize(performance.now()));
     } else {
@@ -836,14 +865,43 @@
     }
   }
 
-  // Pedal long press: jump to Light Paint, or take a screenshot.
+  // Advance to the next filled slot (1→2→3→1) and restore it. Falls back to a
+  // randomize when the current pattern has no saved slots.
+  function cyclePreset() {
+    const filled = presetSlots.map((s, i) => (s !== null ? i : -1)).filter(i => i >= 0);
+    if (filled.length === 0) { startRandomize(performance.now()); return; }
+    const next = filled.find(i => i > presetCycleIdx) ?? filled[0];
+    presetCycleIdx = next;
+    restorePreset(next);
+  }
+
+  // Pedal long press: configurable action (nothing / Light Paint / screenshot / 10s video).
   function applyPedalLong() {
-    if (pedalLongScreenshot) {
-      applyScreenshot();
-    } else {
-      const target = patterns.findIndex(p => p.id === 'lightPaint');
-      if (target !== -1) { index = target; activatePattern(target); }
+    switch (pedalLongAction) {
+      case 'lightPaint': {
+        const target = patterns.findIndex(p => p.id === 'lightPaint');
+        if (target !== -1) { index = target; activatePattern(target); }
+        break;
+      }
+      case 'screenshot':
+        applyScreenshot();
+        break;
+      case 'record10':
+        recordTimed(10000);
+        break;
+      case 'none':
+      default:
+        break;
     }
+  }
+
+  // Record a fixed-length clip, then auto-stop and save. Reuses the existing recorder
+  // (its onstop handler downloads/shares). No-op if recordings are disabled or one is
+  // already running.
+  function recordTimed(ms: number) {
+    if (!recordingsEnabled || isRecording || !recorder) return;
+    recorder.toggle(); // start
+    setTimeout(() => { if (isRecording && recorder) recorder.toggle(); }, ms);
   }
 
   function startRandomize(now: number) {
@@ -1881,6 +1939,17 @@
         </div>
         <div class="flex flex-col gap-2.5">
           <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Short press <span class="text-white/30">/ b key</span></span>
+            <div class="flex gap-1">
+              {#each ([{ v: 'cycle' as const, label: 'Cycle 1·2·3' }, { v: 'random' as const, label: 'Randomize' }]) as opt}
+                <button
+                  onclick={() => { randomizeMode = opt.v; localStorage.setItem(RANDOMIZE_MODE_KEY, opt.v); }}
+                  class="rounded px-2 py-0.5 text-[10px] border transition-colors cursor-pointer {randomizeMode === opt.v ? 'border-white/50 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'}"
+                >{opt.label}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="flex items-center justify-between {randomizeMode === 'cycle' ? 'opacity-40' : ''}">
             <span class="text-xs text-white/70">Short press changes pattern <span class="text-white/30">(off = randomize only)</span></span>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <div
@@ -1906,18 +1975,40 @@
               <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {pedalDoubleChangesPattern ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
             </div>
           </div>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-white/70">Long press <span class="text-white/30">→ {pedalLongScreenshot ? 'Screenshot' : 'Light Paint'}</span></span>
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <div
-              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {pedalLongScreenshot ? 'bg-white/60' : 'bg-white/20'}"
-              onclick={() => { pedalLongScreenshot = !pedalLongScreenshot; localStorage.setItem(PEDAL_LONG_SCREENSHOT_KEY, String(pedalLongScreenshot)); }}
-              role="switch"
-              aria-checked={pedalLongScreenshot}
-              tabindex="0"
+          <div class="flex items-center justify-between gap-2">
+            <span class="shrink-0 text-xs text-white/70">Long press</span>
+            <select
+              value={pedalLongAction}
+              onchange={(e) => { pedalLongAction = (e.target as HTMLSelectElement).value as PedalLongAction; localStorage.setItem(PEDAL_LONG_ACTION_KEY, pedalLongAction); }}
+              class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
             >
-              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {pedalLongScreenshot ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-            </div>
+              <option value="none">Nothing happens</option>
+              <option value="lightPaint">Light Paint</option>
+              <option value="screenshot">Screenshot</option>
+              <option value="record10">Record 10-second video</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Presets</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-white/70">Reset slots 1·2·3 to factory defaults</span>
+          <div class="flex gap-1 shrink-0">
+            <button
+              onclick={() => { resetSlots(patterns[index].id); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); }}
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            >This pattern</button>
+            <button
+              onclick={() => { if (confirm('Reset ALL patterns to factory defaults? This deletes every saved preset slot.')) { resetAllSlots(); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); } }}
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-rose-300/50 hover:text-rose-200/90 transition-colors cursor-pointer"
+            >All patterns</button>
           </div>
         </div>
       </div>
@@ -2188,7 +2279,7 @@
             {#if audioState.enabled}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
-                {#if audioState.devices.length > 1}
+                {#if audioState.devices.length >= 1}
                   <select
                     value={audioState.devices.findIndex(d => d.deviceId === audioState.deviceId)}
                     onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); audioState.deviceId = audioState.devices[i]?.deviceId ?? ''; }}
@@ -2198,8 +2289,6 @@
                       <option value={i}>{d.label}</option>
                     {/each}
                   </select>
-                {:else if audioState.devices.length === 1}
-                  <span class="min-w-0 flex-1 text-xs text-white/60">{audioState.devices[0].label || 'Default microphone'}</span>
                 {:else}
                   <span class="min-w-0 flex-1 text-xs text-white/30">No microphones found</span>
                 {/if}
@@ -2852,7 +2941,7 @@
                     onclick={async () => {
                       poseLowRes = !poseLowRes;
                       poseSettings.lowRes = poseLowRes;
-                      if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; poseLoading = true; try { await startPoseTracking(); poseActive = true; } catch(e) { poseError = e instanceof Error ? e.message : 'error'; } finally { poseLoading = false; } }
+                      if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; poseLoading = true; try { const devId = cameraState.deviceId || undefined; await startPoseTracking(devId); _poseDeviceId = devId ?? ''; poseActive = true; } catch(e) { poseError = e instanceof Error ? e.message : 'error'; } finally { poseLoading = false; } }
                     }}>
                     <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseLowRes ? 'bg-white/60' : 'bg-white/20'}">
                       <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseLowRes ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
