@@ -21,7 +21,7 @@
   import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
-  import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled } from "./lib/globalCameraSettings.svelte";
+  import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
   import { killAllStreams } from "./lib/sensorGuard";
@@ -524,6 +524,24 @@
   // Light Painting/ASCII patterns too, so the picker is always offered there.
   $effect(() => {
     if (demoVisible) enumerateCameras();
+  });
+
+  // Camera diagnostic — "Test cameras" probes each pattern's constraints and reports
+  // the resolved lens, so the operator can spot a per-pattern mismatch before a Demo.
+  let cameraProbes = $state<CameraProbe[]>([]);
+  let cameraTesting = $state(false);
+  async function runCameraTest() {
+    if (cameraTesting) return;
+    cameraTesting = true;
+    cameraProbes = [];
+    try { cameraProbes = await probeCameras(); }
+    finally { cameraTesting = false; }
+  }
+  // Probe status: 'ok' (all succeeded, one lens), 'mismatch' (>1 lens), 'error' (any failed).
+  const cameraProbeStatus = $derived.by((): 'ok' | 'mismatch' | 'error' => {
+    const ok = cameraProbes.filter(p => !p.error);
+    if (ok.length === 0 || ok.length < cameraProbes.length) return 'error';
+    return new Set(ok.map(p => p.label)).size > 1 ? 'mismatch' : 'ok';
   });
 
   function demoPoke() {
@@ -1809,22 +1827,22 @@
     >
       <div class="mb-3 flex items-center gap-2">
         <span class="text-lg">⚠</span>
-        <span class="text-xs font-semibold uppercase tracking-[0.2em] text-red-400/80">Epilepsie-Schutz deaktivieren?</span>
+        <span class="text-xs font-semibold uppercase tracking-[0.2em] text-red-400/80">Disable epilepsy guard?</span>
       </div>
       <div class="mb-4 space-y-2 text-xs leading-relaxed text-white/70">
-        <p>Der Flimmerwächter analysiert laufend die Bildhelligkeit (angelehnt an die Medien-Norm <span class="text-white/90">ITU-R BT.1702 / Harding</span>) und dämpft blitzartige Hell-Dunkel-Wechsel, die photosensitive Epilepsie auslösen können.</p>
-        <p><span class="text-red-300/90">Er kann Anfälle nicht garantiert verhindern</span> — dies ist keine medizinische Zusicherung. Deaktivieren entfernt diesen Schutz vollständig; bei Publikum oder auf Festivals nicht empfohlen.</p>
-        <p class="text-white/50">Hinweis: Auf älteren oder leistungsschwachen Geräten kann der Wächter Bildrate kosten — deshalb lässt er sich abschalten.</p>
+        <p>The flicker guard continuously analyses screen brightness (based on the broadcast standard <span class="text-white/90">ITU-R BT.1702 / Harding</span>) and damps abrupt light–dark flashing that can trigger photosensitive epilepsy.</p>
+        <p><span class="text-red-300/90">It cannot guarantee that seizures are prevented</span> — this is not a medical assurance. Disabling removes this protection entirely; not recommended with an audience or at festivals.</p>
+        <p class="text-white/50">Note: on older or low-powered devices the guard can cost frame rate — which is why it can be switched off.</p>
       </div>
       <div class="flex justify-end gap-2">
         <button
           class="rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15 transition-colors cursor-pointer"
           onclick={() => { flickerGuardConfirmVisible = false; }}
-        >Abbrechen</button>
+        >Cancel</button>
         <button
           class="rounded-md border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/25 transition-colors cursor-pointer"
           onclick={() => { flickerGuard.enabled = false; saveFlickerGuard(); flickerGuardConfirmVisible = false; }}
-        >Schutz deaktivieren</button>
+        >Disable guard</button>
       </div>
     </div>
   </div>
@@ -1851,39 +1869,6 @@
         >✕</button>
       </div>
 
-      <!-- Safety section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Sicherheit</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-white/70">Epilepsie-Schutz (Flimmerwächter)</span>
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div
-            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {flickerGuard.enabled ? 'bg-white/60' : 'bg-white/20'}"
-            onclick={() => {
-              if (flickerGuard.enabled) {
-                flickerGuardConfirmVisible = true;   // disabling requires confirmation
-              } else {
-                flickerGuard.enabled = true;
-                saveFlickerGuard();
-              }
-            }}
-            role="switch"
-            aria-checked={flickerGuard.enabled}
-            tabindex="0"
-          >
-            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {flickerGuard.enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-          </div>
-        </div>
-        <div class="mt-1.5 text-[11px] leading-snug {flickerGuard.enabled ? 'text-white/40' : 'text-red-400/70'}">
-          {flickerGuard.enabled
-            ? 'Dämpft blitzartige Hell-Dunkel-Wechsel in Echtzeit (angelehnt an ITU-R BT.1702 / Harding).'
-            : '⚠ Schutz deaktiviert — es ist kein Flimmerschutz aktiv.'}
-        </div>
-      </div>
 
       <!-- Demo section -->
       <div class="mb-5">
@@ -1944,6 +1929,68 @@
             </div>
           {/if}
         </div>
+      </div>
+
+      <!-- Camera section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Camera</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <!-- Capture resolution (camera-feed patterns: Light Painting / ASCII) -->
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <span class="shrink-0 text-xs text-white/70">Capture resolution</span>
+          <select
+            value={cameraState.resWidth}
+            onchange={(e) => setCameraResolution(parseInt((e.target as HTMLSelectElement).value))}
+            class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+          >
+            {#each CAMERA_RES_OPTIONS as o}
+              <option value={o.w}>{o.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="mb-2 text-[10px] leading-snug text-white/30">Applies to Light Painting &amp; ASCII. Motion / Pose stay low-res for performance.</div>
+
+        <!-- Show virtual multi-lens cameras toggle -->
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70">Show virtual multi-lens cameras</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.showVirtual ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => setShowVirtualCameras(!cameraState.showVirtual)}
+            role="switch"
+            aria-checked={cameraState.showVirtual}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.showVirtual ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="mb-3 text-[10px] leading-snug text-white/30">Off by default. Real lenses (wide / ultra-wide / telephoto) are stable. Virtual “Dual/Triple” cameras auto-switch lens by zoom &amp; lighting — handy creatively, but they can make different patterns use a different lens.</div>
+
+        <!-- Test cameras -->
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-white/70">Test cameras</span>
+          <button
+            onclick={() => runCameraTest()}
+            disabled={cameraTesting}
+            class="rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/60 hover:border-white/40 hover:text-white/90 transition-colors cursor-pointer disabled:opacity-40"
+          >{cameraTesting ? 'Testing…' : 'Run test'}</button>
+        </div>
+        {#if cameraProbes.length > 0}
+          <div class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+            <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
+              {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
+            </div>
+            {#each cameraProbes as p}
+              <div class="flex justify-between gap-2 text-white/60">
+                <span class="shrink-0">{p.name}</span>
+                <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <!-- MIDI section -->
@@ -2253,6 +2300,33 @@
             class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
           >Copy Defaults</button>
         </div>
+
+        <!-- Epilepsy guard (photosensitivity flicker damping) -->
+        <div class="mt-3 flex items-center justify-between">
+          <span class="text-xs text-white/70">Epilepsy guard</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {flickerGuard.enabled ? 'bg-white/60' : 'bg-white/20'}"
+            onclick={() => {
+              if (flickerGuard.enabled) {
+                flickerGuardConfirmVisible = true;   // disabling requires confirmation
+              } else {
+                flickerGuard.enabled = true;
+                saveFlickerGuard();
+              }
+            }}
+            role="switch"
+            aria-checked={flickerGuard.enabled}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {flickerGuard.enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="mt-1 text-[10px] leading-snug {flickerGuard.enabled ? 'text-white/30' : 'text-red-400/70'}">
+          {flickerGuard.enabled
+            ? 'Real-time flicker damping for photosensitivity (ITU-R BT.1702 / Harding-based).'
+            : '⚠ Disabled — no flicker protection active.'}
+        </div>
       </div>
 
     </div>
@@ -2345,13 +2419,13 @@
         <div class="mt-2.5 flex flex-col gap-2">
             <div class="flex items-center gap-2">
               <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
-              {#if cameraState.devices.length > 0}
+              {#if getVisibleDevices().length > 0}
                 <select
-                  value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
-                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = cameraState.devices[i]?.deviceId ?? ''; saveCameraDevice(); }}
+                  value={getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId)}
+                  onchange={(e) => { const i = parseInt((e.target as HTMLSelectElement).value); cameraState.deviceId = getVisibleDevices()[i]?.deviceId ?? ''; saveCameraDevice(); }}
                   class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
                 >
-                  {#each cameraState.devices as d, i}
+                  {#each getVisibleDevices() as d, i}
                     <option value={i}>{d.label}</option>
                   {/each}
                 </select>
@@ -2359,7 +2433,21 @@
                 <span class="min-w-0 flex-1 text-xs text-white/30">No cameras detected — tap ↺</span>
               {/if}
               <button onclick={() => detectCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Detect cameras">↺</button>
+              <button onclick={() => runCameraTest()} disabled={cameraTesting} class="shrink-0 rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/50 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer disabled:opacity-40" title="Open each pattern's camera and show which lens it resolves to">{cameraTesting ? '…' : 'Test'}</button>
             </div>
+            {#if cameraProbes.length > 0}
+              <div class="rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+                <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
+                  {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
+                </div>
+                {#each cameraProbes as p}
+                  <div class="flex justify-between gap-2 text-white/60">
+                    <span class="shrink-0">{p.name}</span>
+                    <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
             {#if audioState.enabled}
               <div class="flex items-center gap-2">
                 <span class="w-14 shrink-0 text-[11px] text-white/40">Mic</span>
@@ -2928,16 +3016,17 @@
                     </div>
                   {:else}
                     <!-- Motion/pose patterns: global motion camera picker -->
-                    {#if cameraState.devices.length > 0}
+                    {#if getVisibleDevices().length > 0}
                       <select
-                        value={cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId)}
+                        value={getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId)}
                         onchange={(e) => {
                           const i = parseInt((e.target as HTMLSelectElement).value);
-                          cameraState.deviceId = cameraState.devices[i]?.deviceId ?? '';
+                          cameraState.deviceId = getVisibleDevices()[i]?.deviceId ?? '';
+                          saveCameraDevice();
                         }}
                         class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
                       >
-                        {#each cameraState.devices as d, i}
+                        {#each getVisibleDevices() as d, i}
                           <option value={i}>{d.label}</option>
                         {/each}
                       </select>

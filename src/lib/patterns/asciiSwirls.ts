@@ -3,7 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
-import { cameraState, enumerateCameras, saveCameraDevice } from "../globalCameraSettings.svelte";
+import { cameraState, enumerateCameras, saveCameraDevice, getVisibleDevices, cameraFeedConstraints } from "../globalCameraSettings.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let renderer3: THREE.WebGLRenderer | null = null;
@@ -247,12 +247,8 @@ async function enableAsciiCamera() {
   _cameraStarting = true;
   try {
     if (cameraState.devices.length === 0) await enumerateCameras();
-    const deviceId = cameraState.deviceId;
-    const videoConstraint: MediaTrackConstraints = deviceId
-      ? { deviceId: { exact: deviceId }, width: { ideal: 1280 } }
-      : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
     camStream?.getTracks().forEach(t => t.stop());
-    camStream = await guardedGetUserMedia({ video: videoConstraint, audio: false });
+    camStream = await guardedGetUserMedia(cameraFeedConstraints());
     videoEl = document.createElement("video");
     videoEl.srcObject = camStream;
     videoEl.muted = true;
@@ -299,13 +295,13 @@ export const asciiSwirls: Pattern = {
       label: "Camera Device",
       type: "select" as const,
       interactive: 'camera' as const,
-      options: () => cameraState.devices.length > 0 ? cameraState.devices.map(d => d.label) : ['Default'],
+      options: () => getVisibleDevices().length > 0 ? getVisibleDevices().map(d => d.label) : ['Default'],
       get: () => {
-        const idx = cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId);
+        const idx = getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId);
         return idx >= 0 ? idx : 0;
       },
       set: (idx: number) => {
-        cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
+        cameraState.deviceId = getVisibleDevices()[idx]?.deviceId ?? '';
         saveCameraDevice();
         enableAsciiCamera();
       },

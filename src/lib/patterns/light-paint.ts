@@ -4,7 +4,7 @@ import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 import { privacyMode } from "../privacyMode.svelte";
 import { guardedGetUserMedia } from "../sensorGuard";
-import { cameraState, enumerateCameras, saveCameraDevice } from "../globalCameraSettings.svelte";
+import { cameraState, enumerateCameras, saveCameraDevice, getVisibleDevices, cameraFeedConstraints } from "../globalCameraSettings.svelte";
 
 // ─── Shared camera device state ───────────────────────────────────────────────
 // Backed by the global cameraState so every pattern honors the user's chosen
@@ -343,11 +343,7 @@ function createLightPainting(
     // Enumerate cameras so device picker is populated on first use
     if (cameraState.devices.length === 0) await enumerateCameras();
     try {
-      const deviceId = cameraState.deviceId;
-      const videoConstraint: MediaTrackConstraints = deviceId
-        ? { deviceId: { exact: deviceId }, width: { ideal: 1280 } }
-        : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } };
-      const s = await guardedGetUserMedia({ video: videoConstraint, audio: false });
+      const s = await guardedGetUserMedia(cameraFeedConstraints());
       clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
       stream = s;
@@ -395,13 +391,13 @@ function createLightPainting(
       label: "Camera Device",
       type: "select" as const,
       interactive: "camera" as const,
-      options: () => cameraState.devices.length > 0 ? cameraState.devices.map(d => d.label) : ['Default'],
+      options: () => getVisibleDevices().length > 0 ? getVisibleDevices().map(d => d.label) : ['Default'],
       get: () => {
-        const idx = cameraState.devices.findIndex(d => d.deviceId === cameraState.deviceId);
+        const idx = getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId);
         return idx >= 0 ? idx : 0;
       },
       set: (idx: number) => {
-        cameraState.deviceId = cameraState.devices[idx]?.deviceId ?? '';
+        cameraState.deviceId = getVisibleDevices()[idx]?.deviceId ?? '';
         saveCameraDevice();
         if (canvasRef) startCamera(canvasRef);
       },
