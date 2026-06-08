@@ -27,6 +27,7 @@
   import { killAllStreams } from "./lib/sensorGuard";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
+  import { flickerGuard, saveFlickerGuard } from "./lib/flickerGuard.svelte";
 
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
@@ -247,6 +248,7 @@
   let cheatsheetVisible = $state(false);
   let optionsVisible    = $state(false);
   let demoVisible       = $state(false);
+  let flickerGuardConfirmVisible = $state(false); // safety-warning before disabling the guard
   let demoStartBehavior = $state<DemoStartBehavior>('default');
   let demoRandomizeOrder = $state(false);
   let demoFavoritesOnly = $state(false);
@@ -284,6 +286,9 @@
   // Wake lock — held while demo mode or fullscreen is active
   const wl = createWakeLock();
   $effect(() => { if (demoActive || isFullscreenState) { wl.acquire(); } else { wl.release(); } });
+
+  // Push the photosensitivity-guard on/off state into the renderer (single source of truth)
+  $effect(() => { handle?.setFlickerGuard(flickerGuard.enabled); });
 
   // Body pose tracking
   let posePersonCount  = $state(0);
@@ -1254,6 +1259,7 @@
     const filteredDemoIds = demo.demoPatternIds.filter(id => experimentalEnabled || !EXPERIMENTAL_IDS.has(id));
     demoPatternIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
+    handle.setFlickerGuard(flickerGuard.enabled);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     if (demo.demoActive) startDemo();
 
@@ -1788,6 +1794,42 @@
   </div>
 {/if}
 
+<!-- ─── Flicker-guard disable confirmation ───────────────────────────────── -->
+{#if flickerGuardConfirmVisible}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <div
+    data-no-swipe
+    class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+    onclick={() => { flickerGuardConfirmVisible = false; }}
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <div
+      class="mx-4 w-full max-w-md rounded-xl border border-red-500/30 bg-black/90 p-5 text-white"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <div class="mb-3 flex items-center gap-2">
+        <span class="text-lg">⚠</span>
+        <span class="text-xs font-semibold uppercase tracking-[0.2em] text-red-400/80">Epilepsie-Schutz deaktivieren?</span>
+      </div>
+      <div class="mb-4 space-y-2 text-xs leading-relaxed text-white/70">
+        <p>Der Flimmerwächter analysiert laufend die Bildhelligkeit (angelehnt an die Medien-Norm <span class="text-white/90">ITU-R BT.1702 / Harding</span>) und dämpft blitzartige Hell-Dunkel-Wechsel, die photosensitive Epilepsie auslösen können.</p>
+        <p><span class="text-red-300/90">Er kann Anfälle nicht garantiert verhindern</span> — dies ist keine medizinische Zusicherung. Deaktivieren entfernt diesen Schutz vollständig; bei Publikum oder auf Festivals nicht empfohlen.</p>
+        <p class="text-white/50">Hinweis: Auf älteren oder leistungsschwachen Geräten kann der Wächter Bildrate kosten — deshalb lässt er sich abschalten.</p>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button
+          class="rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15 transition-colors cursor-pointer"
+          onclick={() => { flickerGuardConfirmVisible = false; }}
+        >Abbrechen</button>
+        <button
+          class="rounded-md border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/25 transition-colors cursor-pointer"
+          onclick={() => { flickerGuard.enabled = false; saveFlickerGuard(); flickerGuardConfirmVisible = false; }}
+        >Schutz deaktivieren</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- ─── Options modal ────────────────────────────────────────────────────── -->
 {#if optionsVisible}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -1807,6 +1849,40 @@
           class="cursor-pointer rounded px-2 py-0.5 text-xs text-white/50 hover:text-white/80 transition-colors"
           onclick={() => { optionsVisible = false; }}
         >✕</button>
+      </div>
+
+      <!-- Safety section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Sicherheit</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70">Epilepsie-Schutz (Flimmerwächter)</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {flickerGuard.enabled ? 'bg-white/60' : 'bg-white/20'}"
+            onclick={() => {
+              if (flickerGuard.enabled) {
+                flickerGuardConfirmVisible = true;   // disabling requires confirmation
+              } else {
+                flickerGuard.enabled = true;
+                saveFlickerGuard();
+              }
+            }}
+            role="switch"
+            aria-checked={flickerGuard.enabled}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {flickerGuard.enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="mt-1.5 text-[11px] leading-snug {flickerGuard.enabled ? 'text-white/40' : 'text-red-400/70'}">
+          {flickerGuard.enabled
+            ? 'Dämpft blitzartige Hell-Dunkel-Wechsel in Echtzeit (angelehnt an ITU-R BT.1702 / Harding).'
+            : '⚠ Schutz deaktiviert — es ist kein Flimmerschutz aktiv.'}
+        </div>
       </div>
 
       <!-- Demo section -->
