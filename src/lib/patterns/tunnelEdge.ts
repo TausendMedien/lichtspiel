@@ -6,7 +6,7 @@ let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
 
-let speed      = 0.4;
+let speed      = 4.0;
 let rotSpeed   = 0.06;
 let ringCount  = 8;
 let edges      = 5;
@@ -123,7 +123,7 @@ export const tunnelEdge: Pattern = {
   motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
-    { label: "Speed",        type: "range", min: -30,   max: 30,   step: 0.5,  default: 0.4,  get: () => speed,        set: (v) => { speed = v; } },
+    { label: "Speed",        type: "range", min: -30,   max: 30,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
     { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, get: () => rotSpeed,     set: (v) => { rotSpeed = v; } },
     { label: "Ring Count",   type: "range", min: 2,     max: 20,   step: 1,    default: 8,    get: () => ringCount,    set: (v) => { ringCount = v; } },
     { label: "Edges",        type: "range", min: 3,     max: 12,   step: 1,    default: 5,    get: () => edges,        set: (v) => { edges = v; } },
