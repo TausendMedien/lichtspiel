@@ -222,7 +222,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   const FLASH_DELTA = 0.10;                  // min luminance swing to count a transition
   const DECAY_TAU = 1.0;                     // s — memory of the transition-rate estimate
   const CELL_FLASH_TRANS = 6;               // transitions/s (= 3 flash pairs/s) → cell "flashing"
-  const AREA_LOW = 0.20, AREA_HIGH = 0.50;   // engage from 20% area, full at 50% (BT.1702 ~25%)
+  const AREA_LOW = 0.10, AREA_HIGH = 0.30;   // engage from 10% area, full damping at 30%
 
   function processGuardSample(now: number) {
     const dtS = lastSampleT ? Math.min(0.5, (now - lastSampleT) / 1000) : 0;
@@ -376,7 +376,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       // ── Guarded path: blend with previous frame, blit to canvas, analyse ──────
       // Drive blendK from the detected flashing area (set in processGuardSample):
       // ease down fast when flashing, recover slowly.
-      const targetK = 1.0 - 0.65 * guardSeverity;       // 1.0 → 0.35
+      const targetK = 1.0 - 0.82 * guardSeverity;       // 1.0 → 0.18 (strong damping when fully engaged)
       const rate = targetK < blendK ? 12 : 2;           // fast attack, slow release
       blendK += (targetK - blendK) * (1 - Math.exp(-dt * rate));
       guardReadout.blendK = Math.round(blendK * 100) / 100;
