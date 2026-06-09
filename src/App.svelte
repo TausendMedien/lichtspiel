@@ -205,6 +205,10 @@
   let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:03') : '00:03');
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Start straight into Demo Mode when the app is first opened. Default OFF — opt-in for kiosks.
+  const DEMO_AUTOSTART_KEY = 'pp:demo-autostart';
+  let demoAutoStart = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_AUTOSTART_KEY) === 'true' : false);
+
   // Screenshot / recording toggles
   const SCREENSHOTS_ENABLED_KEY = 'pp:screenshots';
   const RECORDINGS_ENABLED_KEY  = 'pp:recordings';
@@ -1279,7 +1283,23 @@
     handle = createRenderer(canvas, patterns[0]);
     handle.setFlickerGuard(flickerGuard.enabled);
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
-    if (demo.demoActive) startDemo();
+    // No saved demo config yet → this is the very first launch.
+    const firstRun = localStorage.getItem('lichtspiel-demo') === null;
+    if (demo.demoActive) {
+      startDemo();
+    } else if (demoAutoStart) {
+      // Boot straight into the demo. On first launch fall back to a safe kiosk default:
+      // Balanced 2 + favorites only, with all sensors (motion / pose / audio) off.
+      if (firstRun) {
+        demoStartBehavior = 'slot2';
+        demoFavoritesOnly = true;
+        cameraState.motionEnabled = false;
+        cameraState.enabled = false;
+        audioState.enabled = false;
+        saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+      }
+      startDemo();
+    }
 
     const gpController = createGamepadController(
       handleGamepadAction,
@@ -1878,6 +1898,26 @@
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-3">
+          <!-- Start in Demo Mode on launch -->
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-white/70">Start in Demo Mode on launch</span>
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+              <div
+                class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoAutoStart ? 'bg-white/60' : 'bg-white/20'}"
+                onclick={() => {
+                  demoAutoStart = !demoAutoStart;
+                  localStorage.setItem(DEMO_AUTOSTART_KEY, String(demoAutoStart));
+                }}
+                role="switch"
+                aria-checked={demoAutoStart}
+                tabindex="0"
+              >
+                <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {demoAutoStart ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+              </div>
+            </div>
+            <div class="mt-1 text-[10px] leading-snug text-white/30">Boots straight into the demo — for kiosks/installations.</div>
+          </div>
           <!-- Auto-restart toggle -->
           <div class="flex items-center justify-between">
             <span class="text-xs text-white/70">Auto-restart demo on idle</span>
@@ -3017,19 +3057,36 @@
                   {:else}
                     <!-- Motion/pose patterns: global motion camera picker -->
                     {#if getVisibleDevices().length > 0}
-                      <select
-                        value={getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId)}
-                        onchange={(e) => {
-                          const i = parseInt((e.target as HTMLSelectElement).value);
-                          cameraState.deviceId = getVisibleDevices()[i]?.deviceId ?? '';
-                          saveCameraDevice();
-                        }}
-                        class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                      >
-                        {#each getVisibleDevices() as d, i}
-                          <option value={i}>{d.label}</option>
-                        {/each}
-                      </select>
+                      <div class="flex items-center gap-2">
+                        <select
+                          value={getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId)}
+                          onchange={(e) => {
+                            const i = parseInt((e.target as HTMLSelectElement).value);
+                            cameraState.deviceId = getVisibleDevices()[i]?.deviceId ?? '';
+                            saveCameraDevice();
+                          }}
+                          class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                        >
+                          {#each getVisibleDevices() as d, i}
+                            <option value={i}>{d.label}</option>
+                          {/each}
+                        </select>
+                        <button onclick={() => detectCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Detect cameras">↺</button>
+                        <button onclick={() => runCameraTest()} disabled={cameraTesting} class="shrink-0 rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/50 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer disabled:opacity-40" title="Open each pattern's camera and show which lens it resolves to">{cameraTesting ? '…' : 'Test'}</button>
+                      </div>
+                      {#if cameraProbes.length > 0}
+                        <div class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+                          <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
+                            {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
+                          </div>
+                          {#each cameraProbes as p}
+                            <div class="flex justify-between gap-2 text-white/60">
+                              <span class="shrink-0">{p.name}</span>
+                              <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
                     {:else}
                       <button
                         onclick={() => enumerateCameras()}
