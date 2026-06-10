@@ -68,6 +68,8 @@ export const cameraState = $state({
   dirY:           0,
   /** Sudden burst pulse 0–100. Spikes on quick gestures, decays fast. */
   burst:          0,
+  /** Raw per-pixel motion buffer (160×90). Populated by motionCameraWrapper each frame. */
+  heatMap:        new Float32Array(160 * 90),
   patternMotionEnabled: loadPatternMotionEnabled() as Record<string, boolean>,
 });
 

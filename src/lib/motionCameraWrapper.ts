@@ -173,6 +173,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     cameraState.dirX  = 0;
     cameraState.dirY  = 0;
     cameraState.burst = 0;
+    cameraState.heatMap.fill(0);
     overlay?.remove();
     overlay = null;
     for (let i = 0; i < boostTargets.length; i++) {
@@ -232,6 +233,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         const diff = motionCamera.tick();
         if (diff) {
           rawMotion = Math.min(detector.update(diff), 1.0);
+          cameraState.heatMap.set(diff);
           smoothedMotion = rawMotion > smoothedMotion
             ? 0.75 * smoothedMotion + 0.25 * rawMotion   // fast rise
             : 0.55 * smoothedMotion + 0.45 * rawMotion;  // fast fall
