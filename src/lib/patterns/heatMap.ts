@@ -91,6 +91,7 @@ function fillPlane(width: number, height: number) {
 export const heatMap: Pattern = {
   id: "heatMap",
   name: "Heat Map",
+  requiresCamera: true,
   controls: [
     {
       label: "Gain",

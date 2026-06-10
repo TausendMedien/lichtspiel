@@ -426,15 +426,15 @@
         : true;
       interactiveOn = _perPatternInteractiveOn.has(pat.id)
         ? _perPatternInteractiveOn.get(pat.id)!
-        : !!(pat.usesCameraBlend || pat.usesPose || pat.audioReactive);  // camera/pose/audio patterns default to interactive ON
+        : !!(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera);  // camera/pose/audio patterns default to interactive ON
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
-        : !(pat.usesCameraBlend || pat.usesPose || pat.audioReactive);   // camera/pose/audio patterns default to interactive expanded
+        : !(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera);   // camera/pose/audio patterns default to interactive expanded
       // Enforce camera/audio/pose based on the incoming pattern's interactive state.
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
         cameraState.motionEnabled = false;
-        cameraState.enabled = false;
+        if (!pat.requiresCamera) cameraState.enabled = false;
         audioState.enabled = false;
         // Use untrack so poseActive changes don't re-trigger this effect.
         if (untrack(() => poseActive)) { stopPoseTracking(); poseActive = false; poseError = null; }
@@ -2993,7 +2993,8 @@
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
                 if (!interactiveOn) {
                   cameraState.motionEnabled = false;
-                  cameraState.enabled = false;
+                  // Keep camera on for patterns where it is the content (e.g. Heat Map)
+                  if (!patterns[index].requiresCamera) cameraState.enabled = false;
                   audioState.enabled = false;
                   if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
                   // Turn off per-pattern camera toggles (e.g. Light Trail / Light Paint)

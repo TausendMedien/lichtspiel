@@ -36,6 +36,9 @@ export interface Pattern {
   audioReactive?: boolean;
   /** True if this pattern blends a camera feed into its visuals (ASCII Swirls). */
   usesCameraBlend?: boolean;
+  /** True if the camera is the pattern's primary content (e.g. Heat Map). Keeps the
+   *  camera running even when the Interactive section is toggled off. */
+  requiresCamera?: boolean;
   /** Default saturation and brightness for the per-pattern colour state. */
   colorDefaults?: { saturation?: number; brightness?: number };
   /** Section labels that should be collapsed by default (no saved state). */
