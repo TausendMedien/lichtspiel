@@ -98,7 +98,13 @@ export const heatMap: Pattern = {
     },
   ],
 
+  activate() {
+    // Heat Map IS the camera — auto-enable so the user doesn't have to turn Motion on manually.
+    cameraState.enabled = true;
+  },
+
   init(ctx: PatternContext) {
+    cameraState.enabled = true;
     camera = ctx.camera;
     camera.position.set(0, 0, 5);
     camera.lookAt(0, 0, 0);

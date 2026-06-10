@@ -205,8 +205,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     },
 
     activate() {
-      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
+      // Call pattern first — it may set cameraState.enabled (e.g. Heat Map auto-enables).
       pattern.activate?.();
+      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
     },
 
     update(dt: number, elapsed: number) {
