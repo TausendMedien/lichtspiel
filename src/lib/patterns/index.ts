@@ -18,6 +18,7 @@ import { crystalGem } from "./crystalGem";
 import { asciiSwirls } from "./asciiSwirls";
 import { particlesPalette } from "./particlesPalette";
 import { tunnelEdgePalette } from "./tunnelEdgePalette";
+import { heatMap } from "./heatMap";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
 import { wrapWithPersist } from "../persist";
@@ -82,6 +83,7 @@ const rawPatterns: Pattern[] = [
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,
+  heatMap,
 ];
 
 export const patterns: Pattern[] = rawPatterns
