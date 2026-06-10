@@ -230,16 +230,21 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       prevPatternEnabled = nowPatternEnabled;
 
       // ── Motion detection ─────────────────────────────────────────────────
-      if (motionCamera && cameraState.motionEnabled) {
+      if (motionCamera) {
         const diff = motionCamera.tick();
         if (diff) {
-          rawMotion = Math.min(detector.update(diff), 1.0);
+          // Always publish the raw diff — heatMap pattern reads it regardless of
+          // whether motion analytics (control boosting) are enabled.
           cameraState.heatMap.set(diff);
-          smoothedMotion = rawMotion > smoothedMotion
-            ? 0.75 * smoothedMotion + 0.25 * rawMotion   // fast rise
-            : 0.55 * smoothedMotion + 0.45 * rawMotion;  // fast fall
+          if (cameraState.motionEnabled) {
+            rawMotion = Math.min(detector.update(diff), 1.0);
+            smoothedMotion = rawMotion > smoothedMotion
+              ? 0.75 * smoothedMotion + 0.25 * rawMotion   // fast rise
+              : 0.55 * smoothedMotion + 0.45 * rawMotion;  // fast fall
+          }
         }
-      } else if (!cameraState.motionEnabled) {
+      }
+      if (!cameraState.motionEnabled) {
         smoothedMotion = Math.max(0, smoothedMotion * 0.95);
         rawMotion      = 0;
       }
