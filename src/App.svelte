@@ -2569,8 +2569,9 @@
         >★ Favorites</button>
       </div>
 
-      <!-- Pattern list — 2-col on sm+, 1-col on mobile -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-[60vh] overflow-y-auto overscroll-contain pr-1">
+      <!-- Pattern list — 2-col on sm+, 1-col on mobile.
+           No inner scroll: the whole modal scrolls as one area via the backdrop. -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-0.5 pr-1">
         {#each DEMO_GROUPS as group}
           {@const visiblePatterns = patterns.filter(p =>
             (group.ids as readonly string[]).includes(p.id) &&
