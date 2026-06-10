@@ -434,7 +434,7 @@
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
         cameraState.motionEnabled = false;
-        if (!pat.requiresCamera) cameraState.enabled = false;
+        cameraState.enabled = false;
         audioState.enabled = false;
         // Use untrack so poseActive changes don't re-trigger this effect.
         if (untrack(() => poseActive)) { stopPoseTracking(); poseActive = false; poseError = null; }
@@ -2993,8 +2993,7 @@
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
                 if (!interactiveOn) {
                   cameraState.motionEnabled = false;
-                  // Keep camera on for patterns where it is the content (e.g. Heat Map)
-                  if (!patterns[index].requiresCamera) cameraState.enabled = false;
+                  cameraState.enabled = false;
                   audioState.enabled = false;
                   if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
                   // Turn off per-pattern camera toggles (e.g. Light Trail / Light Paint)
