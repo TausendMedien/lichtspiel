@@ -12,7 +12,8 @@ let material: THREE.ShaderMaterial | null = null;
 let texture: THREE.DataTexture | null = null;
 let texData: Float32Array | null = null;
 
-let gainParam = 12;
+let gainParam      = 12;
+let thresholdParam = 0.008;
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -27,6 +28,7 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   uniform sampler2D uHeatMap;
   uniform float     uGain;
+  uniform float     uThreshold;
   uniform vec3      uColors[6];
   uniform float     uColorCount;
   varying vec2      vUv;
@@ -51,7 +53,8 @@ const fragmentShader = /* glsl */ `
   void main() {
     // Flip Y: diff buffer row 0 = top of frame, Three.js UV (0,0) = bottom-left
     float heat = texture2D(uHeatMap, vec2(vUv.x, 1.0 - vUv.y)).r;
-    float t = clamp(heat * uGain, 0.0, 1.0);
+    // Subtract noise floor before amplifying — keeps static dark areas black
+    float t = clamp((heat - uThreshold) * uGain, 0.0, 1.0);
     gl_FragColor = vec4(heatRamp(t), 1.0);
   }
 `;
@@ -96,6 +99,13 @@ export const heatMap: Pattern = {
       get: () => gainParam,
       set: (v: number) => { gainParam = v; },
     },
+    {
+      label: "Threshold",
+      type: "range" as const,
+      min: 0, max: 0.05, step: 0.001, default: 0.008,
+      get: () => thresholdParam,
+      set: (v: number) => { thresholdParam = v; },
+    },
   ],
 
   activate() {
@@ -121,6 +131,7 @@ export const heatMap: Pattern = {
       uniforms: {
         uHeatMap:    { value: texture },
         uGain:       { value: gainParam },
+        uThreshold:  { value: thresholdParam },
         uColors:     { value: colorVecs },
         uColorCount: { value: 3.0 },
       },
@@ -139,7 +150,8 @@ export const heatMap: Pattern = {
     texData.set(cameraState.heatMap);
     texture.needsUpdate = true;
 
-    material.uniforms.uGain.value = gainParam;
+    material.uniforms.uGain.value      = gainParam;
+    material.uniforms.uThreshold.value = thresholdParam;
     const colors = material.uniforms.uColors.value as THREE.Vector3[];
     material.uniforms.uColorCount.value = loadColorStops(colors);
   },
