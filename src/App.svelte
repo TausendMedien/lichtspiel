@@ -3054,6 +3054,24 @@
                           </div>
                         {/if}
                       {/each}
+                      <!-- Detect + Test, matching the motion/pose picker below -->
+                      <div class="flex items-center justify-end gap-2">
+                        <button onclick={() => detectCameras()} class="shrink-0 text-[11px] text-white/30 hover:text-white/60 transition-colors cursor-pointer" title="Detect cameras">↺</button>
+                        <button onclick={() => runCameraTest()} disabled={cameraTesting} class="shrink-0 rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/50 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer disabled:opacity-40" title="Open each pattern's camera and show which lens it resolves to">{cameraTesting ? '…' : 'Test'}</button>
+                      </div>
+                      {#if cameraProbes.length > 0}
+                        <div class="rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+                          <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
+                            {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
+                          </div>
+                          {#each cameraProbes as p}
+                            <div class="flex justify-between gap-2 text-white/60">
+                              <span class="shrink-0">{p.name}</span>
+                              <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
                     </div>
                   {:else}
                     <!-- Motion/pose patterns: global motion camera picker -->
