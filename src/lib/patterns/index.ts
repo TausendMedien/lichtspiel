@@ -19,6 +19,7 @@ import { asciiSwirls } from "./asciiSwirls";
 import { particlesPalette } from "./particlesPalette";
 import { tunnelEdgePalette } from "./tunnelEdgePalette";
 import { heatMap } from "./heatMap";
+import { particlesHeat } from "./particlesHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
 import { wrapWithPersist } from "../persist";
@@ -84,6 +85,7 @@ const rawPatterns: Pattern[] = [
   particlesPalette,
   tunnelEdgePalette,
   heatMap,
+  particlesHeat,
 ];
 
 export const patterns: Pattern[] = rawPatterns
