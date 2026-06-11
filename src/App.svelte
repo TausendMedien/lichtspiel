@@ -2989,7 +2989,14 @@
               class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {interactiveOn ? 'bg-white/60' : 'bg-white/20'}"
               onclick={() => {
                 interactiveOn = !interactiveOn;
-                if (interactiveOn) { interactiveCollapsed = false; _perPatternInteractiveCollapsed.set(patterns[index].id, false); }
+                if (interactiveOn) {
+                  interactiveCollapsed = false;
+                  _perPatternInteractiveCollapsed.set(patterns[index].id, false);
+                  // Restart camera for patterns where it is the primary content
+                  if (patterns[index].requiresCamera && !privacyMode.active) {
+                    cameraState.enabled = true;
+                  }
+                }
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
                 if (!interactiveOn) {
                   cameraState.motionEnabled = false;
