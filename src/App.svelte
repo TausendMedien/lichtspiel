@@ -36,7 +36,7 @@
   ]);
 
   // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
-  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette', 'heatMap']);
+  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette', 'heatMap', 'particlesHeat']);
   const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
   let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
 
@@ -261,7 +261,7 @@
     { label: 'Generative',        ids: ['hyperMix','particlesBody','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
-    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette','heatMap'] },
+    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette','heatMap','particlesHeat'] },
   ];
   const DEFAULT_FAVORITES = [
     'hyperMix', 'particlesBody', 'particleLines', 'parallelLinesWave',
