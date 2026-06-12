@@ -147,7 +147,9 @@ void main() {
     float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
     float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
     float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
-    vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain;
+    // Subtract noise floor so sensor noise in a still scene causes no displacement.
+    float hCenter = max(0.0, texture2D(uHeatMap, uv).r - 0.008);
+    vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain * step(0.001, hCenter);
     float depth = max(-mv0.z, 0.1);
     float halfH = depth * tan(radians(30.0));
     pos.x += grad.x * halfH * uHeatStrength;
