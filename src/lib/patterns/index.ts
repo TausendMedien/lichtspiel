@@ -20,6 +20,7 @@ import { particlesPalette } from "./particlesPalette";
 import { tunnelEdgePalette } from "./tunnelEdgePalette";
 import { heatMap } from "./heatMap";
 import { particlesHeat } from "./particlesHeat";
+import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
 import { wrapWithPersist } from "../persist";
@@ -86,6 +87,7 @@ const rawPatterns: Pattern[] = [
   tunnelEdgePalette,
   heatMap,
   particlesHeat,
+  hyperMixHeat,
 ];
 
 export const patterns: Pattern[] = rawPatterns
