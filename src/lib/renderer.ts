@@ -287,6 +287,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   }
 
   current.init(ctx);
+  current.activate?.();
 
   const ro = new ResizeObserver((entries) => {
     const rect = entries[0].contentRect;
