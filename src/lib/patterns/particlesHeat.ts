@@ -9,25 +9,29 @@ const H = 90;
 let particleCount = 30000;
 let pointSize     = 3.0;
 let flowSpeed     = 0.2;
-let heatStrength  = 0.3;
-let heatGain      = 5.0;
-let heatReach     = 0.8;  // Gaussian radius in screen UV space (0.8 ≈ 80% of screen half-width)
+let heatStrength  = 0.4;
+let heatGain      = 8.0;
+let mirrorX       = false;
 
 const MAX_PARTICLES = 50000;
 
-let points: THREE.Points | null = null;
+// Pre-allocated attractor pool (same pattern as particlesBody).
+const MAX_ATTRACTORS = 16;
+const attractors = Array.from({ length: MAX_ATTRACTORS }, () => new THREE.Vector3());
+
+let points:   THREE.Points | null = null;
 let geometry: THREE.BufferGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
-let accTime = 0;
+let accTime      = 0;
 let currentAspect = 1;
+let scaleY        = 8.0;  // world-space height of the view frustum
 
 const vertexShader = /* glsl */ `
   uniform float uTime;
   uniform float uSize;
-  uniform vec2  uHeatCenter;   // screen UV of weighted heat centroid
-  uniform float uHeatActive;   // 1.0 when motion detected, 0.0 otherwise
-  uniform float uHeatStrength;
-  uniform float uHeatReach;    // Gaussian sigma in screen UV space
+  uniform vec3  uAttractors[16];
+  uniform int   uAttractorCount;
+  uniform float uAttractStrength;
   attribute float aSeed;
   varying float   vSeed;
 
@@ -46,24 +50,13 @@ const vertexShader = /* glsl */ `
     float cs = cos(ang), sn = sin(ang);
     p.xz = mat2(cs, -sn, sn, cs) * p.xz;
 
-    // Long-range heat attraction: pull particles toward the heat centroid.
-    // Uses a Gaussian falloff so distant particles still feel a gentle pull.
-    if (uHeatActive > 0.5) {
-      vec4 mv0   = modelViewMatrix * vec4(p, 1.0);
-      vec4 clip0 = projectionMatrix * mv0;
-      if (clip0.w > 0.0) {
-        vec2 pUV     = clip0.xy / clip0.w * 0.5 + 0.5;
-        vec2 toHeat  = uHeatCenter - pUV;
-        float dist   = length(toHeat);
-        if (dist > 0.001) {
-          // Gaussian: full strength at centroid, falls off as e^(-dist²/reach²)
-          float falloff = exp(-dist * dist / (uHeatReach * uHeatReach));
-          float depth   = max(-mv0.z, 0.1);
-          float halfH   = depth * tan(radians(30.0));
-          p.x += (toHeat.x / dist) * halfH * uHeatStrength * falloff;
-          p.y += (toHeat.y / dist) * halfH * uHeatStrength * falloff;
-        }
-      }
+    // Pull toward each active heat attractor (world-space, same formula as Particle Body).
+    for (int i = 0; i < 16; i++) {
+      if (i >= uAttractorCount) break;
+      vec3 diff = uAttractors[i] - p;
+      float dist = length(diff) + 0.001;
+      float pull = uAttractStrength / (0.3 + dist * dist * 0.4);
+      p += normalize(diff) * pull;
     }
 
     vec4 mv      = modelViewMatrix * vec4(p, 1.0);
@@ -124,50 +117,73 @@ function buildGeometry(): THREE.BufferGeometry {
   return geo;
 }
 
-// Compute weighted centroid of the heat map on the CPU.
-// Returns [cx, cy] in screen UV space (0–1, Y-flipped), or null if no heat.
-function computeHeatCentroid(): [number, number] | null {
+// Divide the heat map into a 4×4 grid.
+// For each cell, compute a weighted centroid and convert to world space.
+// Returns how many attractors were populated.
+function buildAttractors(): number {
   const hd = cameraState.heatMap;
-  let wx = 0, wy = 0, w = 0;
+  const GRID_W = 4, GRID_H = 4;
+  const RW = W / GRID_W;
+  const RH = H / GRID_H;
+  const sx = scaleY * currentAspect;
   const threshold = 0.008;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const v = Math.max(0, hd[y * W + x] - threshold) * heatGain;
-      if (v > 0.01) { wx += x * v; wy += y * v; w += v; }
+  let count = 0;
+  for (let gy = 0; gy < GRID_H; gy++) {
+    for (let gx = 0; gx < GRID_W; gx++) {
+      let wx = 0, wy = 0, w = 0;
+      const x0 = Math.floor(gx * RW);
+      const x1 = Math.floor((gx + 1) * RW);
+      const y0 = Math.floor(gy * RH);
+      const y1 = Math.floor((gy + 1) * RH);
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const v = Math.max(0, hd[y * W + x] - threshold) * heatGain;
+          if (v > 0.01) { wx += x * v; wy += y * v; w += v; }
+        }
+      }
+      if (w > 0.1 && count < MAX_ATTRACTORS) {
+        const cx = wx / w / W;       // 0–1, left=0 right=1
+        const cy = 1 - wy / w / H;  // 0–1, Y-flipped: top=1, bottom=0
+        // Convert to world space.  Mirror X when front-facing camera is in use.
+        const worldX = (mirrorX ? (0.5 - cx) : (cx - 0.5)) * sx;
+        const worldY = (cy - 0.5) * scaleY;
+        attractors[count].set(worldX, worldY, 0);
+        count++;
+      }
     }
   }
-  if (w < 0.1) return null;
-  return [wx / w / W, 1 - wy / w / H];  // Y-flip: diff row 0 = top of frame
+  return count;
 }
 
 export const particlesHeat: Pattern = {
   id: "particlesHeat",
   name: "Particle Field - Heat",
   controls: [
-    { label: "Point Size",      type: "range", min: 1.0,  max: 6.0,   step: 0.1,  default: 3,     get: () => pointSize,    set: v => { pointSize = v; } },
-    { label: "Flow Speed",      type: "range", min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,    set: v => { flowSpeed = v; } },
-    { label: "Heat Strength",   type: "range", min: 0.0,  max: 2.0,   step: 0.05, default: 0.3,   get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Heat Gain",       type: "range", min: 1.0,  max: 30.0,  step: 0.5,  default: 5,     get: () => heatGain,     set: v => { heatGain = v; } },
-    { label: "Attraction Reach",type: "range", min: 0.1,  max: 2.0,   step: 0.05, default: 0.8,   get: () => heatReach,    set: v => { heatReach = v; } },
-    { label: "Point Count",     type: "range", min: 5000, max: 50000, step: 1000, default: 30000,  get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
+    { label: "Point Size",    type: "range", min: 1.0,  max: 6.0,   step: 0.1,   default: 3,      get: () => pointSize,    set: v => { pointSize = v; } },
+    { label: "Flow Speed",    type: "range", min: 0.0,  max: 3.0,   step: 0.1,   default: 0.2,    get: () => flowSpeed,    set: v => { flowSpeed = v; } },
+    { label: "Heat Strength", type: "range", min: 0.0,  max: 2.0,   step: 0.05,  default: 0.4,    get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Heat Gain",     type: "range", min: 1.0,  max: 30.0,  step: 0.5,   default: 8,      get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Mirror X",      type: "toggle" as const,                                              get: () => mirrorX,      set: v => { mirrorX = v; } },
+    { label: "Point Count",   type: "range", min: 5000, max: 50000, step: 1000,  default: 30000,   get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
   ],
 
   init(ctx: PatternContext) {
     ctx.camera.position.set(0, 0, 4);
     ctx.camera.lookAt(0, 0, 0);
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
+    // Derive world-space view height from camera FOV and distance.
+    scaleY = 2 * Math.tan((ctx.camera.fov * Math.PI) / 360) * 4;
 
     geometry = buildGeometry();
 
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:         { value: 0 },
-        uSize:         { value: pointSize },
-        uColorRange2:  { value: colorC2.colorsV2 },
-        uHeatCenter:   { value: new THREE.Vector2(0.5, 0.5) },
-        uHeatActive:   { value: 0.0 },
-        uHeatStrength: { value: heatStrength },
-        uHeatReach:    { value: heatReach },
+        uTime:           { value: 0 },
+        uSize:           { value: pointSize },
+        uColorRange2:    { value: colorC2.colorsV2 },
+        uAttractors:     { value: attractors },
+        uAttractorCount: { value: 0 },
+        uAttractStrength:{ value: heatStrength },
       },
       vertexShader,
       fragmentShader,
@@ -184,19 +200,12 @@ export const particlesHeat: Pattern = {
     if (!material) return;
     accTime += dt * flowSpeed;
 
-    const centroid = computeHeatCentroid();
-    if (centroid) {
-      material.uniforms.uHeatCenter.value.set(centroid[0], centroid[1]);
-      material.uniforms.uHeatActive.value = 1.0;
-    } else {
-      material.uniforms.uHeatActive.value = 0.0;
-    }
-
-    material.uniforms.uTime.value         = accTime;
-    material.uniforms.uSize.value         = pointSize;
-    material.uniforms.uColorRange2.value  = colorC2.colorsV2;
-    material.uniforms.uHeatStrength.value = heatStrength;
-    material.uniforms.uHeatReach.value    = heatReach;
+    const count = buildAttractors();
+    material.uniforms.uAttractorCount.value  = count;
+    material.uniforms.uAttractStrength.value = heatStrength;
+    material.uniforms.uTime.value            = accTime;
+    material.uniforms.uSize.value            = pointSize;
+    material.uniforms.uColorRange2.value     = colorC2.colorsV2;
   },
 
   resize(w: number, h: number) {
