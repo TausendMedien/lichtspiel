@@ -129,7 +129,7 @@ function buildGeometry(): THREE.BufferGeometry {
 
 export const particlesHeat: Pattern = {
   id: "particlesHeat",
-  name: "Hyper Field - Heat",
+  name: "Particle Field - Heat",
   controls: [
     { label: "Point Size",    type: "range", min: 1.0,  max: 6.0,   step: 0.1,  default: 3,     get: () => pointSize,    set: v => { pointSize = v; } },
     { label: "Flow Speed",    type: "range", min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,    set: v => { flowSpeed = v; } },
