@@ -2356,6 +2356,19 @@
           >Copy Defaults</button>
         </div>
 
+        <div class="mt-2 flex items-center justify-between">
+          <span class="text-xs text-white/70">Factory reset</span>
+          <button
+            onclick={() => {
+              if (confirm('Reset ALL settings to factory defaults? This clears every saved value and reloads the app.')) {
+                localStorage.clear();
+                location.reload();
+              }
+            }}
+            class="rounded px-2 py-0.5 text-[10px] text-red-400/70 border border-red-500/20 hover:border-red-400/50 hover:text-red-300 transition-colors cursor-pointer"
+          >Reset & Reload</button>
+        </div>
+
         <!-- Epilepsy guard (photosensitivity flicker damping) -->
         <div class="mt-3 flex items-center justify-between">
           <span class="text-xs text-white/70">Epilepsy guard</span>
