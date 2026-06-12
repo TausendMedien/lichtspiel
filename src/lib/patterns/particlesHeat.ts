@@ -11,6 +11,7 @@ let pointSize     = 3.0;
 let flowSpeed     = 0.2;
 let heatStrength  = 0.3;
 let heatGain      = 5.0;
+let heatFalloff   = 1.5;
 
 const MAX_PARTICLES = 50000;
 
@@ -28,6 +29,7 @@ const vertexShader = /* glsl */ `
   uniform sampler2D uHeatMap;
   uniform float     uHeatStrength;
   uniform float     uHeatGain;
+  uniform float     uHeatFalloff;
   attribute float   aSeed;
   varying float     vSeed;
 
@@ -62,11 +64,16 @@ const vertexShader = /* glsl */ `
       float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
       vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain;
 
+      // Proximity falloff: weight by center heat value so particles at the edge
+      // of a motion zone are nudged gently, while those inside are pulled hard.
+      float hCenter = texture2D(uHeatMap, uv).r;
+      float pull    = pow(clamp(hCenter * uHeatGain, 0.0, 1.0), uHeatFalloff);
+
       // Scale by view-depth so displacement feels consistent regardless of z.
       float depth = max(-mv0.z, 0.1);
       float halfH = depth * tan(radians(30.0));
-      p.x += grad.x * halfH * uHeatStrength;
-      p.y += grad.y * halfH * uHeatStrength;
+      p.x += grad.x * halfH * uHeatStrength * pull;
+      p.y += grad.y * halfH * uHeatStrength * pull;
     }
 
     vec4 mv      = modelViewMatrix * vec4(p, 1.0);
@@ -135,6 +142,7 @@ export const particlesHeat: Pattern = {
     { label: "Flow Speed",    type: "range", min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,    set: v => { flowSpeed = v; } },
     { label: "Heat Strength", type: "range", min: 0.0,  max: 2.0,   step: 0.05, default: 0.3,   get: () => heatStrength, set: v => { heatStrength = v; } },
     { label: "Heat Gain",     type: "range", min: 1.0,  max: 30.0,  step: 0.5,  default: 5,     get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Heat Falloff",  type: "range", min: 0.5,  max: 4.0,   step: 0.1,  default: 1.5,   get: () => heatFalloff,  set: v => { heatFalloff = v; } },
     { label: "Point Count",   type: "range", min: 5000, max: 50000, step: 1000, default: 30000,  get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
   ],
 
@@ -159,6 +167,7 @@ export const particlesHeat: Pattern = {
         uHeatMap:      { value: heatTexture },
         uHeatStrength: { value: heatStrength },
         uHeatGain:     { value: heatGain },
+        uHeatFalloff:  { value: heatFalloff },
       },
       vertexShader,
       fragmentShader,
@@ -183,6 +192,7 @@ export const particlesHeat: Pattern = {
     material.uniforms.uColorRange2.value  = colorC2.colorsV2;
     material.uniforms.uHeatStrength.value = heatStrength;
     material.uniforms.uHeatGain.value     = heatGain;
+    material.uniforms.uHeatFalloff.value  = heatFalloff;
   },
 
   resize(w: number, h: number) {
