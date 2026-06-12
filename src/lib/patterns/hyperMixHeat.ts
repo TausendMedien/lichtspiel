@@ -3,6 +3,9 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
 
+const W = 160;
+const H = 90;
+
 const BASE_COUNT = 25000;
 const _c1 = new THREE.Color();
 const _c2 = new THREE.Color();
@@ -20,6 +23,44 @@ const params = {
   heatGain:     5.0,
 };
 
+let blurRadius = 15;
+let mirrorX    = false;
+
+function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)      { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)      { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
+}
+
+function updateHeatTexture() {
+  if (!smoothedRaw || !tmpBuf || !heatTexData || !heatTexture) return;
+  const raw = cameraState.heatMap;
+  for (let i = 0; i < W * H; i++) {
+    smoothedRaw[i] = smoothedRaw[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+  }
+  boxBlur(smoothedRaw, tmpBuf, heatTexData, blurRadius);
+  heatTexture.needsUpdate = true;
+}
+
 let qualityLow = false;
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
@@ -33,6 +74,7 @@ uniform float uPtSize;
 uniform sampler2D uHeatMap;
 uniform float     uHeatStrength;
 uniform float     uHeatGain;
+uniform float     uMirrorX;
 
 attribute float aSeed;
 attribute float aSide;
@@ -142,14 +184,13 @@ void main() {
   if (clip0.w > 0.0) {
     vec2 uv = clip0.xy / clip0.w * 0.5 + 0.5;
     uv.y    = 1.0 - uv.y;
+    if (uMirrorX > 0.5) uv.x = 1.0 - uv.x;
     vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
     float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
     float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
     float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
     float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
-    // Subtract noise floor so sensor noise in a still scene causes no displacement.
-    float hCenter = max(0.0, texture2D(uHeatMap, uv).r - 0.008);
-    vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain * step(0.001, hCenter);
+    vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain;
     float depth = max(-mv0.z, 0.1);
     float halfH = depth * tan(radians(30.0));
     pos.x += grad.x * halfH * uHeatStrength;
@@ -200,6 +241,8 @@ let cam:      THREE.PerspectiveCamera | null = null;
 let sceneRef: THREE.Scene | null = null;
 let heatTexture: THREE.DataTexture | null = null;
 let heatTexData: Float32Array | null = null;
+let smoothedRaw: Float32Array | null = null;
+let tmpBuf:      Float32Array | null = null;
 
 function effectiveCount() {
   return qualityLow ? Math.max(5000, Math.round(params.pointCount / 2)) : params.pointCount;
@@ -301,6 +344,14 @@ export const hyperMixHeat: Pattern = {
       get: () => params.heatGain,
       set: (v) => { params.heatGain = v; },
     },
+    {
+      label: "Blur Radius",
+      type: "range", min: 0, max: 30, step: 1,
+      default: 15,
+      get: () => blurRadius,
+      set: (v) => { blurRadius = v; },
+    },
+    { label: "Mirror X", type: "toggle" as const, get: () => mirrorX, set: (v) => { mirrorX = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -309,8 +360,10 @@ export const hyperMixHeat: Pattern = {
     cam.position.set(0, 0, 8);
     cam.lookAt(0, 0, 0);
 
-    heatTexData = new Float32Array(160 * 90);
-    heatTexture = new THREE.DataTexture(heatTexData, 160, 90, THREE.RedFormat, THREE.FloatType);
+    heatTexData = new Float32Array(W * H);
+    smoothedRaw = new Float32Array(W * H);
+    tmpBuf      = new Float32Array(W * H);
+    heatTexture = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
     heatTexture.minFilter = THREE.LinearFilter;
     heatTexture.magFilter = THREE.LinearFilter;
     heatTexture.needsUpdate = true;
@@ -330,6 +383,7 @@ export const hyperMixHeat: Pattern = {
         uHeatMap:      { value: heatTexture },
         uHeatStrength: { value: params.heatStrength },
         uHeatGain:     { value: params.heatGain },
+        uMirrorX:      { value: mirrorX ? 1.0 : 0.0 },
       },
       vertexShader,
       fragmentShader,
@@ -343,15 +397,15 @@ export const hyperMixHeat: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material || !heatTexture || !heatTexData) return;
+    if (!material) return;
     accTime += dt * params.speed;
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uCountScale.value = Math.min(1.0, BASE_COUNT / params.pointCount);
     material.uniforms.uHeatStrength.value = params.heatStrength;
     material.uniforms.uHeatGain.value     = params.heatGain;
+    material.uniforms.uMirrorX.value      = mirrorX ? 1.0 : 0.0;
 
-    heatTexData.set(cameraState.heatMap);
-    heatTexture.needsUpdate = true;
+    updateHeatTexture();
 
     _c1.set(colorC2.main);
     _c2.set(colorC2.contrast);
@@ -373,6 +427,8 @@ export const hyperMixHeat: Pattern = {
     material    = null;
     heatTexture = null;
     heatTexData = null;
+    smoothedRaw = null;
+    tmpBuf      = null;
     cam         = null;
     sceneRef    = null;
     accTime     = 0;
