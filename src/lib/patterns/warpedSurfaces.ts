@@ -122,6 +122,7 @@ export const warpedSurfaces: Pattern = {
   id: "warpedSurfaces",
   name: "Warped Surfaces",
   attribution: "Inspired by Anton Palsson (palmdrop) — surfaces",
+  motionControlLabels: ['Flow Speed'],
   controls: [
     { label: "Warp Iterations", type: "select", options: ["1", "2", "3", "4"],
       get: () => warpIterations - 1, set: (v) => { warpIterations = v + 1; } },
