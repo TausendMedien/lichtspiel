@@ -10,9 +10,9 @@ let particleCount = 30000;
 let pointSize     = 3.0;
 let flowSpeed     = 0.2;
 let heatStrength  = 0.5;
-let heatGain      = 10.0;
-let blurRadius    = 20;    // CPU blur radius: controls how far influence extends
-let mirrorX       = false;
+let heatGain      = 11.0;
+let blurRadius    = 4.0;
+let mirrorX       = true;
 
 const MAX_PARTICLES = 50000;
 
@@ -176,13 +176,14 @@ function buildGeometry(): THREE.BufferGeometry {
 export const particlesHeat: Pattern = {
   id: "particlesHeat",
   name: "Particle Field - Heat",
+  motionControlLabels: ['Point Size', 'Flow Speed'],
+  audioControlLabels:  ['Point Size', 'Flow Speed', 'Heat Strength'],
   controls: [
     { label: "Point Size",    type: "range",  min: 1.0,  max: 6.0,   step: 0.1,  default: 3,    get: () => pointSize,    set: v => { pointSize = v; } },
     { label: "Flow Speed",    type: "range",  min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,  get: () => flowSpeed,    set: v => { flowSpeed = v; } },
-    { label: "Heat Strength", type: "range",  min: 0.0,  max: 2.0,   step: 0.05, default: 0.5,  get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Heat Gain",     type: "range",  min: 1.0,  max: 30.0,  step: 0.5,  default: 10,   get: () => heatGain,     set: v => { heatGain = v; } },
-    { label: "Blur Radius",   type: "range",  min: 0,    max: 50,    step: 1,    default: 20,   get: () => blurRadius,   set: v => { blurRadius = v; } },
-    { label: "Mirror X",      type: "toggle" as const,                                            get: () => mirrorX,      set: v => { mirrorX = v; } },
+    { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,  get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,   get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,    get: () => blurRadius,   set: v => { blurRadius = v; } },
     { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
   ],
 

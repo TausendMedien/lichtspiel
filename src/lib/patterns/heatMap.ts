@@ -52,7 +52,8 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     // Flip Y: diff buffer row 0 = top of frame, Three.js UV (0,0) = bottom-left
-    float heat = texture2D(uHeatMap, vec2(vUv.x, 1.0 - vUv.y)).r;
+    // Flip X: front-facing camera is horizontally mirrored
+    float heat = texture2D(uHeatMap, vec2(1.0 - vUv.x, 1.0 - vUv.y)).r;
     // Subtract noise floor before amplifying — keeps static dark areas black
     float t = clamp((heat - uThreshold) * uGain, 0.0, 1.0);
     gl_FragColor = vec4(heatRamp(t), 1.0);
