@@ -1062,6 +1062,7 @@
     const snap: Snapshot = {};
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
+      if ((ctrl as any).interactive) continue; // never save camera/mic device in a preset
       snap[ctrl.label] = ctrl.get();
     }
     // Per-pattern colour state
@@ -1179,7 +1180,7 @@
   // ── URL sharing ───────────────────────────────────────────────────────────
 
   function copyShare() {
-    encodeShare(patterns[index]);
+    encodeShare(patterns[index], { cam: cameraState.enabled, audio: audioState.enabled });
     navigator.clipboard?.writeText(location.href).then(() => {
       copiedLink = true;
       setTimeout(() => { copiedLink = false; }, 2000);
@@ -1339,15 +1340,16 @@
         syncCtrlVals();
         appState = 'active';
         poke();
-        // Auto-enable sensors the shared pattern needs so the experience works immediately.
-        if (!privacyMode.active) {
+        // Auto-enable only the sensors that were active when the link was created.
+        // Old links without sensor info (shared before this feature) do nothing.
+        if (!privacyMode.active && shared.sensors) {
           const sharePat = patterns[pIdx];
-          if ((sharePat as any).motionReactive || sharePat.usesCameraBlend || sharePat.usesPose) {
+          if (shared.sensors.cam && ((sharePat as any).motionReactive || sharePat.usesCameraBlend || sharePat.usesPose)) {
             cameraState.motionEnabled = true;
             cameraState.enabled = true;
             enumerateCameras();
           }
-          if ((sharePat as any).audioReactive) {
+          if (shared.sensors.audio && (sharePat as any).audioReactive) {
             audioState.enabled = true;
           }
         }

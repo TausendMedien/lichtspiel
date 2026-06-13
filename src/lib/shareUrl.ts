@@ -3,15 +3,21 @@ import type { Pattern } from './patterns/types';
 interface SharePayload {
   p: string;
   c: Record<string, number | boolean | string>;
+  /** Sensor state at share time — only present in links created after this feature. */
+  s?: { cam?: boolean; audio?: boolean };
 }
 
-export function encodeShare(pattern: Pattern): void {
+export function encodeShare(
+  pattern: Pattern,
+  sensors?: { cam: boolean; audio: boolean },
+): void {
   const c: Record<string, number | boolean | string> = {};
   for (const ctrl of pattern.controls ?? []) {
     if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
     c[ctrl.label] = ctrl.get();
   }
   const payload: SharePayload = { p: pattern.id, c };
+  if (sensors) payload.s = { cam: sensors.cam, audio: sensors.audio };
   const hash = btoa(JSON.stringify(payload));
   history.replaceState(null, '', `#s=${hash}`);
 }
@@ -19,6 +25,7 @@ export function encodeShare(pattern: Pattern): void {
 export interface ShareResult {
   patternId: string;
   controls: Record<string, number | boolean | string>;
+  sensors?: { cam?: boolean; audio?: boolean };
 }
 
 export function decodeShare(): ShareResult | null {
@@ -28,7 +35,7 @@ export function decodeShare(): ShareResult | null {
     const raw = atob(hash.slice(3));
     const payload = JSON.parse(raw) as SharePayload;
     if (typeof payload.p !== 'string' || typeof payload.c !== 'object') return null;
-    return { patternId: payload.p, controls: payload.c };
+    return { patternId: payload.p, controls: payload.c, sensors: payload.s };
   } catch {
     return null;
   }
