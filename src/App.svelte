@@ -1755,7 +1755,7 @@
             >{favorites.has(p.id) ? '★' : '☆'}</span>
           </button>
         {/each}
-        <div class="col-span-3 pt-3 pb-1 text-center font-mono text-[10px] text-white/20">{__VERSION__}</div>
+        <div class="col-span-3 pt-3 pb-1 text-center font-mono text-[12px] text-white/50">{__VERSION__}</div>
       {/if}
     </div>
 
