@@ -143,7 +143,7 @@
   const PEDAL_CHANGES_PATTERN_KEY = 'pp:pedal-changes-pattern';
   let pedalChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_CHANGES_PATTERN_KEY) !== 'false' : true);
   const PEDAL_DOUBLE_CHANGES_PATTERN_KEY = 'pp:pedal-double-changes-pattern';
-  let pedalDoubleChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_DOUBLE_CHANGES_PATTERN_KEY) === 'true' : false);
+  let pedalDoubleChangesPattern = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(PEDAL_DOUBLE_CHANGES_PATTERN_KEY) !== 'false' : true);
   // Pedal long-press action: 'none' | 'lightPaint' | 'screenshot' | 'record10'.
   // Migrates the old boolean key (true→screenshot, false→lightPaint); default 'none'.
   type PedalLongAction = 'none' | 'lightPaint' | 'screenshot' | 'record10';
@@ -1097,6 +1097,7 @@
     }
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type === 'button' || ctrl.type === 'separator' || ctrl.type === 'range') continue;
+      if ((ctrl as any).interactive) continue; // never restore camera/mic device from a preset
       const target = snap[ctrl.label];
       if (target !== undefined) {
         if (ctrl.type === 'toggle' || ctrl.type === 'section') ctrl.set(!!target);
@@ -1338,6 +1339,18 @@
         syncCtrlVals();
         appState = 'active';
         poke();
+        // Auto-enable sensors the shared pattern needs so the experience works immediately.
+        if (!privacyMode.active) {
+          const sharePat = patterns[pIdx];
+          if ((sharePat as any).motionReactive || sharePat.usesCameraBlend || sharePat.usesPose) {
+            cameraState.motionEnabled = true;
+            cameraState.enabled = true;
+            enumerateCameras();
+          }
+          if ((sharePat as any).audioReactive) {
+            audioState.enabled = true;
+          }
+        }
       }
     }
 
