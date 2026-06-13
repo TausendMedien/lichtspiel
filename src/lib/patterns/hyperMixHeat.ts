@@ -19,12 +19,12 @@ const params = {
   pointSize:  0.8,
   blur:       0.50,
   pointCount: 25000,
-  heatStrength: 0.3,
-  heatGain:     5.0,
+  heatStrength: 0.5,
+  heatGain:     11.0,
 };
 
-let blurRadius = 15;
-let mirrorX    = false;
+let blurRadius = 2.0;
+let mirrorX    = true;
 
 function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
   if (r < 1) { dst.set(src); return; }
@@ -332,26 +332,25 @@ export const hyperMixHeat: Pattern = {
     },
     {
       label: "Heat Strength",
-      type: "range", min: 0, max: 2.0, step: 0.05,
-      default: 0.3,
+      type: "range", min: 0.35, max: 1.0, step: 0.01,
+      default: 0.5,
       get: () => params.heatStrength,
       set: (v) => { params.heatStrength = v; },
     },
     {
       label: "Heat Gain",
-      type: "range", min: 1.0, max: 30.0, step: 0.5,
-      default: 5.0,
+      type: "range", min: 4.0, max: 20.0, step: 0.5,
+      default: 11.0,
       get: () => params.heatGain,
       set: (v) => { params.heatGain = v; },
     },
     {
       label: "Blur Radius",
-      type: "range", min: 0, max: 30, step: 1,
-      default: 15,
+      type: "range", min: 0, max: 5, step: 0.1,
+      default: 2,
       get: () => blurRadius,
       set: (v) => { blurRadius = v; },
     },
-    { label: "Mirror X", type: "toggle" as const, get: () => mirrorX, set: (v) => { mirrorX = v; } },
   ],
 
   init(ctx: PatternContext) {
