@@ -1331,6 +1331,7 @@
         focusedIndex = pIdx;
         for (const ctrl of patterns[pIdx].controls ?? []) {
           if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
+          if ((ctrl as any).interactive) continue; // camera/mic device IDs are device-specific
           const val = shared.controls[ctrl.label];
           if (val === undefined) continue;
           if (ctrl.type === 'toggle' || ctrl.type === 'section') ctrl.set(!!val);
@@ -1340,19 +1341,6 @@
         syncCtrlVals();
         appState = 'active';
         poke();
-        // Auto-enable only the sensors that were active when the link was created.
-        // Old links without sensor info (shared before this feature) do nothing.
-        if (!privacyMode.active && shared.sensors) {
-          const sharePat = patterns[pIdx];
-          if (shared.sensors.cam && ((sharePat as any).motionReactive || sharePat.usesCameraBlend || sharePat.usesPose)) {
-            cameraState.motionEnabled = true;
-            cameraState.enabled = true;
-            enumerateCameras();
-          }
-          if (shared.sensors.audio && (sharePat as any).audioReactive) {
-            audioState.enabled = true;
-          }
-        }
       }
     }
 
