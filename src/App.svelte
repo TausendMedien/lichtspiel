@@ -1284,6 +1284,16 @@
     demoPatternIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     handle.setFlickerGuard(flickerGuard.enabled);
+    // Keep focus on the canvas so iPadOS Safari dispatches Space/Arrow
+    // as keydown events instead of intercepting them for page scrolling.
+    canvas.focus();
+    canvas.addEventListener('blur', () => {
+      setTimeout(() => {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        canvas.focus();
+      }, 0);
+    });
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     // No saved demo config yet → this is the very first launch.
     const firstRun = localStorage.getItem('lichtspiel-demo') === null;
@@ -1547,7 +1557,7 @@
 </div>
 {/if}
 
-<canvas bind:this={canvas} class="block w-full h-full"
+<canvas bind:this={canvas} tabindex="0" class="block w-full h-full outline-none"
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
   ontouchstart={() => {
     if (appState !== "overview") {
