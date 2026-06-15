@@ -1288,16 +1288,18 @@
     demoPatternIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     handle.setFlickerGuard(flickerGuard.enabled);
-    // Keep focus on the canvas so iPadOS Safari dispatches Space/Arrow
-    // as keydown events instead of intercepting them for page scrolling.
-    canvas.focus();
-    canvas.addEventListener('blur', () => {
-      setTimeout(() => {
-        const tag = (document.activeElement as HTMLElement)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        canvas.focus();
-      }, 0);
-    });
+    // iOS only allows programmatic .focus() from within a user-gesture handler.
+    // Re-focus the canvas on every pointerdown (touch/click) that isn't on a
+    // text input — this is the only reliable way to keep Space/Arrow keys
+    // dispatched as keydown events instead of being swallowed by Safari's
+    // keyboard-navigation layer on iPadOS.
+    canvas.focus(); // works on desktop; silently no-ops on iOS without gesture
+    function onPointerDownFocus(e: PointerEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      canvas.focus();
+    }
+    document.addEventListener('pointerdown', onPointerDownFocus, { capture: true });
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
     // No saved demo config yet → this is the very first launch.
     const firstRun = localStorage.getItem('lichtspiel-demo') === null;
@@ -1523,6 +1525,7 @@
       detachTouch();
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
+      document.removeEventListener('pointerdown', onPointerDownFocus, { capture: true });
       if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
@@ -1787,12 +1790,6 @@
   <div class="pointer-events-none fixed inset-0 z-50 bg-white/25 transition-opacity duration-500"></div>
 {/if}
 
-<!-- ─── Key debug overlay (temp) — shows last key received by JS handler ── -->
-{#if debugKeyInfo}
-  <div class="pointer-events-none fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded bg-black/80 px-3 py-1.5 font-mono text-xs text-yellow-300">
-    JS received: {debugKeyInfo}
-  </div>
-{/if}
 
 <!-- ─── Pose loading overlay ────────────────────────────────────────────── -->
 {#if poseLoading}
