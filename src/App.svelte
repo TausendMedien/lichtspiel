@@ -231,6 +231,10 @@
   let _midiStart: (() => void) | null = null;
   let _midiStop:  (() => void) | null = null;
 
+  // Debug key display — shows last key received by the keyboard handler
+  let debugKeyInfo = $state('');
+  let debugKeyTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Gamepad / controller state
   let gamepadConnected = $state(false);
   let kbRHeld  = $state(false);   // keyboard R hold
@@ -1482,7 +1486,11 @@
     };
     liveRaf = requestAnimationFrame(liveSync);
 
-    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern);
+    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern, (info) => {
+      debugKeyInfo = info;
+      if (debugKeyTimer) clearTimeout(debugKeyTimer);
+      debugKeyTimer = setTimeout(() => { debugKeyInfo = ''; }, 2000);
+    });
     const detachTouch = attachTouch(handleAction);
 
     function onFsChange() {
@@ -1777,6 +1785,13 @@
 <!-- ─── Screenshot flash ─────────────────────────────────────────────── -->
 {#if screenshotFlash}
   <div class="pointer-events-none fixed inset-0 z-50 bg-white/25 transition-opacity duration-500"></div>
+{/if}
+
+<!-- ─── Key debug overlay (temp) — shows last key received by JS handler ── -->
+{#if debugKeyInfo}
+  <div class="pointer-events-none fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded bg-black/80 px-3 py-1.5 font-mono text-xs text-yellow-300">
+    JS received: {debugKeyInfo}
+  </div>
 {/if}
 
 <!-- ─── Pose loading overlay ────────────────────────────────────────────── -->

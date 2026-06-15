@@ -37,6 +37,7 @@ export function attachKeyboard(
   handler: (action: KeyAction) => void,
   onRHeldChange?: (held: boolean) => void,
   pedalDoubleEnabled?: () => boolean,
+  onDebugKey?: (info: string) => void,
 ): () => void {
   let rHeld = false;
   let bPressedAt = 0; // tracks keydown time for long-press detection on 'b'
@@ -47,11 +48,36 @@ export function attachKeyboard(
     const tag = (document.activeElement as HTMLElement)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
+    // Debug callback — fires for every keydown that reaches us
+    if (onDebugKey) {
+      const mods = [e.altKey && 'Alt', e.ctrlKey && 'Ctrl', e.metaKey && 'Meta'].filter(Boolean).join('+');
+      onDebugKey(`key="${e.key}" code="${e.code}"${mods ? ' mods=' + mods : ''}`);
+    }
+
     // Ctrl/Cmd+Z — undo (before the general modifier guard)
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'z') {
       handler({ type: 'undo' });
       e.preventDefault();
       return;
+    }
+
+    // Space and Arrow keys are handled BEFORE the modifier guard because
+    // iPadOS may report unexpected modifier flags for these keys, and they
+    // have no meaningful Ctrl/Alt/Meta variants in this app.
+    const isSpace = e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space';
+    if (isSpace) {
+      handler({ type: 'freeze' });
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (!rHeld) {
+      switch (e.code || e.key) {
+        case 'ArrowRight': handler({ type: 'next' });       e.preventDefault(); e.stopPropagation(); return;
+        case 'ArrowLeft':  handler({ type: 'prev' });       e.preventDefault(); e.stopPropagation(); return;
+        case 'ArrowUp':    handler({ type: 'speedUp' });    e.preventDefault(); e.stopPropagation(); return;
+        case 'ArrowDown':  handler({ type: 'speedDown' });  e.preventDefault(); e.stopPropagation(); return;
+      }
     }
 
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -86,9 +112,6 @@ export function attachKeyboard(
         if (e.repeat) { e.preventDefault(); return; }
         bPressedAt = performance.now(); // dispatch deferred to keyup for long-press detection
         e.preventDefault(); return;
-      case " ":
-        handler({ type: "freeze" });
-        e.preventDefault(); return;
       case "a": case "A":
         handler({ type: "resetToDefault" });
         e.preventDefault(); return;
@@ -120,18 +143,6 @@ export function attachKeyboard(
         e.preventDefault(); return;
       case "p": case "P":
         handler({ type: "toggleOverview" });
-        e.preventDefault(); return;
-      case "ArrowRight":
-        handler({ type: "next" });
-        e.preventDefault(); return;
-      case "ArrowLeft":
-        handler({ type: "prev" });
-        e.preventDefault(); return;
-      case "ArrowUp":
-        handler({ type: "speedUp" });
-        e.preventDefault(); return;
-      case "ArrowDown":
-        handler({ type: "speedDown" });
         e.preventDefault(); return;
       case "Enter":
         handler({ type: "freeze" }); // Start button in K-Mode sends Enter
@@ -181,8 +192,6 @@ export function attachKeyboard(
     }
   }
 
-  // capture:true runs our handler before Safari on iPad can intercept
-  // Space (scroll/activate) and Arrow keys (spatial navigation)
   window.addEventListener("keydown", onKeyDown, { capture: true });
   window.addEventListener("keyup", onKeyUp, { capture: true });
   return () => {
