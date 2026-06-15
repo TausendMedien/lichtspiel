@@ -101,6 +101,7 @@
   type AppState = "overview" | "active" | "preview";
 
   let canvas: HTMLCanvasElement;
+  let kbTrap: HTMLInputElement; // hidden focus-trap input; gives iOS keyboard ownership so Space/Arrow dispatch keydown
   let handle: RendererHandle | null = null;
   let appState = $state<AppState>("overview");
   let index = $state(0);
@@ -230,10 +231,6 @@
   // MIDI lifecycle callbacks populated in onMount
   let _midiStart: (() => void) | null = null;
   let _midiStop:  (() => void) | null = null;
-
-  // Debug key display — shows last key received by the keyboard handler
-  let debugKeyInfo = $state('');
-  let debugKeyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Gamepad / controller state
   let gamepadConnected = $state(false);
@@ -1288,16 +1285,21 @@
     demoPatternIds = new Set(filteredDemoIds);
     handle = createRenderer(canvas, patterns[0]);
     handle.setFlickerGuard(flickerGuard.enabled);
-    // iOS only allows programmatic .focus() from within a user-gesture handler.
-    // Re-focus the canvas on every pointerdown (touch/click) that isn't on a
-    // text input — this is the only reliable way to keep Space/Arrow keys
-    // dispatched as keydown events instead of being swallowed by Safari's
-    // keyboard-navigation layer on iPadOS.
-    canvas.focus(); // works on desktop; silently no-ops on iOS without gesture
+    // iOS only dispatches keydown for Space/Arrow when an <input> has focus
+    // (because the browser must allow the page to intercept text-editing keys).
+    // A canvas element is not enough. We keep a hidden <input inputmode="none">
+    // as a focus trap: inputmode="none" suppresses the virtual keyboard while
+    // still giving the hardware keyboard full keydown dispatch.
+    // Focus it immediately (works on desktop) and re-focus on every pointer
+    // event that isn't targeting a real text field (user-gesture context,
+    // which is required for .focus() to work on iOS).
+    kbTrap.focus();
     function onPointerDownFocus(e: PointerEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      canvas.focus();
+      const id  = (e.target as HTMLElement)?.id;
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' && id !== 'kb-trap') return;
+      kbTrap.focus();
     }
     document.addEventListener('pointerdown', onPointerDownFocus, { capture: true });
     recorder = createRecorder(handle.getCanvas(), (r) => { isRecording = r; });
@@ -1488,11 +1490,7 @@
     };
     liveRaf = requestAnimationFrame(liveSync);
 
-    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern, (info) => {
-      debugKeyInfo = info;
-      if (debugKeyTimer) clearTimeout(debugKeyTimer);
-      debugKeyTimer = setTimeout(() => { debugKeyInfo = ''; }, 2000);
-    });
+    const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern);
     const detachTouch = attachTouch(handleAction);
 
     function onFsChange() {
@@ -1567,6 +1565,13 @@
   </div>
 </div>
 {/if}
+
+<!-- Hidden focus-trap: gives iOS keyboard-ownership so Space/Arrow reach keydown.
+     inputmode="none" prevents the virtual keyboard from popping up. -->
+<input bind:this={kbTrap} id="kb-trap" type="text" inputmode="none"
+  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+  tabindex="-1" aria-hidden="true"
+  class="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0" />
 
 <canvas bind:this={canvas} tabindex="0" class="block w-full h-full outline-none"
   onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}

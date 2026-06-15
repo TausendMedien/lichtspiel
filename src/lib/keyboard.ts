@@ -44,9 +44,13 @@ export function attachKeyboard(
   let bSingleTimer: ReturnType<typeof setTimeout> | null = null; // pending single press awaiting a possible double
 
   function onKeyDown(e: KeyboardEvent) {
-    // Don't fire shortcuts when typing in a text or textarea field
-    const tag = (document.activeElement as HTMLElement)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    // Don't fire shortcuts when typing in a real text field.
+    // Exception: our hidden #kb-trap input is a focus-trap for iOS keyboard
+    // ownership — it should pass through to the shortcut handler.
+    const active = document.activeElement as HTMLElement;
+    const tag = active?.tagName;
+    if (tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' && active?.id !== 'kb-trap') return;
 
     // Debug callback — fires for every keydown that reaches us
     if (onDebugKey) {
@@ -156,6 +160,13 @@ export function attachKeyboard(
     // 3–9 jump to pattern (1 and 2 reserved for recording / camera)
     if (e.key >= "3" && e.key <= "9") {
       handler({ type: "jump", index: Number(e.key) - 1 });
+      e.preventDefault();
+      return;
+    }
+
+    // When the kb-trap input has focus, prevent all unhandled keys from
+    // inserting characters into it (the input is hidden, but clean is clean).
+    if ((document.activeElement as HTMLElement)?.id === 'kb-trap') {
       e.preventDefault();
     }
   }
