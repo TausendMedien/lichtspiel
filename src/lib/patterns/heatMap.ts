@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { triggerMotionCameraStart } from "../motionCameraWrapper";
 import { colorC2 } from "../colorC2.svelte";
 
 const W = 160;
@@ -94,7 +95,7 @@ export const heatMap: Pattern = {
   name: "Heat Map",
   requiresCamera: true,
   controls: [
-    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; } },
+    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; if (v) triggerMotionCameraStart('heatMap'); } },
     {
       label: "Gain",
       type: "range" as const,

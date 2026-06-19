@@ -15,6 +15,17 @@ import { interactionState, getPatternSettings, saveInteractionSettings } from ".
 
 const BURST_DECAY = 0.85;
 
+// iOS requires getUserMedia() to be called synchronously within a user gesture
+// when camera permission hasn't been granted yet.  The Heat patterns toggle
+// cameraState.enabled inside a click handler, but the actual startCamera() call
+// happens on the next RAF — by which time iOS has lost the gesture context.
+// Patterns can call triggerMotionCameraStart() directly from their toggle set()
+// to kick the camera within the same gesture call stack.
+const _cameraTriggers = new Map<string, () => void>();
+export function triggerMotionCameraStart(patternId: string): void {
+  _cameraTriggers.get(patternId)?.();
+}
+
 export function addMotionCamera(pattern: Pattern): Pattern {
   let smoothedMotion = 0;
   let rawMotion      = 0;
@@ -141,7 +152,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     const constraints: MediaStreamConstraints = {
       video: deviceId
         ? { deviceId: { exact: deviceId }, width: { ideal: 320 }, height: { ideal: 180 } }
-        : { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 180 } },
+        : { facingMode: { ideal: 'user' }, width: { ideal: 320 }, height: { ideal: 180 } },
       audio: false,
     };
     // Delay the overlay — only show if camera hasn't started within 500ms
@@ -200,6 +211,11 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       prevEnabled        = cameraState.enabled;
       prevDeviceId       = cameraState.deviceId;
       prevPatternEnabled = cameraState.patternMotionEnabled[pattern.id] ?? true;
+      // Register the gesture-context trigger so heat toggles can call startCamera()
+      // synchronously within a user gesture (required for first-time iOS permission).
+      _cameraTriggers.set(pattern.id, () => {
+        if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
+      });
       pattern.init(ctx);
       if (cameraState.enabled && prevPatternEnabled && !privacyMode.active) startCamera();
     },
@@ -337,6 +353,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     },
 
     dispose() {
+      _cameraTriggers.delete(pattern.id);
       stopCamera();
       canvasRef = null;
       for (let i = 0; i < boostTargets.length; i++) {
