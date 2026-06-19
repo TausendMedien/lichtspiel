@@ -11,7 +11,7 @@ let camera: THREE.PerspectiveCamera | null = null;
 let planeMesh: THREE.Mesh | null = null;
 let material: THREE.ShaderMaterial | null = null;
 let texture: THREE.DataTexture | null = null;
-let texData: Float32Array | null = null;
+let texData: Uint8Array | null = null;
 
 let gainParam      = 12;
 let thresholdParam = 0.008;
@@ -123,8 +123,8 @@ export const heatMap: Pattern = {
     camera.position.set(0, 0, 5);
     camera.lookAt(0, 0, 0);
 
-    texData = new Float32Array(W * H);
-    texture = new THREE.DataTexture(texData, W, H, THREE.RedFormat, THREE.FloatType);
+    texData = new Uint8Array(W * H);
+    texture = new THREE.DataTexture(texData, W, H, THREE.RedFormat, THREE.UnsignedByteType);
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.needsUpdate = true;
@@ -151,7 +151,9 @@ export const heatMap: Pattern = {
 
   update(_dt: number, _elapsed: number) {
     if (!material || !texture || !texData) return;
-    texData.set(cameraState.heatMap);
+    // Convert float→byte: UnsignedByteType works on all iOS (no OES_texture_float_linear needed)
+    const src = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++) texData[i] = Math.min(255, src[i] * 255) | 0;
     texture.needsUpdate = true;
 
     material.uniforms.uGain.value      = gainParam;
