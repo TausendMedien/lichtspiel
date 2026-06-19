@@ -178,7 +178,13 @@ export const particlesHeat: Pattern = {
   name: "Particle Field - Heat",
   motionControlLabels: ['Point Size', 'Flow Speed'],
   audioControlLabels:  ['Point Size', 'Flow Speed', 'Heat Strength'],
+
+  activate() {
+    cameraState.enabled = true;
+  },
+
   controls: [
+    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; } },
     { label: "Point Size",    type: "range",  min: 1.0,  max: 6.0,   step: 0.1,  default: 3,    get: () => pointSize,    set: v => { pointSize = v; } },
     { label: "Flow Speed",    type: "range",  min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,  get: () => flowSpeed,    set: v => { flowSpeed = v; } },
     { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,  get: () => heatStrength, set: v => { heatStrength = v; } },

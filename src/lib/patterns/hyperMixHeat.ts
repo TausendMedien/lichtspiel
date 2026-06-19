@@ -284,7 +284,12 @@ export const hyperMixHeat: Pattern = {
   motionControlLabels: ['Speed'],
   audioControlLabels:  ['Speed', 'Point Size'],
 
+  activate() {
+    cameraState.enabled = true;
+  },
+
   controls: [
+    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; } },
     {
       label: "Speed",
       type: "range", min: 0, max: 0.2, step: 0.005,

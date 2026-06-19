@@ -94,6 +94,7 @@ export const heatMap: Pattern = {
   name: "Heat Map",
   requiresCamera: true,
   controls: [
+    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; } },
     {
       label: "Gain",
       type: "range" as const,

@@ -2461,6 +2461,14 @@
             }}
           >Motion</button>
           <button
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => {
+              const next = !cameraState.enabled;
+              cameraState.enabled = next;
+              if (next) enumerateCameras();
+            }}
+          >Heat</button>
+          <button
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => togglePoseTracking()}
             disabled={poseLoading}
