@@ -14,6 +14,7 @@ export function encodeShare(
   const c: Record<string, number | boolean | string> = {};
   for (const ctrl of pattern.controls ?? []) {
     if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
+    if ((ctrl as any).interactive) continue; // camera/mic device IDs are device-specific
     c[ctrl.label] = ctrl.get();
   }
   const payload: SharePayload = { p: pattern.id, c };
