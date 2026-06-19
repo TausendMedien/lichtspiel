@@ -1,13 +1,11 @@
 import type { Pattern } from "./types";
 import { lines3d } from "./lines3d";
-import { particlesBody } from "./particlesBody";
 import { particleLines } from "./particleLines";
 import { tunnel } from "./tunnel";
 import { tunnelEdge } from "./tunnelEdge";
 import { shaderGradient } from "./shaderGradient";
 import { parallelLinesStraight } from "./parallelLinesStraight";
 import { parallelLinesWave } from "./parallelLinesWave";
-import { hyperMix } from "./hyperMix";
 import { flowLines } from "./flowLines";
 import { curlOrbsBody } from "./curlOrbsBody";
 import { baroqueSwirlsBody } from "./baroqueSwirlsBody";
@@ -49,8 +47,9 @@ const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls', 'typography3d']);
 const NO_AUDIO = new Set(['typography3d']);
 
 const rawPatterns: Pattern[] = [
-  hyperMix,
-  particlesBody,
+  hyperMixHeat,
+  particlesHeat,
+  heatMap,
   particleLines,
   parallelLinesStraight,
   parallelLinesWave,
@@ -85,9 +84,6 @@ const rawPatterns: Pattern[] = [
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,
-  heatMap,
-  particlesHeat,
-  hyperMixHeat,
 ];
 
 export const patterns: Pattern[] = rawPatterns
