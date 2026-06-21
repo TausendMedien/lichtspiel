@@ -2,10 +2,10 @@
 // Separates "person motion" from background pattern motion using three algorithms.
 import { guardedGetUserMedia } from './sensorGuard';
 
-const W = 320;
-const H = 180;
-const GRID_COLS = 16;
-const GRID_ROWS = 10;
+const W = 160;
+const H = 90;
+const GRID_COLS = 8;
+const GRID_ROWS = 5;
 
 export function showMotionOverlay(canvas: HTMLCanvasElement, message: string): HTMLDivElement {
   const div = document.createElement("div");

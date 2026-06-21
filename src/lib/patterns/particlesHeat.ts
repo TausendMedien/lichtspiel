@@ -4,8 +4,8 @@ import { cameraState } from "../globalCameraSettings.svelte";
 import { triggerMotionCameraStart } from "../motionCameraWrapper";
 import { colorC2 } from "../colorC2.svelte";
 
-const W = 320;
-const H = 180;
+const W = 160;
+const H = 90;
 
 let particleCount = 30000;
 let pointSize     = 3.0;
@@ -104,7 +104,7 @@ const vertexShader = /* glsl */ `
       uv.y = 1.0 - uv.y;
       if (uMirrorX > 0.5) uv.x = 1.0 - uv.x;
 
-      vec2 eps = vec2(1.5 / 320.0, 1.5 / 180.0);
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
       float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
       float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
       float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;

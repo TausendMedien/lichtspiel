@@ -4,8 +4,8 @@ import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
 import { triggerMotionCameraStart } from "../motionCameraWrapper";
 
-const W = 320;
-const H = 180;
+const W = 160;
+const H = 90;
 
 const BASE_COUNT = 25000;
 const _c1 = new THREE.Color();
@@ -188,7 +188,7 @@ void main() {
     vec2 uv = clip0.xy / clip0.w * 0.5 + 0.5;
     uv.y    = 1.0 - uv.y;
     if (uMirrorX > 0.5) uv.x = 1.0 - uv.x;
-    vec2 eps = vec2(1.5 / 320.0, 1.5 / 180.0);
+    vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
     float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
     float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
     float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
