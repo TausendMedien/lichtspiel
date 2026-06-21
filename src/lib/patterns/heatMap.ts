@@ -4,8 +4,8 @@ import { cameraState } from "../globalCameraSettings.svelte";
 import { triggerMotionCameraStart } from "../motionCameraWrapper";
 import { colorC2 } from "../colorC2.svelte";
 
-const W = 160;
-const H = 90;
+const W = 320;
+const H = 180;
 
 let camera: THREE.PerspectiveCamera | null = null;
 let planeMesh: THREE.Mesh | null = null;
