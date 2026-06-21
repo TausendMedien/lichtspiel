@@ -438,10 +438,10 @@ function createLightPainting(
         },
         {
           label: "Fade Speed",
-          type: "range" as const, min: 0.0, max: 0.3, step: 0.005,
+          type: "range" as const, min: 0.001, max: 0.1, step: 0.001,
           default: D.decayRate,
           get: () => decayRate,
-          set: (v: number) => { decayRate = v; },
+          set: (v: number) => { decayRate = Math.min(0.1, Math.max(0.001, v)); },
         },
         {
           label: "Colorize",

@@ -49,6 +49,11 @@ export function wrapWithPersist(pattern: Pattern): Pattern {
         ctrl.set(v);
         localStorage.setItem(key, String(v));
       },
+      // Transient set for Evolving Range drift: update the live value only, no
+      // localStorage churn and no undo entries (runs every frame, indefinitely).
+      setLive(v: number) {
+        ctrl.set(v);
+      },
     };
   });
 

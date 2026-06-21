@@ -20,6 +20,8 @@
   import { encodeShare, decodeShare } from "./lib/shareUrl";
   import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
+  import { evolving, saveEvolving, evoDurationMs, getEvo, saveEvo, evoFactory, type EvoConfig, type EvoCtrl } from "./lib/evolving.svelte";
+  import { listNamed, saveNamed, deleteNamed, type NamedPreset } from "./lib/named-presets";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
@@ -369,6 +371,12 @@
   type FreezeAnim = { from: number; to: number; startMs: number };
   let randomizeAnims = $state<Record<string, RandAnim>>({});
   let freezeAnim = $state<FreezeAnim | null>(null);
+
+  // Evolving Range — per-pattern config (which sliders drift + their bands) and the
+  // currently-running drift transitions. evoConfig reloads when the pattern changes.
+  type EvoAnim = { from: number; to: number; startMs: number; durMs: number };
+  let evoConfig = $state<EvoConfig>({});
+  let evoAnims = $state<Record<string, EvoAnim>>({});
   const isFreezing = $derived(freezeAnim ? freezeAnim.to === 0 : timeScaleMirror === 0);
 
   const rangeControls = $derived(
@@ -447,6 +455,28 @@
     }
   });
   $effect(() => { const _ = index; presetSlots = getSlots(patterns[index]?.id ?? ''); presetCycleIdx = -1; });
+  // Reload Evolving config and clear any in-flight drift when the pattern changes.
+  $effect(() => { const _ = index; evoConfig = getEvo(patterns[index]?.id ?? ''); evoAnims = {}; });
+
+  // ── Evolving Range helpers (per-slider band config) ─────────────────────────
+  type RangeCtrl = import('./lib/patterns/types').PatternControl & { type: 'range' };
+  function evoFor(ctrl: RangeCtrl): EvoCtrl {
+    return evoConfig[ctrl.label] ?? { on: false, min: ctrl.min, max: ctrl.max };
+  }
+  function setEvo(ctrl: RangeCtrl, next: EvoCtrl) {
+    evoConfig = { ...evoConfig, [ctrl.label]: next };
+    saveEvo(patterns[index].id, evoConfig);
+  }
+  function toggleEvo(ctrl: RangeCtrl) {
+    const cur = evoFor(ctrl);
+    setEvo(ctrl, { ...cur, on: !cur.on });
+  }
+  function setEvoBand(ctrl: RangeCtrl, which: 'min' | 'max', v: number) {
+    if (Number.isNaN(v)) return;
+    const cur = evoFor(ctrl);
+    const clamped = Math.min(ctrl.max, Math.max(ctrl.min, v));
+    setEvo(ctrl, { ...cur, [which]: clamped });
+  }
 
   function resetCtrl(ctrl: PatternControl & { type: "range" }) {
     if (ctrl.default === undefined) return;
@@ -1082,12 +1112,28 @@
     snap['__c2Extra1on'] = colorC2.extra1on;
     snap['__c2Extra2on'] = colorC2.extra2on;
     snap['__c2Extra3on'] = colorC2.extra3on;
+    // Evolving Range: per-slider bands + global drift state
+    for (const [label, cfg] of Object.entries(evoConfig)) {
+      snap[`__evoOn:${label}`]  = cfg.on;
+      snap[`__evoMin:${label}`] = cfg.min;
+      snap[`__evoMax:${label}`] = cfg.max;
+    }
+    snap['__evoActive']     = evolving.active;
+    snap['__evoSpeed']      = evolving.speed;
+    snap['__evoConcurrent'] = evolving.maxConcurrent;
     return snap;
   }
 
   function restorePreset(idx: number) {
     const snap = presetSlots[idx];
     if (!snap) return;
+    applySnapshot(snap, idx + 1);
+  }
+
+  // Apply a full snapshot to the *current* pattern. evoFallbackSlot: when the snapshot
+  // carries no Evolving keys, use this Pattern-Start slot's factory bands (light*), or
+  // null to skip the fallback (named presets / non-light patterns).
+  function applySnapshot(snap: Snapshot, evoFallbackSlot: number | null) {
     const anims: Record<string, RandAnim> = {};
     const now = performance.now();
     for (const ctrl of patterns[index].controls ?? []) {
@@ -1132,6 +1178,34 @@
     if (typeof snap['__c2Extra2on'] === 'boolean') colorC2.extra2on = snap['__c2Extra2on'] as boolean;
     if (typeof snap['__c2Extra3on'] === 'boolean') colorC2.extra3on = snap['__c2Extra3on'] as boolean;
     saveColorC2();
+    // Restore Evolving Range bands (per slider) + global drift state.
+    const nextEvo: EvoConfig = {};
+    for (const ctrl of patterns[index].controls ?? []) {
+      if (ctrl.type !== 'range') continue;
+      const on  = snap[`__evoOn:${ctrl.label}`];
+      const min = snap[`__evoMin:${ctrl.label}`];
+      const max = snap[`__evoMax:${ctrl.label}`];
+      if (typeof min === 'number' && typeof max === 'number') {
+        nextEvo[ctrl.label] = { on: !!on, min, max };
+      }
+    }
+    if (Object.keys(nextEvo).length > 0) {
+      evoConfig = nextEvo;
+      if (typeof snap['__evoActive']     === 'boolean') evolving.active = snap['__evoActive'] as boolean;
+      if (typeof snap['__evoSpeed']      === 'number')  evolving.speed = snap['__evoSpeed'] as number;
+      if (typeof snap['__evoConcurrent'] === 'number')  evolving.maxConcurrent = Math.min(3, Math.max(1, snap['__evoConcurrent'] as number));
+      saveEvolving();
+    } else if (evoFallbackSlot !== null) {
+      // Legacy/factory preset without evolving keys — fall back to the factory bands
+      // for this slot (light* patterns) and enable drift for the 1/2/3 slots.
+      const factory = evoFactory(patterns[index].id, evoFallbackSlot);
+      if (factory) { evoConfig = factory; evolving.active = true; saveEvolving(); }
+      else evoConfig = getEvo(patterns[index].id);
+    } else {
+      evoConfig = getEvo(patterns[index].id);
+    }
+    saveEvo(patterns[index].id, evoConfig);
+    evoAnims = {};
     randomizeAnims = anims;
     saveSettings(patterns);
   }
@@ -1154,6 +1228,36 @@
 
   function onSlotPointerCancel() {
     if (slotPressTimer !== null) { clearTimeout(slotPressTimer); slotPressTimer = null; }
+  }
+
+  // ── Named presets (global, carry their pattern) ─────────────────────────────
+  let namedPresets = $state<Record<string, NamedPreset>>(listNamed());
+  let newPresetName = $state('');
+  let selectedPreset = $state('');
+
+  function saveNamedPreset() {
+    const name = newPresetName.trim();
+    if (!name) return;
+    saveNamed(name, { patternId: patterns[index].id, snap: takeSnapshot() });
+    namedPresets = listNamed();
+    selectedPreset = name;
+    newPresetName = '';
+  }
+
+  function loadNamedPreset(name: string) {
+    const preset = namedPresets[name];
+    if (!preset) return;
+    const target = patterns.findIndex(p => p.id === preset.patternId);
+    if (target >= 0 && target !== index) activatePattern(target);
+    // Reload per-pattern evo config for the (possibly new) pattern before applying.
+    evoConfig = getEvo(patterns[index].id);
+    applySnapshot(preset.snap, null);
+  }
+
+  function deleteNamedPreset(name: string) {
+    deleteNamed(name);
+    namedPresets = listNamed();
+    if (selectedPreset === name) selectedPreset = '';
   }
 
   // ── Favorites ─────────────────────────────────────────────────────────────
@@ -1427,6 +1531,46 @@
           }
           randomizeAnims = next;
           saveSettings(patterns);
+        }
+      }
+
+      // Evolving Range drift — staggered so only a few sliders move at once and the
+      // change stays readable. Values are set live (no localStorage churn / undo spam).
+      if (evolving.active && appState !== 'overview') {
+        const pool = (patterns[index]?.controls ?? []).filter(c =>
+          c.type === 'range' && !(c as any).interactive && !c.readonly && evoConfig[c.label]?.on
+        ) as (import('./lib/patterns/types').PatternControl & { type: 'range' })[];
+
+        if (pool.length > 0) {
+          const active = { ...evoAnims };
+          // Advance running drifts; release a slot when one reaches its target.
+          for (const label of Object.keys(active)) {
+            const ctrl = pool.find(c => c.label === label);
+            if (!ctrl) { delete active[label]; continue; }
+            const a = active[label];
+            const t = Math.min(1, (now - a.startMs) / a.durMs);
+            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            (ctrl.setLive ?? ctrl.set)(a.from + (a.to - a.from) * ease);
+            ctrlVals[ctrl.label] = ctrl.get();
+            if (t >= 1) delete active[label];
+          }
+          // Fill free slots: pick an idle slider and drift it to a fresh target in its band.
+          const dur = evoDurationMs(evolving.speed);
+          while (Object.keys(active).length < evolving.maxConcurrent) {
+            const candidates = pool.filter(c => !(c.label in active) && c.label !== draggingLabel);
+            if (!candidates.length) break;
+            const ctrl = candidates[Math.floor(Math.random() * candidates.length)];
+            const cfg = evoConfig[ctrl.label];
+            const lo = Math.max(ctrl.min, Math.min(cfg.min, cfg.max));
+            const hi = Math.min(ctrl.max, Math.max(cfg.min, cfg.max));
+            const rawTarget = lo + Math.random() * (hi - lo);
+            const steps = Math.round((rawTarget - ctrl.min) / ctrl.step);
+            const target = Math.min(ctrl.max, Math.max(ctrl.min, ctrl.min + steps * ctrl.step));
+            active[ctrl.label] = { from: ctrl.get(), to: target, startMs: now, durMs: dur };
+          }
+          evoAnims = active;
+        } else if (Object.keys(evoAnims).length) {
+          evoAnims = {};
         }
       }
 
@@ -2617,6 +2761,83 @@
         </div>
       </div>
 
+      <!-- Evolving Range (demo) -->
+      <div class="mb-4">
+        <div class="mb-1.5 flex items-center justify-between">
+          <span class="text-[10px] uppercase tracking-widest text-white/40"><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
+            onclick={() => { evolving.active = !evolving.active; saveEvolving(); }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {evolving.active ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        {#if evolving.active}
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              <div class="flex justify-between text-[10px] text-white/50"><span>Speed</span><span class="font-mono">{evolving.speed.toFixed(2)}</span></div>
+              <input
+                type="range" min={0} max={1} step={0.01} value={evolving.speed}
+                oninput={(e) => { evolving.speed = parseFloat((e.target as HTMLInputElement).value); saveEvolving(); }}
+                class="w-full cursor-pointer accent-cyan-300"
+              />
+            </div>
+            <div class="flex flex-col items-end gap-0.5">
+              <span class="text-[10px] text-white/50">Concurrent</span>
+              <div class="flex gap-1">
+                {#each [1, 2, 3] as n}
+                  <button
+                    class="rounded px-2 py-0.5 text-[11px] font-mono transition-colors {evolving.maxConcurrent === n ? 'bg-cyan-400/30 text-cyan-200' : 'bg-white/10 text-white/50 hover:text-white/80'}"
+                    onclick={() => { evolving.maxConcurrent = n; saveEvolving(); }}
+                  >{n}</button>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Named presets (save / recall a complete look) -->
+      <div class="mb-4">
+        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Saved Presets</div>
+        <div class="flex gap-1.5">
+          <input
+            type="text" placeholder="Preset name…" bind:value={newPresetName}
+            onkeydown={(e) => { if (e.key === 'Enter') saveNamedPreset(); }}
+            class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder:text-white/30"
+          />
+          <button
+            onclick={saveNamedPreset}
+            class="rounded border border-white/20 px-2.5 py-1 text-[11px] text-white/80 transition-colors hover:border-white/40 hover:text-white"
+          >Save</button>
+        </div>
+        {#if Object.keys(namedPresets).length > 0}
+          <div class="mt-1.5 flex gap-1.5">
+            <select
+              bind:value={selectedPreset}
+              class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+            >
+              <option value="">Select preset…</option>
+              {#each Object.entries(namedPresets) as [name, preset]}
+                <option value={name}>{name} · {patterns.find(p => p.id === preset.patternId)?.name ?? preset.patternId}</option>
+              {/each}
+            </select>
+            <button
+              disabled={!selectedPreset}
+              onclick={() => loadNamedPreset(selectedPreset)}
+              class="rounded border border-white/20 px-2.5 py-1 text-[11px] text-white/80 transition-colors hover:border-white/40 hover:text-white disabled:opacity-30"
+            >Load</button>
+            <button
+              disabled={!selectedPreset}
+              onclick={() => deleteNamedPreset(selectedPreset)}
+              title="Delete preset"
+              class="rounded border border-white/20 px-2 py-1 text-[11px] text-white/50 transition-colors hover:border-red-400/50 hover:text-red-300 disabled:opacity-30"
+            >✕</button>
+          </div>
+        {/if}
+      </div>
+
       <!-- Favorites filter -->
       <div class="mb-3 flex gap-2">
         <button
@@ -2709,6 +2930,42 @@
     class:opacity-100={hudVisible && !overlayHidden}
   >
     <div class="flex flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+      <!-- Evolving Range — global controls (drift sliders inside their bands) -->
+      <div class="mb-2 flex flex-col gap-1.5">
+        <div class="flex items-center justify-between text-xs">
+          <span class="flex items-center gap-1.5 text-white/70"><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
+            onclick={() => { evolving.active = !evolving.active; saveEvolving(); }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {evolving.active ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        {#if evolving.active}
+          <div>
+            <div class="flex justify-between text-[10px] text-white/50"><span>Evolving Speed</span><span class="font-mono">{evolving.speed.toFixed(2)}</span></div>
+            <input
+              type="range" min={0} max={1} step={0.01} value={evolving.speed}
+              oninput={(e) => { evolving.speed = parseFloat((e.target as HTMLInputElement).value); saveEvolving(); }}
+              class="w-full cursor-pointer accent-cyan-300"
+            />
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-white/50">
+            <span>Concurrent</span>
+            <div class="flex gap-1">
+              {#each [1, 2, 3] as n}
+                <button
+                  type="button"
+                  onclick={() => { evolving.maxConcurrent = n; saveEvolving(); }}
+                  class="rounded px-2 py-0.5 font-mono transition-colors {evolving.maxConcurrent === n ? 'bg-cyan-400/30 text-cyan-200' : 'bg-white/10 text-white/50 hover:text-white/80'}"
+                >{n}</button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        <div class="h-px bg-white/10"></div>
+      </div>
       {#if patterns[index].controls?.length}
         {@const controlMeta = (() => {
           let sectionOn = true;
@@ -2858,8 +3115,17 @@
                       </div>
                     {/if}
                   {/if}
+                  {#if ctrl.type === "range" && !ctrl.readonly && !(ctrl as any).interactive}
+                    {@const evoOn = evoFor(ctrl as RangeCtrl).on}
+                    <button
+                      type="button"
+                      title="Evolving Range — slider drifts automatically inside a min/max band"
+                      onclick={() => toggleEvo(ctrl as RangeCtrl)}
+                      class="ml-1 rounded px-1 font-mono text-xs leading-none transition-colors {evoOn ? 'bg-cyan-400/30 text-cyan-200' : 'text-white/30 hover:text-white/60'}"
+                    >~</button>
+                  {/if}
                   {#if ctrl.type === "range"}
-                    <span class="font-mono text-white/40">
+                    <span class="ml-auto font-mono text-white/40">
                       {Number(ctrlVals[ctrl.label] ?? ctrl.get()).toFixed(ctrl.step < 0.01 ? 3 : ctrl.step < 0.1 ? 2 : ctrl.step < 1 ? 1 : 0)}
                     </span>
                   {/if}
@@ -2867,7 +3133,8 @@
                 {/if}
                 {#if ctrl.type === "range"}
                   {@const focused = ctrl === activeFocusedCtrl && !ctrl.readonly}
-                  <div class="flex items-center gap-1">
+                  {@const evo = evoFor(ctrl as RangeCtrl)}
+                  <div class="flex items-center gap-1 {evo.on ? 'opacity-60' : ''}">
                     <span class="select-none text-[10px] text-white/50 transition-opacity duration-150 {focused ? 'opacity-100' : 'opacity-0'}">◄</span>
                     <input
                       type="range"
@@ -2899,6 +3166,23 @@
                     />
                     <span class="select-none text-[10px] text-white/50 transition-opacity duration-150 {focused ? 'opacity-100' : 'opacity-0'}">►</span>
                   </div>
+                  {#if evo.on}
+                    <div class="mt-0.5 flex items-center gap-1.5 text-[10px] text-cyan-200/70">
+                      <span class="text-cyan-300/60">~</span>
+                      <span>min</span>
+                      <input
+                        type="number" min={ctrl.min} max={ctrl.max} step={ctrl.step} value={evo.min}
+                        oninput={(e) => setEvoBand(ctrl as RangeCtrl, 'min', parseFloat((e.target as HTMLInputElement).value))}
+                        class="w-16 rounded bg-black/40 px-1 py-0.5 text-right font-mono text-cyan-100 outline-none"
+                      />
+                      <span>max</span>
+                      <input
+                        type="number" min={ctrl.min} max={ctrl.max} step={ctrl.step} value={evo.max}
+                        oninput={(e) => setEvoBand(ctrl as RangeCtrl, 'max', parseFloat((e.target as HTMLInputElement).value))}
+                        class="w-16 rounded bg-black/40 px-1 py-0.5 text-right font-mono text-cyan-100 outline-none"
+                      />
+                    </div>
+                  {/if}
                 {:else if ctrl.type === "select"}
                   {@const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options}
                   <select
