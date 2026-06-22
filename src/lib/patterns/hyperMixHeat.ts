@@ -285,6 +285,7 @@ function buildGeometry(count: number): THREE.BufferGeometry {
 export const hyperMixHeat: Pattern = {
   id: "hyperMixHeat",
   name: "Hyper Mix",
+  heatReactive: true,
   motionControlLabels: ['Speed'],
   audioControlLabels:  ['Speed', 'Point Size'],
 

@@ -386,7 +386,7 @@
 
   const patternUsesPose = $derived(!!patterns[index]?.usesPose);
   const patternIsInteractive = $derived(
-    !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose || patterns[index]?.usesCameraBlend)
+    !!(patterns[index]?.motionReactive || patterns[index]?.audioReactive || patterns[index]?.usesPose || patterns[index]?.usesCameraBlend || patterns[index]?.heatReactive)
   );
 
   // Reset slider focus when pattern changes or slider mode deactivates
@@ -2633,14 +2633,6 @@
             }}
           >Motion</button>
           <button
-            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
-            onclick={() => {
-              const next = !cameraState.enabled;
-              cameraState.enabled = next;
-              if (next) enumerateCameras();
-            }}
-          >Heat</button>
-          <button
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => togglePoseTracking()}
             disabled={poseLoading}
@@ -3468,6 +3460,24 @@
                       >Detect cameras</button>
                     {/if}
                   {/if}
+                </div>
+              {/if}
+
+              <!-- Heat -->
+              {#if patterns[index].heatReactive}
+                <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''} flex items-center justify-between text-xs text-white/70">
+                  <span>Heat</span>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+                    onclick={() => {
+                      const next = !cameraState.enabled;
+                      cameraState.enabled = next;
+                      if (next) enumerateCameras();
+                    }}
+                  >
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                  </div>
                 </div>
               {/if}
 

@@ -178,6 +178,7 @@ function buildGeometry(): THREE.BufferGeometry {
 export const particlesHeat: Pattern = {
   id: "particlesHeat",
   name: "Particle Field",
+  heatReactive: true,
   motionControlLabels: ['Point Size', 'Flow Speed'],
   audioControlLabels:  ['Point Size', 'Flow Speed', 'Heat Strength'],
 
