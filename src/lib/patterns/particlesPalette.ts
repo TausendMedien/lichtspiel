@@ -83,15 +83,15 @@ export const particlesPalette: Pattern = {
   id: "particlesPalette",
   name: "Particle Field — Palette",
   controls: [
-    { label: "Point Size",  type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   get: () => pointSize,  set: (v) => { pointSize = v; } },
-    { label: "Flow Speed",  type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, get: () => flowSpeed,  set: (v) => { flowSpeed = v; } },
+    { label: "Point Size",  type: "range", min: 1.0, max: 6.0,  step: 0.1,  default: 3,   tip: "Radius of each particle dot.",                          get: () => pointSize,  set: (v) => { pointSize = v; } },
+    { label: "Flow Speed",  type: "range", min: 0.0, max: 3.0,  step: 0.1,  default: 0.2, tip: "How fast particles drift through the scene.",           get: () => flowSpeed,  set: (v) => { flowSpeed = v; } },
     { label: "separator", type: "separator" },
-    { label: "Cyan",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colCyan,    set: (v) => { colCyan = v; } },
-    { label: "Magenta", type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colMagenta, set: (v) => { colMagenta = v; } },
-    { label: "Purple",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colPurple,  set: (v) => { colPurple = v; } },
-    { label: "Gold",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colGold,    set: (v) => { colGold = v; } },
-    { label: "White",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colWhite,   set: (v) => { colWhite = v; } },
-    { label: "Dark",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, get: () => colBlack,   set: (v) => { colBlack = v; } },
+    { label: "Cyan",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for cyan particles. 1 = full strength, 0 = none.",    get: () => colCyan,    set: (v) => { colCyan = v; } },
+    { label: "Magenta", type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for magenta particles. 1 = full strength, 0 = none.", get: () => colMagenta, set: (v) => { colMagenta = v; } },
+    { label: "Purple",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for purple particles. 1 = full strength, 0 = none.",  get: () => colPurple,  set: (v) => { colPurple = v; } },
+    { label: "Gold",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for gold particles. 1 = full strength, 0 = none.",    get: () => colGold,    set: (v) => { colGold = v; } },
+    { label: "White",   type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for white particles. 1 = full strength, 0 = none.",   get: () => colWhite,   set: (v) => { colWhite = v; } },
+    { label: "Dark",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 1.0, tip: "Mix weight for dark particles. 1 = full strength, 0 = none.",    get: () => colBlack,   set: (v) => { colBlack = v; } },
   ],
 
   init(ctx: PatternContext) {

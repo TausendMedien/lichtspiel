@@ -155,14 +155,14 @@ export const curlOrbsBody: Pattern = {
   motionControlLabels: ["Flow Speed"],
   audioControlLabels:  ["Line Width", "Orb Size"],
   controls: [
-    { label: "Line Count",   type: "range", min: 10,   max: 100,  step: 1, default: 45,    get: () => lineCount,   set: (v) => { lineCount = v; } },
-    { label: "Line Width",   type: "range", min: 0.05, max: 0.9,  step: 0.01, default: 0.37, get: () => lineWidth,  set: (v) => { lineWidth = v; } },
-    { label: "Flow Scale",   type: "range", min: 0.5,  max: 5.0,  step: 0.1, default: 3.1,  get: () => flowScale,  set: (v) => { flowScale = v; } },
-    { label: "Flow Speed",   type: "range", min: 0.0,  max: 0.050, step: 0.001, default: 0.02, get: () => flowSpeed, set: (v) => { flowSpeed = v; } },
-    { label: "Orb Count",    type: "range", min: 0,    max: 20,   step: 1, default: 16,    get: () => orbCount,   set: (v) => { orbCount = v; } },
-    { label: "Orb Size",     type: "range", min: 0.01, max: 0.15, step: 0.001, default: 0.06, get: () => orbSize,  set: (v) => { orbSize = v; } },
-    { label: "Color Speed",  type: "range", min: 0.0,  max: 1.0,  step: 0.05, default: 0.05, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
-    { label: "Rotate",       type: "range", min: 0.0,  max: 0.10, step: 0.005, default: 0,    get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Line Count",  type: "range", min: 10,   max: 100,   step: 1,     default: 45,   tip: "Number of curl lines drawn. More = denser, heavier on GPU.",              get: () => lineCount,    set: (v) => { lineCount = v; } },
+    { label: "Line Width",  type: "range", min: 0.05, max: 0.9,   step: 0.01,  default: 0.37, tip: "Thickness of each line.",                                                  get: () => lineWidth,   set: (v) => { lineWidth = v; } },
+    { label: "Flow Scale",  type: "range", min: 0.5,  max: 5.0,   step: 0.1,   default: 3.1,  tip: "Scale of the curl noise. Larger = broader, smoother curves.",              get: () => flowScale,   set: (v) => { flowScale = v; } },
+    { label: "Flow Speed",  type: "range", min: 0.0,  max: 0.050, step: 0.001, default: 0.02, tip: "How fast lines travel along the curl field.",                              get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
+    { label: "Orb Count",   type: "range", min: 0,    max: 20,    step: 1,     default: 16,   tip: "Number of attractor orbs the lines flow around.",                          get: () => orbCount,    set: (v) => { orbCount = v; } },
+    { label: "Orb Size",    type: "range", min: 0.01, max: 0.15,  step: 0.001, default: 0.06, tip: "Radius of each orb's attraction zone.",                                   get: () => orbSize,     set: (v) => { orbSize = v; } },
+    { label: "Color Speed", type: "range", min: 0.0,  max: 1.0,   step: 0.05,  default: 0.05, tip: "How fast the palette cycles through hues.",                                get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
+    { label: "Rotate",      type: "range", min: 0.0,  max: 0.10,  step: 0.005, default: 0,    tip: "Slow rotation of the entire scene.",                                       get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
   init(ctx: PatternContext) {

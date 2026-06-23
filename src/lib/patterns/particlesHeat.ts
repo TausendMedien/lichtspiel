@@ -184,12 +184,12 @@ export const particlesHeat: Pattern = {
   },
 
   controls: [
-    { label: "Point Size",    type: "range",  min: 1.0,  max: 6.0,   step: 0.1,  default: 3,    get: () => pointSize,    set: v => { pointSize = v; } },
-    { label: "Flow Speed",    type: "range",  min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,  get: () => flowSpeed,    set: v => { flowSpeed = v; } },
-    { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,  interactive: 'heat' as const, get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,   interactive: 'heat' as const, get: () => heatGain,     set: v => { heatGain = v; } },
-    { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,    interactive: 'heat' as const, get: () => blurRadius,   set: v => { blurRadius = v; } },
-    { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
+    { label: "Point Size",    type: "range",  min: 1.0,  max: 6.0,   step: 0.1,  default: 3,     tip: "Radius of each particle dot.",                                              get: () => pointSize,    set: v => { pointSize = v; } },
+    { label: "Flow Speed",    type: "range",  min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,   tip: "How fast particles drift through the scene.",                               get: () => flowSpeed,    set: v => { flowSpeed = v; } },
+    { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,   interactive: 'heat' as const, tip: "How strongly the heat map pushes particles. Requires Heat.",       get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,    interactive: 'heat' as const, tip: "Amplify the heat signal — higher = reacts to subtler motion.",    get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,     interactive: 'heat' as const, tip: "Blur applied to the heat map before driving particles.",          get: () => blurRadius,   set: v => { blurRadius = v; } },
+    { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000,  tip: "Number of particles. More = denser cloud, heavier on GPU.",                 get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
   ],
 
   init(ctx: PatternContext) {

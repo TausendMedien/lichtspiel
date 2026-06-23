@@ -156,23 +156,34 @@ export const typography3d: Pattern = {
     { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
       set: v => { textStr = v; scheduleRebuild(); } },
     { label: "Size",          type: "range", min: 0.2, max: 2.0, step: 0.05, default: 0.82,
+      tip: "Overall size of the 3D text.",
       get: () => textSize,   set: v => { textSize = v; scheduleRebuild(); } },
     { label: "Depth",         type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.6,
+      tip: "Extrusion depth — how thick the 3D letterforms are.",
       get: () => textDepth,  set: v => { textDepth = v; scheduleRebuild(); } },
     { label: "Rotate Speed",  type: "range", min: 0.0, max: 5.0, step: 0.1, default: 0.6,
+      tip: "How fast the text spins. Set to 0 to stop rotation.",
       get: () => rotSpeed,   set: v => { rotSpeed = v; rotLocked = false; } },
-    { label: "⊙ Face Camera", type: "button", action: () => {
+    { label: "⊙ Face Camera", type: "button",
+      tip: "Snap the text to face directly at the camera and stop rotating.",
+      action: () => {
         rotSpeed = 0; rotLocked = true;
         if (textGroup) textGroup.rotation.set(0, 0, 0);
       } },
     { label: "Float Speed",   type: "range", min: 0.0, max: 1.0, step: 0.01, default: 0.4,
+      tip: "How fast the text bobs up and down.",
       get: () => floatSpeed, set: v => { floatSpeed = v; } },
     { label: "Style",         type: "select", options: ["Solid", "Wireframe", "Neon"],
+      tip: "Visual style — Solid, Wireframe (lattice), or Neon (edge glow).",
       get: () => styleIndex, set: v => { styleIndex = v; buildText(); } },
     { label: "Tracking Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
-      interactive: 'heat' as const, get: () => heatTrackingStrength, set: v => { heatTrackingStrength = v; } },
+      interactive: 'heat' as const,
+      tip: "How much heat-map motion shifts the text position. Requires Heat.",
+      get: () => heatTrackingStrength, set: v => { heatTrackingStrength = v; } },
     { label: "Float Boost",       type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
-      interactive: 'heat' as const, get: () => heatFloatBoost,       set: v => { heatFloatBoost = v; } },
+      interactive: 'heat' as const,
+      tip: "Amplify floating motion when heat-map motion is detected. Requires Heat.",
+      get: () => heatFloatBoost,       set: v => { heatFloatBoost = v; } },
   ],
 
   init(ctx: PatternContext) {

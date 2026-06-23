@@ -223,6 +223,7 @@ export const hyperMix: Pattern = {
       type: "range", min: 0, max: 0.2, step: 0.005,
       default: 0.03,
       audioWeight: 0.35,
+      tip: "How fast the particle cloud evolves over time.",
       get: () => params.speed,
       set: (v) => { params.speed = v; },
     },
@@ -231,6 +232,7 @@ export const hyperMix: Pattern = {
       type: "range", min: 0.01, max: 0.25, step: 0.01,
       default: 0.11,
       audioWeight: 0.25,
+      tip: "Scale of the curl noise that bends particle paths. Smaller = tighter spirals.",
       get: () => params.curlScale,
       set: (v) => { params.curlScale = v; if (material) material.uniforms.uCurlScale.value = v; },
     },
@@ -238,6 +240,7 @@ export const hyperMix: Pattern = {
       label: "Spread",
       type: "range", min: 0.1, max: 6.0, step: 0.1,
       default: 2.1,
+      tip: "Spatial spread of the cloud. Higher = particles cover more of the screen.",
       get: () => params.spread,
       set: (v) => { params.spread = v; if (material) material.uniforms.uSpread.value = v; },
     },
@@ -246,6 +249,7 @@ export const hyperMix: Pattern = {
       type: "range", min: 0.2, max: 3.0, step: 0.1,
       default: 0.8,
       audioWeight: 0.3,
+      tip: "Size of each particle dot.",
       get: () => params.pointSize,
       set: (v) => { params.pointSize = v; if (material) material.uniforms.uPtSize.value = v; },
     },
@@ -253,6 +257,7 @@ export const hyperMix: Pattern = {
       label: "Point Count",
       type: "range", min: 5000, max: 30000, step: 1000,
       default: 25000,
+      tip: "Number of particles. More = denser cloud, heavier on GPU.",
       get: () => params.pointCount,
       set: (v) => {
         params.pointCount = v;
@@ -262,6 +267,7 @@ export const hyperMix: Pattern = {
     {
       label: "High Quality",
       type: "toggle" as const,
+      tip: "Off = half the point count, saves GPU on slower machines.",
       title: "Off = half point count for slower machines",
       get: () => !qualityLow,
       set: (v: boolean) => {

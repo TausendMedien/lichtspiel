@@ -125,11 +125,13 @@ export const warpedSurfaces: Pattern = {
   motionControlLabels: ['Flow Speed'],
   controls: [
     { label: "Warp Iterations", type: "select", options: ["1", "2", "3", "4"],
+      tip: "How many times the warp function is applied. More = more complex shapes, heavier on GPU.",
       get: () => warpIterations - 1, set: (v) => { warpIterations = v + 1; } },
-    { label: "Noise Scale",  type: "range", min: 0.3, max: 3.0, step: 0.05, default: 1.2, get: () => noiseScale,  set: (v) => { noiseScale = v; } },
-    { label: "Warp Amount",  type: "range", min: 0.0, max: 4.0, step: 0.1,  default: 1.6, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
-    { label: "Flow Speed",   type: "range", min: 0.0, max: 4.0, step: 0.05, default: 0.04, get: () => flowSpeed, set: (v) => { flowSpeed = v; } },
+    { label: "Noise Scale",   type: "range", min: 0.3, max: 3.0, step: 0.05, default: 1.2,  tip: "Scale of the noise pattern. Larger = broader, more flowing shapes.",  get: () => noiseScale,  set: (v) => { noiseScale = v; } },
+    { label: "Warp Amount",   type: "range", min: 0.0, max: 4.0, step: 0.1,  default: 1.6,  tip: "Strength of the warp distortion.",                                     get: () => warpAmount,  set: (v) => { warpAmount = v; } },
+    { label: "Flow Speed",    type: "range", min: 0.0, max: 4.0, step: 0.05, default: 0.04, tip: "How fast the warped surface animates.",                                get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
     { label: "Color Palette", type: "select", options: ["Iridescent", "Fire", "Ocean", "Void"],
+      tip: "Which colour palette the surface uses.",
       get: () => palette, set: (v) => { palette = v; } },
   ],
 

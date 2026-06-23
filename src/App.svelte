@@ -2115,7 +2115,7 @@
           </div>
           <!-- Auto-restart toggle -->
           <div class="flex items-center justify-between">
-            <span class="text-xs text-white/70">Auto-restart demo on idle</span>
+            <span class="text-xs text-white/70" title="Automatically restart the Demo if it has been stopped for the specified idle time.">Auto-restart demo on idle</span>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <div
               class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoAutoRestart ? 'bg-white/60' : 'bg-white/20'}"
@@ -2175,7 +2175,7 @@
         </div>
         <!-- Capture resolution (camera-feed patterns: Light Painting / ASCII) -->
         <div class="mb-3 flex items-center justify-between gap-2">
-          <span class="shrink-0 text-xs text-white/70">Capture resolution</span>
+          <span class="shrink-0 text-xs text-white/70" title="Camera resolution used for Light Painting and ASCII Swirls. Motion/Pose always run at low resolution for performance.">Capture resolution</span>
           <select
             value={cameraState.resWidth}
             onchange={(e) => setCameraResolution(parseInt((e.target as HTMLSelectElement).value))}
@@ -2190,7 +2190,7 @@
 
         <!-- Show virtual multi-lens cameras toggle -->
         <div class="flex items-center justify-between">
-          <span class="text-xs text-white/70">Show virtual multi-lens cameras</span>
+          <span class="text-xs text-white/70" title="Show combined dual/triple-lens virtual cameras. Disabled by default — they can auto-switch lenses and cause patterns to use different cameras.">Show virtual multi-lens cameras</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.showVirtual ? 'bg-white/70' : 'bg-white/20'}"
@@ -2393,15 +2393,15 @@
         <!-- Base 3 colours (always on) -->
         <div class="flex flex-col gap-2">
           {#each ([
-            { key: 'main'     as const, label: 'Main'     },
-            { key: 'contrast' as const, label: 'Contrast' },
-            { key: 'glow'     as const, label: 'Glow'     },
+            { key: 'main'     as const, label: 'Main',     tip: 'Primary colour used across patterns and palette gradients.' },
+            { key: 'contrast' as const, label: 'Contrast', tip: 'Secondary colour that contrasts the Main — used for highlights and secondary elements.' },
+            { key: 'glow'     as const, label: 'Glow',     tip: 'Accent colour used for bloom, rim-light, and glow effects.' },
           ]) as cp}
             <div class="flex items-center gap-2">
               <input type="color" value={colorC2[cp.key]}
                 oninput={(e) => { colorC2[cp.key] = (e.target as HTMLInputElement).value; saveColorC2(); }}
                 class="h-7 w-10 shrink-0 cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
-              <span class="text-xs text-white/70 w-14 shrink-0">{cp.label}</span>
+              <span class="text-xs text-white/70 w-14 shrink-0" title={cp.tip}>{cp.label}</span>
               <input type="text" value={colorC2[cp.key]} placeholder="#rrggbb"
                 oninput={(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (/^#[0-9a-fA-F]{6}$/.test(v)) { colorC2[cp.key] = v; saveColorC2(); } }}
                 class="min-w-0 flex-1 rounded bg-white/10 px-2 py-0.5 font-mono text-xs text-white outline-none placeholder-white/30 focus:bg-white/15" />
@@ -2454,7 +2454,7 @@
           <!-- Interaction Strength -->
           <div>
             <div class="flex items-center justify-between mb-1">
-              <span class="text-xs text-white/70">Interaction Strength</span>
+              <span class="text-xs text-white/70" title="Master scale for all interactive reactions (motion, audio, pose). 1 = full strength, 0 = inactive.">Interaction Strength</span>
               <span class="font-mono text-[11px] text-white/40">{interactionState.strength.toFixed(1)}</span>
             </div>
             <input
@@ -2468,7 +2468,7 @@
           <!-- Presence Timeout -->
           <div>
             <div class="flex items-center justify-between mb-1">
-              <span class="text-xs text-white/70">Idle Timeout</span>
+              <span class="text-xs text-white/70" title="Seconds of no detected activity before the pattern enters idle / speed-boost state.">Idle Timeout</span>
               <span class="font-mono text-[11px] text-white/40">{interactionState.presenceTimeoutSec.toFixed(0)} s</span>
             </div>
             <input
@@ -2611,7 +2611,7 @@
       <!-- Dwell time -->
       <div class="mb-3">
         <div class="flex justify-between mb-1 text-xs text-white/70">
-          <span>Dwell time</span>
+          <span title="How long each pattern plays before switching to the next.">Dwell time</span>
           <span class="font-mono text-white/40">{demoDwell < 60 ? demoDwell + ' s' : Math.floor(demoDwell / 60) + 'm' + (demoDwell % 60 ? ' ' + (demoDwell % 60) + 's' : '')}</span>
         </div>
         <input
@@ -2626,6 +2626,7 @@
         <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Interactive features</div>
         <div class="flex gap-2">
           <button
+            title="Enable camera motion detection for all Demo patterns at once."
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.enabled && cameraState.motionEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => {
               const isOn = cameraState.enabled && cameraState.motionEnabled;
@@ -2641,11 +2642,13 @@
             }}
           >Motion</button>
           <button
+            title="Enable full-body pose tracking for all Demo patterns at once."
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => togglePoseTracking()}
             disabled={poseLoading}
           >{poseLoading ? '…' : 'Pose'}</button>
           <button
+            title="Enable microphone audio reactivity for all Demo patterns at once."
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {audioState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => {
               audioState.enabled = !audioState.enabled;
@@ -2658,6 +2661,7 @@
             }}
           >Audio</button>
           <button
+            title="Enable heat-map mode: camera motion drives pattern effects instead of just triggering randomisation."
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.heatEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
             onclick={() => {
               const next = !cameraState.heatEnabled;
@@ -2675,7 +2679,7 @@
              use it too, not just Motion/Pose); mic shown when Audio active. -->
         <div class="mt-2.5 flex flex-col gap-2">
             <div class="flex items-center gap-2">
-              <span class="w-14 shrink-0 text-[11px] text-white/40">Camera</span>
+              <span class="w-14 shrink-0 text-[11px] text-white/40" title="Which camera to use for motion detection, pose tracking, heat map, and light-painting input.">Camera</span>
               {#if getVisibleDevices().length > 0}
                 <select
                   value={getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId)}
@@ -2730,7 +2734,7 @@
       <!-- Toggles: hide HUD + randomize order -->
       <div class="mb-4 flex flex-col gap-2.5">
         <div class="flex items-center justify-between text-xs text-white/70">
-          <span>Hide HUD in Demo Mode</span>
+          <span title="Hide the pattern name and control overlay while the demo is running.">Hide HUD in Demo Mode</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoHideHud ? 'bg-white/70' : 'bg-white/20'}"
@@ -2740,7 +2744,7 @@
           </div>
         </div>
         <div class="flex items-center justify-between text-xs text-white/70">
-          <span>Randomize order of patterns</span>
+          <span title="Shuffle the pattern sequence instead of cycling through the list in order.">Randomize order of patterns</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoRandomizeOrder ? 'bg-white/70' : 'bg-white/20'}"
@@ -2753,7 +2757,7 @@
 
       <!-- Pattern start behavior selector -->
       <div class="mb-4">
-        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Pattern Start</div>
+        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40" title="Which preset each pattern loads when the Demo starts. Chilled/Balanced/Active use the 1/2/3 preset slots.">Pattern Start</div>
         <div class="flex flex-wrap gap-1">
           {#each ([['default','Default'],['slot1','Chilled 1'],['slot2','Balanced 2'],['slot3','Active 3'],['random','Random']] as const) as [val, label]}
             <button
@@ -2773,7 +2777,7 @@
       <!-- Evolving Range (demo) -->
       <div class="mb-4">
         <div class="mb-1.5 flex items-center justify-between">
-          <span class="text-[10px] uppercase tracking-widest text-white/40"><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
+          <span class="text-[10px] uppercase tracking-widest text-white/40" title="Sliders drift automatically within their min/max bands so the look evolves gradually over time."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
@@ -3276,6 +3280,7 @@
             {#if colorShuffle.enabled}
               <button
                 onclick={doColorShuffle}
+                title="Pick a random set of palette colours that work together."
                 class="mt-1.5 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-white/70 cursor-pointer hover:bg-white/20 hover:text-white active:bg-white/30 transition-colors"
               >⟳ Color Shuffle</button>
             {/if}
@@ -3285,7 +3290,7 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
                   onclick={() => { colorC2.colorsV2 = 3.0; saveColorC2(); }}
-                  title="Click to reset"
+                  title="Strength of the colour palette applied to this pattern. Lower = more monochrome. · Click to reset"
                 >Colors</span>
                 <span class="text-xs text-white/50">{colorC2.colorsV2.toFixed(1)}</span>
               </div>
@@ -3299,7 +3304,7 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span class="text-xs text-white/70 cursor-pointer hover:text-white transition-colors select-none"
                   onclick={() => { colorShuffle.brightness = 1.0; savePatternColor(patterns[index].id); }}
-                  title="Click to reset"
+                  title="Overall scene brightness multiplier. 1 = neutral. · Click to reset"
                 >Brightness</span>
                 <span class="text-xs text-white/50 flex items-center gap-1">
                   {colorShuffle.brightness.toFixed(2)}
@@ -3376,7 +3381,7 @@
               <!-- Camera section -->
               {#if patterns[index].motionReactive || patterns[index].usesPose || patterns[index].usesCameraBlend}
                 <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''}">
-                  <div class="mb-1 text-xs text-white/70">Camera</div>
+                  <div class="mb-1 text-xs text-white/70" title="The camera feeds light-painting input, motion detection, and pose tracking.">Camera</div>
                   {#if patterns[index].usesCameraBlend}
                     <!-- Light-painting patterns: render interactive:'camera' controls from pattern -->
                     {@const camControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'camera')}
@@ -3486,7 +3491,7 @@
               <!-- Heat -->
               {#if patterns[index].heatReactive}
                 <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''} flex items-center justify-between text-xs text-white/70">
-                  <span>Heat</span>
+                  <span title="The camera's motion field drives pattern effects — objects moving in frame push, tilt, or stretch the visuals.">Heat</span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.heatEnabled ? 'bg-white/70' : 'bg-white/20'}"
@@ -3510,7 +3515,7 @@
                           <div class="flex justify-between mb-1 text-xs text-white/70">
                             <span class="cursor-pointer hover:text-white transition-colors select-none"
                               onclick={() => { if (c.default !== undefined) { c.set(c.default); ctrlVals[c.label] = c.default; saveSettings(patterns); } }}
-                              title="Click to reset"
+                              title={(() => { const tip = (c as any).tip; return tip ? tip + ' · Click to reset' : 'Click to reset'; })()}
                             >{c.label}</span>
                             <span class="font-mono text-white/40">{Number(ctrlVals[c.label] ?? c.get()).toFixed(c.step < 0.1 ? 2 : c.step < 1 ? 1 : 0)}</span>
                           </div>
@@ -3529,7 +3534,7 @@
               <!-- Motion Detection -->
               {#if patterns[index].motionReactive}
                 <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''} flex items-center justify-between text-xs text-white/70">
-                  <span class="flex items-center gap-1.5">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
+                  <span class="flex items-center gap-1.5" title="Boosts pattern parameters in real time based on how much movement the camera sees.">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
@@ -3547,7 +3552,7 @@
                   <div class="flex flex-col gap-1.5 pl-1">
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
-                        <span>Sensitivity</span>
+                        <span title="How much camera movement triggers a motion boost. Higher = reacts to subtler motion.">Sensitivity</span>
                         <span class="font-mono text-white/40">{cameraState.sensitivity}</span>
                       </div>
                       <input type="range" min={0} max={100} step={1} bind:value={cameraState.sensitivity}
@@ -3555,7 +3560,7 @@
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
-                        <span>Level</span>
+                        <span title="Current detected motion level (read-only).">Level</span>
                         <span class="font-mono text-white/40">{cameraState.level}</span>
                       </div>
                       <input type="range" min={0} max={100} step={1} value={cameraState.level}
@@ -3568,7 +3573,7 @@
               <!-- Pose -->
               {#if patterns[index].usesPose}
                 <div class="flex items-center justify-between text-xs text-white/70">
-                  <span class="flex items-center gap-1.5">
+                  <span class="flex items-center gap-1.5" title="Full-body pose tracking: maps skeleton joints onto pattern controls.">
                     Pose
                     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                     <span class="cursor-pointer select-none transition-colors {poseDebug ? 'text-white/70' : 'text-white/25 hover:text-white/50'}"
@@ -3623,7 +3628,7 @@
                       <div class="flex justify-between text-xs text-white/70">
                         <span class="cursor-pointer hover:text-white transition-colors select-none"
                           onclick={() => { if (c.default !== undefined) { c.set(c.default); ctrlVals[c.label] = c.default; saveSettings(patterns); } }}
-                          title="Click to reset"
+                          title={(() => { const tip = (c as any).tip; return tip ? tip + ' · Click to reset' : 'Click to reset'; })()}
                         >{c.label}</span>
                         <span class="font-mono text-white/40">{Number(ctrlVals[c.label] ?? c.get()).toFixed(c.step < 0.1 ? 2 : c.step < 1 ? 1 : 0)}</span>
                       </div>
@@ -3640,7 +3645,7 @@
               {#if patterns[index].audioReactive}
                 <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''}">
                 <div class="flex items-center justify-between text-xs text-white/70">
-                  <span class="flex items-center gap-1.5">Audio <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
+                  <span class="flex items-center gap-1.5" title="Boosts pattern parameters in real time based on microphone volume and beat.">Audio <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {audioState.enabled ? 'bg-white/70' : 'bg-white/20'}"
@@ -3669,7 +3674,7 @@
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
-                        <span>Sensitivity</span>
+                        <span title="How strongly the microphone signal drives the pattern boost. Higher = reacts to quieter sounds.">Sensitivity</span>
                         <span class="font-mono text-white/40">{audioState.sensitivity}</span>
                       </div>
                       <input type="range" min={0} max={100} step={1} bind:value={audioState.sensitivity}
@@ -3677,7 +3682,7 @@
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
-                        <span>Noise Gate <span class="text-white/30 text-[10px]">silence floor</span></span>
+                        <span title="Minimum volume level that counts as signal. Raise it to filter out background noise.">Noise Gate <span class="text-white/30 text-[10px]">silence floor</span></span>
                         <span class="font-mono text-white/40">{audioState.noiseGate}</span>
                       </div>
                       <input type="range" min={0} max={60} step={1} bind:value={audioState.noiseGate}

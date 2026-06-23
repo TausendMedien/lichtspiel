@@ -113,12 +113,12 @@ export const lines3d: Pattern = {
   motionControlLabels: ["Rotation Speed", "Wobble", "Opacity"],
   audioControlLabels:  ["Rotation Speed"],  // Wobble is too jumpy with audio
   controls: [
-    { label: "Line Count",    type: "range", min: 14,    max: 56,   step: 1,     default: 28,    get: () => numLines,      set: (v) => { numLines = v; } },
-    { label: "Rotation Speed", type: "range", min: 0,    max: 0.5,  step: 0.01,  default: 0.05,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
-    { label: "Wobble",         type: "range", min: 0,    max: 4.0,  step: 0.05,  default: 0.3,   get: () => wobble,        set: (v) => { wobble = v; } },
-    { label: "Thickness",      type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.025, get: () => thickness,     set: (v) => { thickness = v; } },
-    { label: "Glow",           type: "range", min: 0,    max: 1.0,  step: 0.05,  default: 0.45,  get: () => glow,          set: (v) => { glow = v; } },
-    { label: "Opacity",        type: "range", min: 0.0,  max: 1.0,  step: 0.05,  default: 0.6,   get: () => opacity,       set: (v) => { opacity = v; } },
+    { label: "Line Count",     type: "range", min: 14,    max: 56,   step: 1,     default: 28,    tip: "Number of 3D lines in the ring.",             get: () => numLines,      set: (v) => { numLines = v; } },
+    { label: "Rotation Speed", type: "range", min: 0,     max: 0.5,  step: 0.01,  default: 0.05,  tip: "How fast the ring rotates.",                   get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
+    { label: "Wobble",         type: "range", min: 0,     max: 4.0,  step: 0.05,  default: 0.3,   tip: "Side-to-side oscillation of the lines.",       get: () => wobble,        set: (v) => { wobble = v; } },
+    { label: "Thickness",      type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.025, tip: "Width of each line.",                           get: () => thickness,     set: (v) => { thickness = v; } },
+    { label: "Glow",           type: "range", min: 0,     max: 1.0,  step: 0.05,  default: 0.45,  tip: "Bloom/glow intensity around the lines.",       get: () => glow,          set: (v) => { glow = v; } },
+    { label: "Opacity",        type: "range", min: 0.0,   max: 1.0,  step: 0.05,  default: 0.6,   tip: "Overall transparency of all lines.",            get: () => opacity,       set: (v) => { opacity = v; } },
   ],
 
   init(ctx: PatternContext) {

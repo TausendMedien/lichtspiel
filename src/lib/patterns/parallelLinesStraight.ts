@@ -80,11 +80,11 @@ export const parallelLinesStraight: Pattern = {
   id: "parallelLinesStraight",
   name: "Parallel Lines",
   controls: [
-    { label: "Line Count",   type: "range", min: 10,  max: 120, step: 1, default: 47,    get: () => lineCount,   set: (v) => { lineCount = v; } },
-    { label: "Scroll Speed", type: "range", min: 0.02,max: 1.0, step: 0.01, default: 0.06, audioWeight: 0.35, get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
-    { label: "Line Width",   type: "range", min: 0.02,max: 0.4, step: 0.01, default: 0.19, get: () => lineWidth,   set: (v) => { lineWidth = v; } },
-    { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0, get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
-    { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.3, get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Line Count",   type: "range", min: 10,  max: 120, step: 1,    default: 47,   tip: "Number of parallel lines.",                              get: () => lineCount,   set: (v) => { lineCount = v; } },
+    { label: "Scroll Speed", type: "range", min: 0.02,max: 1.0, step: 0.01, default: 0.06, audioWeight: 0.35, tip: "How fast lines scroll across the screen.",   get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
+    { label: "Line Width",   type: "range", min: 0.02,max: 0.4, step: 0.01, default: 0.19, tip: "Thickness of each line.",                                get: () => lineWidth,   set: (v) => { lineWidth = v; } },
+    { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0,    tip: "How fast the palette cycles along the lines.",           get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
+    { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.3, tip: "Slow rotation of the entire scene.",     get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
   init(ctx: PatternContext) {

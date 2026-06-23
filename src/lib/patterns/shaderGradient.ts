@@ -93,8 +93,8 @@ export const shaderGradient: Pattern = {
   id: "shaderGradient",
   name: "Shader Gradient",
   controls: [
-    { label: "Speed",       type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.02, get: () => speed,       set: (v) => { speed = v; } },
-    { label: "Dynamic",     type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.6,   get: () => dynamic,     set: (v) => { dynamic = v; } },
+    { label: "Speed",   type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.02, tip: "How fast the gradient flows and shifts across the screen.", get: () => speed,   set: (v) => { speed = v; } },
+    { label: "Dynamic", type: "range", min: 0.0,   max: 1.0,  step: 0.05,  default: 0.6,  tip: "Amount of noise turbulence added to the gradient. 0 = smooth, 1 = fully animated.", get: () => dynamic, set: (v) => { dynamic = v; } },
   ],
 
   init(ctx: PatternContext) {

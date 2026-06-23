@@ -280,21 +280,24 @@ export const asciiSwirls: Pattern = {
   attribution: "ASCII rendering — source pattern: Baroque Swirls",
   controls: [
     { label: "Sign Size",   type: "range", min: 4, max: 32, step: 1, default: 8,
+      tip: "Size in pixels of each ASCII character cell. Smaller = more characters, finer detail.",
       get: () => signSize,
       set: (v) => { signSize = v; rebuildCharTex(); }
     },
     { label: "Char Set",    type: "select", options: ["Dense", "Sparse", "Geometric", "Letters"],
+      tip: "Which character set to use — Dense has the most tonal variation, Letters uses A–Z.",
       get: () => charSet,
       set: (v) => { charSet = v; rebuildCharTex(); }
     },
-    { label: "Swirl Speed", type: "range", min: 0.0, max: 0.3,  step: 0.005, default: 0.05, get: () => swirlSpeed, set: (v) => { swirlSpeed = v; } },
-    { label: "Warp Amount", type: "range", min: 0.0, max: 3.0,  step: 0.05,  default: 1.4,  get: () => warpAmount, set: (v) => { warpAmount = v; } },
-    { label: "Band Count",  type: "range", min: 2,   max: 20,   step: 1,     default: 13,   get: () => bandCount,  set: (v) => { bandCount = v; } },
+    { label: "Swirl Speed", type: "range", min: 0.0, max: 0.3,  step: 0.005, default: 0.05, tip: "How fast the swirl pattern rotates.",                                              get: () => swirlSpeed, set: (v) => { swirlSpeed = v; } },
+    { label: "Warp Amount", type: "range", min: 0.0, max: 3.0,  step: 0.05,  default: 1.4,  tip: "How much the noise field distorts the swirl. Higher = more chaotic banding.",     get: () => warpAmount, set: (v) => { warpAmount = v; } },
+    { label: "Band Count",  type: "range", min: 2,   max: 20,   step: 1,     default: 13,   tip: "Number of tone/colour bands in the pattern. More = finer gradation.",             get: () => bandCount,  set: (v) => { bandCount = v; } },
     // Camera controls — shown in Interactive > Camera section
     {
       label: "Camera Device",
       type: "select" as const,
       interactive: 'camera' as const,
+      tip: "Which camera feeds the ASCII overlay blend.",
       options: () => getVisibleDevices().length > 0 ? getVisibleDevices().map(d => d.label) : ['Default'],
       get: () => {
         const idx = getVisibleDevices().findIndex(d => d.deviceId === cameraState.deviceId);
@@ -310,6 +313,7 @@ export const asciiSwirls: Pattern = {
       label: "Cam Blend",
       type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.5,
       interactive: 'camera' as const,
+      tip: "How strongly the live camera shows through the ASCII overlay. 0 = pure ASCII, 1 = full camera.",
       get: () => camBlend,
       set: (v) => { camBlend = v; },
     },

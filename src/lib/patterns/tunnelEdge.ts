@@ -123,14 +123,14 @@ export const tunnelEdge: Pattern = {
   motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
-    { label: "Speed",        type: "range", min: -30,   max: 30,   step: 0.5,  default: 4,    get: () => speed,        set: (v) => { speed = v; } },
-    { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, get: () => rotSpeed,     set: (v) => { rotSpeed = v; } },
-    { label: "Ring Count",   type: "range", min: 2,     max: 20,   step: 1,    default: 8,    get: () => ringCount,    set: (v) => { ringCount = v; } },
-    { label: "Edges",        type: "range", min: 3,     max: 12,   step: 1,    default: 5,    get: () => edges,        set: (v) => { edges = v; } },
-    { label: "Ring Offset",  type: "range", min: -3.14, max: 3.14, step: 0.05, default: 0,    get: () => ringOffset,   set: (v) => { ringOffset = v; } },
-    { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    get: () => wobble,       set: (v) => { wobble = v; } },
-    { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, get: () => shadowWidth,  set: (v) => { shadowWidth = v; } },
-    { label: "Color Drift",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.2,  get: () => colorDrift,   set: (v) => { colorDrift = v; } },
+    { label: "Speed",        type: "range", min: -30,   max: 30,   step: 0.5,  default: 4,    tip: "Fly-through speed. Positive = forwards, negative = backwards.",                          get: () => speed,       set: (v) => { speed = v; } },
+    { label: "Rotation",     type: "range", min: -0.3,  max: 0.3,  step: 0.01, default: 0.06, tip: "How fast the tunnel spins around the fly-through axis. Sign sets direction.",           get: () => rotSpeed,    set: (v) => { rotSpeed = v; } },
+    { label: "Ring Count",   type: "range", min: 2,     max: 20,   step: 1,    default: 8,    tip: "Number of polygon rings visible at once.",                                               get: () => ringCount,   set: (v) => { ringCount = v; } },
+    { label: "Edges",        type: "range", min: 3,     max: 12,   step: 1,    default: 5,    tip: "Number of sides per ring (3 = triangle, 6 = hexagon, 12 ≈ circle).",                    get: () => edges,       set: (v) => { edges = v; } },
+    { label: "Ring Offset",  type: "range", min: -3.14, max: 3.14, step: 0.05, default: 0,    tip: "Phase twist between adjacent rings — creates a spiral or zigzag look.",                 get: () => ringOffset,  set: (v) => { ringOffset = v; } },
+    { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    tip: "Camera sway as you fly through.",                                                       get: () => wobble,      set: (v) => { wobble = v; } },
+    { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, tip: "Width of the shaded gap between the bright and dark faces of each edge.",               get: () => shadowWidth, set: (v) => { shadowWidth = v; } },
+    { label: "Color Drift",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.2,  tip: "How fast the palette shifts along the tunnel.",                                         get: () => colorDrift,  set: (v) => { colorDrift = v; } },
   ],
 
   init(ctx: PatternContext) {

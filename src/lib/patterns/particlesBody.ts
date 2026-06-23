@@ -128,10 +128,10 @@ export const particlesBody: Pattern = {
   usesPose: true,
   name: "Particle Field",
   controls: [
-    { label: "Point Size",       type: "range", min: 1.0, max: 6.0,   step: 0.1,  default: 3,     get: () => pointSize,       set: (v) => { pointSize = v; } },
-    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,   step: 0.1,  default: 0.2,   get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
-    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,   step: 0.05, default: 0.4,   interactive: 'pose' as const, get: () => attractStrength, set: (v) => { attractStrength = v; } },
-    { label: "Point Count",      type: "range", min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount,   set: (v) => { particleCount = v; applyParticleCount(v); } },
+    { label: "Point Size",       type: "range", min: 1.0, max: 6.0,   step: 0.1,  default: 3,     tip: "Radius of each particle dot.",                                                get: () => pointSize,       set: (v) => { pointSize = v; } },
+    { label: "Flow Speed",       type: "range", min: 0.0, max: 3.0,   step: 0.1,  default: 0.2,   tip: "How fast particles drift through the scene.",                                  get: () => flowSpeed,       set: (v) => { flowSpeed = v; } },
+    { label: "Attract Strength", type: "range", min: 0.0, max: 2.0,   step: 0.05, default: 0.4,   interactive: 'pose' as const, tip: "Force pulling particles toward your pose skeleton joints. Requires Pose.", get: () => attractStrength, set: (v) => { attractStrength = v; } },
+    { label: "Point Count",      type: "range", min: 5000, max: 50000, step: 1000, default: 30000, tip: "Number of particles. More = denser cloud, heavier on GPU.",                    get: () => particleCount,   set: (v) => { particleCount = v; applyParticleCount(v); } },
   ],
 
   init(ctx: PatternContext) {

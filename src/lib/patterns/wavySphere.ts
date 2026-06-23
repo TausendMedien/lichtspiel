@@ -128,14 +128,15 @@ export const wavySphere: Pattern = {
   attribution: "Adapted from Mauricio Massaia — proto-02",
   heatReactive: true,
   controls: [
-    { label: "Wave Speed",   type: "range", min: 0.0, max: 0.20, step: 0.005, default: 0.04, get: () => waveSpeed,     set: (v) => { waveSpeed = v; } },
-    { label: "Amplitude",    type: "range", min: 0.0, max: 0.80, step: 0.01,  default: 0.35, get: () => amplitude,     set: (v) => { amplitude = v; } },
-    { label: "Rotation",     type: "range", min: 0.0, max: 2.0,  step: 0.05,  default: 0.4,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
-    { label: "Color Shift",  type: "range", min: 0.0, max: 1.0,  step: 0.01,  default: 0.0,  get: () => colorShift,    set: (v) => { colorShift = v; } },
-    { label: "Palette",      type: "select", options: ["Gold/Cyan", "Pink/Magenta", "Violet/Cyan"],
+    { label: "Wave Speed",    type: "range", min: 0.0, max: 0.20, step: 0.005, default: 0.04, tip: "How fast the waves ripple across the sphere surface.",                          get: () => waveSpeed,     set: (v) => { waveSpeed = v; } },
+    { label: "Amplitude",     type: "range", min: 0.0, max: 0.80, step: 0.01,  default: 0.35, tip: "Height of the waves — how much the sphere surface deforms.",                get: () => amplitude,     set: (v) => { amplitude = v; } },
+    { label: "Rotation",      type: "range", min: 0.0, max: 2.0,  step: 0.05,  default: 0.4,  tip: "How fast the sphere spins.",                                                get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
+    { label: "Color Shift",   type: "range", min: 0.0, max: 1.0,  step: 0.01,  default: 0.0,  tip: "Shift the starting hue of the palette.",                                   get: () => colorShift,    set: (v) => { colorShift = v; } },
+    { label: "Palette",       type: "select", options: ["Gold/Cyan", "Pink/Magenta", "Violet/Cyan"],
+      tip: "Which colour palette the sphere uses.",
       get: () => palette, set: (v) => { palette = v; } },
-    { label: "Tilt Strength",  type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
-    { label: "Amplitude Boost", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatAmplBoost,    set: v => { heatAmplBoost = v; } },
+    { label: "Tilt Strength",   type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the sphere. Requires Heat.",                        get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Amplitude Boost", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra wave amplitude when heat-map motion is detected. Requires Heat.",           get: () => heatAmplBoost,    set: v => { heatAmplBoost = v; } },
   ],
 
   init(ctx: PatternContext) {

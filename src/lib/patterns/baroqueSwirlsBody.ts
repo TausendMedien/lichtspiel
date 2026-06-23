@@ -128,14 +128,14 @@ export const baroqueSwirlsBody: Pattern = {
   audioControlLabels: ["Flow Speed", "Teal"],
   motionControlLabels: ["Rotate", "Purple"],
   controls: [
-    { label: "Body Warp",      type: "range", min: 0.0, max: 2.0, step: 0.05, default: 0.5, interactive: 'pose' as const, get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
-    { label: "Band Count",     type: "range", min: 2,   max: 20,  step: 1, default: 13,    get: () => bandCount,   set: (v) => { bandCount = v; } },
-    { label: "Flow Speed",     type: "range", min: 0.0, max: 0.3, step: 0.005, default: 0, get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
-    { label: "Warp Amount",    type: "range", min: 0.15, max: 3.0, step: 0.05, default: 1.4, get: () => warpAmount,  set: (v) => { warpAmount = v; } },
-    { label: "Teal",           type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.75, get: () => tealAmt,   set: (v) => { tealAmt = v; } },
-    { label: "Purple",         type: "range", min: 0.0, max: 1.5, step: 0.05, default: 0.8, get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
-    { label: "Color Speed",    type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0.08, get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
-    { label: "Rotate",         type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0,  get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Body Warp",   type: "range", min: 0.0, max: 2.0, step: 0.05,  default: 0.5,  interactive: 'pose' as const, tip: "How strongly your pose skeleton deforms the swirl. Requires Pose.", get: () => bodyWarpStr,  set: (v) => { bodyWarpStr = v; } },
+    { label: "Band Count",  type: "range", min: 2,   max: 20,  step: 1,     default: 13,   tip: "Number of tone/colour bands in the pattern. More = finer gradation.", get: () => bandCount,   set: (v) => { bandCount = v; } },
+    { label: "Flow Speed",  type: "range", min: 0.0, max: 0.3, step: 0.005, default: 0,    tip: "How fast the swirl pattern evolves over time.", get: () => flowSpeed,   set: (v) => { flowSpeed = v; } },
+    { label: "Warp Amount", type: "range", min: 0.15, max: 3.0, step: 0.05, default: 1.4,  tip: "Strength of the noise distortion. Higher = more chaotic banding.", get: () => warpAmount,  set: (v) => { warpAmount = v; } },
+    { label: "Teal",        type: "range", min: 0.0, max: 1.5, step: 0.05,  default: 0.75, tip: "Amount of teal in the colour mix.", get: () => tealAmt,   set: (v) => { tealAmt = v; } },
+    { label: "Purple",      type: "range", min: 0.0, max: 1.5, step: 0.05,  default: 0.8,  tip: "Amount of purple in the colour mix.", get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
+    { label: "Color Speed", type: "range", min: 0.0, max: 1.0, step: 0.05,  default: 0.08, tip: "How fast the palette cycles through hues.", get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
+    { label: "Rotate",      type: "range", min: 0.0, max: 0.5, step: 0.01,  default: 0,    tip: "Slow rotation of the entire pattern.", get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
   ],
 
   init(ctx: PatternContext) {

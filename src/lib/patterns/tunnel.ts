@@ -98,11 +98,11 @@ export const tunnel: Pattern = {
   motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Thickness"],
   controls: [
-    { label: "Speed",       type: "range", min: -40,  max: 40,  step: 1, default: 10,    get: () => speed,         set: (v) => { speed = v; } },
-    { label: "Wobble",      type: "range", min: 0,    max: 1.0, step: 0.05, default: 0, get: () => wobble,        set: (v) => { wobble = v; } },
-    { label: "Ring Count",  type: "range", min: 1,    max: 50,  step: 1, default: 42,    get: () => ringCount,     set: (v) => { ringCount = v; } },
-    { label: "Thickness",   type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, get: () => lineThickness, set: (v) => { lineThickness = v; } },
-    { label: "Color Speed", type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 0.6, get: () => colorSpeed,    set: (v) => { colorSpeed = v; } },
+    { label: "Speed",       type: "range", min: -40,  max: 40,  step: 1,    default: 10,  tip: "Fly-through speed. Positive = forwards, negative = backwards.", get: () => speed,         set: (v) => { speed = v; } },
+    { label: "Wobble",      type: "range", min: 0,    max: 1.0, step: 0.05, default: 0,   tip: "Camera sway from side to side as you fly.",                   get: () => wobble,        set: (v) => { wobble = v; } },
+    { label: "Ring Count",  type: "range", min: 1,    max: 50,  step: 1,    default: 42,  tip: "Number of rings visible at once.",                            get: () => ringCount,     set: (v) => { ringCount = v; } },
+    { label: "Thickness",   type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, tip: "Width of each ring line.",                                    get: () => lineThickness, set: (v) => { lineThickness = v; } },
+    { label: "Color Speed", type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 0.6, tip: "How fast the palette cycles along the tunnel.",              get: () => colorSpeed,    set: (v) => { colorSpeed = v; } },
   ],
 
   init(ctx: PatternContext) {

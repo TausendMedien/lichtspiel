@@ -312,24 +312,24 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     controls: [
       // ── Image section ────────────────────────────────────────────────
       { label: 'Image', type: 'section', get: () => imageOn, set: (v: boolean) => { imageOn = v; } },
-      { label: 'Rotate 90°',  type: 'button', action: () => { rotation = (rotation + 1) % 4; } },
+      { label: 'Rotate 90°',  type: 'button', tip: 'Rotate the displayed image 90° clockwise. Press again to keep rotating.', action: () => { rotation = (rotation + 1) % 4; } },
 
       // ── Motion section ───────────────────────────────────────────────
       { label: 'Motion', type: 'section', get: () => motionOn, set: (v: boolean) => { motionOn = v; } },
-      { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => drift,       set: v => { drift = v; } },
-      { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
-      { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.05, get: () => ripple,      set: v => { ripple = v; } },
-      { label: 'Brightness',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.55, get: () => audioFlash,  set: v => { audioFlash = v; } },
+      { label: 'Drift',        type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, tip: 'Slow continuous pan/drift across the image.',                          get: () => drift,       set: v => { drift = v; } },
+      { label: 'Zoom Breathe', type: 'range', min: 0, max: 1, step: 0.05, default: 0.15, tip: 'Gentle periodic zoom in and out.',                                     get: () => zoomBreathe, set: v => { zoomBreathe = v; } },
+      { label: 'Ripple',       type: 'range', min: 0, max: 1, step: 0.05, default: 0.05, tip: 'Amount of wave distortion applied to the image.',                      get: () => ripple,      set: v => { ripple = v; } },
+      { label: 'Brightness',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.55, tip: 'Audio-reactive flash brightness — brightens on strong beats.',         get: () => audioFlash,  set: v => { audioFlash = v; } },
 
       // ── Style section ────────────────────────────────────────────────
       { label: 'Style', type: 'section', get: () => styleOn, set: (v: boolean) => { styleOn = v; } },
-      { label: 'Vignette',     type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
-      { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
-      { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
+      { label: 'Vignette',     type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, tip: 'Darken the edges of the image.',                                        get: () => vignette,    set: v => { vignette = v; } },
+      { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, tip: 'Chromatic aberration: offset red and blue channels for a glitch look.',  get: () => chromaticAb, set: v => { chromaticAb = v; } },
+      { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, tip: 'Audio-reactive glow on the image edges.',                               get: () => edgePulse,   set: v => { edgePulse = v; } },
 
       // ── Heat section (shown inside Interactive → Heat subsection) ─────
-      { label: 'Heat Strength', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, interactive: 'heat' as const, get: () => heatStrength, set: v => { heatStrength = v; } },
-      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 1,    default: 3,   interactive: 'heat' as const, get: () => heatBlurR,    set: v => { heatBlurR = v; } },
+      { label: 'Heat Strength', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, interactive: 'heat' as const, tip: 'How strongly heat-map motion displaces the image. Requires Heat.',     get: () => heatStrength, set: v => { heatStrength = v; } },
+      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 1,    default: 3,   interactive: 'heat' as const, tip: 'Blur applied to the heat map (smoother displacement). Requires Heat.', get: () => heatBlurR,    set: v => { heatBlurR = v; } },
     ],
 
     init(ctx: PatternContext) {
