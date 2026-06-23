@@ -41,7 +41,7 @@ const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',  
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightKaleido', 'lightGlitch'];
-const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls', 'typography3d']);
+const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 // Light patterns get audio reactivity (Brightness via mic) but not motion camera
 const NO_AUDIO = new Set(['typography3d']);

@@ -172,7 +172,7 @@ export const wavySphere: Pattern = {
     const speed = Math.min(1, dt * 2.0);
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
-      const targetYaw  = (cx - 0.5) * Math.PI * 0.8 * heatTiltStrength;
+      const targetYaw  = (0.5 - cx) * Math.PI * 0.8 * heatTiltStrength;
       const targetTilt = (cy - 0.5) * 0.5 * heatTiltStrength;
       heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
       heatTiltOffset += (targetTilt - heatTiltOffset) * speed;

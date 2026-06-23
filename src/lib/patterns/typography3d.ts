@@ -151,6 +151,7 @@ export const typography3d: Pattern = {
   id: "typography3d",
   name: "3D Typography",
   heatReactive: true,
+  motionControlLabels: [],
   controls: [
     { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
       set: v => { textStr = v; scheduleRebuild(); } },
@@ -216,7 +217,7 @@ export const typography3d: Pattern = {
 
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
-      const targetYaw  = (cx - 0.5) * Math.PI * 0.6 * heatTrackingStrength;
+      const targetYaw  = (0.5 - cx) * Math.PI * 0.6 * heatTrackingStrength;
       const targetTilt = (cy - 0.5) * 0.3 * heatTrackingStrength;
       const speed = Math.min(1, dt * 2.5);
       heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;

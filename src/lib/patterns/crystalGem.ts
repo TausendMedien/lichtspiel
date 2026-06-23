@@ -121,9 +121,9 @@ export const crystalGem: Pattern = {
   attribution: "Inspired by Mauricio Massaia — proto-07",
   heatReactive: true,
   controls: [
-    { label: "Fresnel",    type: "range",  min: 0.0, max: 3.0, step: 0.1,  default: 1.4,  get: () => fresnelStr,   set: (v) => { fresnelStr = v; } },
-    { label: "Rotation",   type: "range",  min: 0.0, max: 2.0, step: 0.05, default: 0.5,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
-    { label: "Facets",     type: "select", options: ["8", "16", "32", "64"],
+    { label: "Fresnel",  type: "range",  min: 0.0, max: 3.0, step: 0.1,  default: 1.4,  tip: "Edge glow intensity — brighter rim at glancing angles. 0 = flat, 3 = strong halo.", get: () => fresnelStr,    set: (v) => { fresnelStr = v; } },
+    { label: "Rotation", type: "range",  min: 0.0, max: 2.0, step: 0.05, default: 0.5,  tip: "How fast the gem spins.",                                                             get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
+    { label: "Facets",   type: "select", options: ["8", "16", "32", "64"], tip: "Number of polygon faces. More = rounder gem, heavier on GPU.",
       get: () => facets,
       set: (v) => {
         facets = v;
@@ -134,8 +134,8 @@ export const crystalGem: Pattern = {
         }
       },
     },
-    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
-    { label: "Spin Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatSpinBoost,    set: v => { heatSpinBoost = v; } },
+    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the gem. Requires Heat.",                           get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Spin Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra spin speed when heat-map motion is detected. Requires Heat.",                get: () => heatSpinBoost,    set: v => { heatSpinBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -162,7 +162,7 @@ export const crystalGem: Pattern = {
     const speed = Math.min(1, dt * 2.5);
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
-      const targetYaw  = (cx - 0.5) * Math.PI * 0.7 * heatTiltStrength;
+      const targetYaw  = (0.5 - cx) * Math.PI * 0.7 * heatTiltStrength;
       const targetTilt = (cy - 0.5) * 0.4 * heatTiltStrength;
       heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
       heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
