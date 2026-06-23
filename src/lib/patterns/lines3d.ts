@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
 
 // Pool: create this many lines at init; slider shows/hides a subset.
 const MAX_LINES_POOL = 56;
@@ -10,6 +11,8 @@ const GLOW_SEGMENTS   = 20;
 const TUBE_RADIAL     = 8;
 const GLOW_RADIAL     = 6;
 
+const W = 160, H = 90;
+
 let numLines      = 28;
 let rotationSpeed = 0.05;
 let wobble        = 0.30;
@@ -18,6 +21,24 @@ let opacity       = 0.60;
 let glow          = 0.45;
 
 let rotationAngle = 0;
+
+// Heat state
+let heatTiltStr = 1.0;
+let heatYaw     = 0;
+let heatTilt    = 0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 interface LineState {
   mesh:         THREE.Mesh;
@@ -110,6 +131,7 @@ function fillTube(
 export const lines3d: Pattern = {
   id: "lines3d",
   name: "3D Lines",
+  heatReactive: true,
   motionControlLabels: ["Rotation Speed", "Wobble", "Opacity"],
   audioControlLabels:  ["Rotation Speed"],  // Wobble is too jumpy with audio
   controls: [
@@ -119,6 +141,7 @@ export const lines3d: Pattern = {
     { label: "Thickness",      type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.025, tip: "Width of each line.",                           get: () => thickness,     set: (v) => { thickness = v; } },
     { label: "Glow",           type: "range", min: 0,     max: 1.0,  step: 0.05,  default: 0.45,  tip: "Bloom/glow intensity around the lines.",       get: () => glow,          set: (v) => { glow = v; } },
     { label: "Opacity",        type: "range", min: 0.0,   max: 1.0,  step: 0.05,  default: 0.6,   tip: "Overall transparency of all lines.",            get: () => opacity,       set: (v) => { opacity = v; } },
+    { label: "Tilt Strength",  type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the line ring toward the person. Requires Heat.", get: () => heatTiltStr, set: v => { heatTiltStr = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -180,9 +203,22 @@ export const lines3d: Pattern = {
   update(dt: number, elapsed: number) {
     if (!group) return;
 
-    rotationAngle   += dt * rotationSpeed;
-    group.rotation.y = rotationAngle;
-    group.rotation.x = Math.sin(rotationAngle * 0.7) * 0.3;
+    rotationAngle += dt * rotationSpeed;
+
+    if (cameraState.heatEnabled) {
+      const { cx, cy } = computeHeatCentroid();
+      const targetYaw  = (0.5 - cx) * 0.8 * heatTiltStr;
+      const targetTilt = (cy - 0.5) * 0.4 * heatTiltStr;
+      const spd = Math.min(1, dt * 2.5);
+      heatYaw  += (targetYaw  - heatYaw)  * spd;
+      heatTilt += (targetTilt - heatTilt) * spd;
+    } else {
+      heatYaw  *= Math.max(0, 1 - dt * 3);
+      heatTilt *= Math.max(0, 1 - dt * 3);
+    }
+
+    group.rotation.y = rotationAngle + heatYaw;
+    group.rotation.x = Math.sin(rotationAngle * 0.7) * 0.3 + heatTilt;
 
     for (let i = 0; i < lines.length; i++) {
       const visible = i < numLines;
@@ -232,5 +268,6 @@ export const lines3d: Pattern = {
     lines.length = 0;
     group  = null;
     camera = null;
+    heatYaw = 0; heatTilt = 0;
   },
 };

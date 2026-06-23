@@ -1,14 +1,36 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
 
 // Each line rendered as a screen-space quad (2 triangles) for real pixel-width control.
 // A second glow-points pass adds per-particle blur and size variation like Particle Field.
+
+const W = 160, H = 90;
 
 let lineCount  = 1000;
 let flowSpeed  = 0.3;
 let tailLength = 6.0;
 let lineWidth  = 4.0;  // pixels
+
+// Heat state
+let heatTiltStr   = 1.0;
+let heatFlowBoost = 1.0;
+let heatYaw       = 0;
+let heatTilt      = 0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 let lineMesh:   THREE.Mesh   | null = null;
 let glowPoints: THREE.Points | null = null;
@@ -278,6 +300,7 @@ function buildGeometry() {
 export const particleLines: Pattern = {
   id: "particleLines",
   name: "Particle Lines",
+  heatReactive: true,
   motionControlLabels: ["Flow Speed", "Line Width"],
   audioControlLabels:  ["Line Width"],
   controls: [
@@ -289,6 +312,8 @@ export const particleLines: Pattern = {
     { label: "Colors v2", type: "range", min: 0, max: 3, step: 0.1, default: 3,
       interactive: 'internal' as const,
       get: () => colorC2.colorsV2, set: (v) => { colorC2.colorsV2 = v; } },
+    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the particle cloud toward the person. Requires Heat.",  get: () => heatTiltStr,   set: v => { heatTiltStr = v; } },
+    { label: "Flow Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra flow speed when heat-map motion is detected. Requires Heat.",                      get: () => heatFlowBoost, set: v => { heatFlowBoost = v; } },
   ],
   colorDefaults: { saturation: 0.9, brightness: 1.8 },
 
@@ -338,6 +363,22 @@ export const particleLines: Pattern = {
   update(dt: number) {
     if (!lineMat || !glowMat) return;
     accTime += dt * flowSpeed;
+
+    if (cameraState.heatEnabled) {
+      const { cx, cy, total } = computeHeatCentroid();
+      const targetYaw  = (0.5 - cx) * 0.6 * heatTiltStr;
+      const targetTilt = (cy - 0.5) * 0.4 * heatTiltStr;
+      const spd = Math.min(1, dt * 2.0);
+      heatYaw  += (targetYaw  - heatYaw)  * spd;
+      heatTilt += (targetTilt - heatTilt) * spd;
+      accTime  += dt * flowSpeed * Math.min(total * 8, 2) * heatFlowBoost;
+    } else {
+      heatYaw  *= Math.max(0, 1 - dt * 3);
+      heatTilt *= Math.max(0, 1 - dt * 3);
+    }
+
+    if (lineMesh)   { lineMesh.rotation.y   = heatYaw; lineMesh.rotation.x   = heatTilt; }
+    if (glowPoints) { glowPoints.rotation.y = heatYaw; glowPoints.rotation.x = heatTilt; }
     if (needsRebuild) {
       needsRebuild    = false;
       needsTailUpdate = false;
@@ -380,6 +421,7 @@ export const particleLines: Pattern = {
     lineMat  = null; glowMat    = null;
     camera   = null; sceneRef   = null;
     accTime  = 0; needsRebuild = false; needsTailUpdate = false;
+    heatYaw = 0; heatTilt = 0;
     lineStore    = [];
     posAttr      = null;
     otherPosAttr = null;
