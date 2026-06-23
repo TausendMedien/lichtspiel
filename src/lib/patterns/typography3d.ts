@@ -21,7 +21,8 @@ let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
 
 // Heat centroid tracking state
-let heatYawOffset  = 0;  // decays to 0 when heat off
+let baseYaw        = 0;  // accumulated idle Y rotation (kept separate from heat offset)
+let heatYawOffset  = 0;  // smooth centroid-driven offset, decays to 0 when heat off
 let heatTiltOffset = 0;
 let heatTrackingStrength = 1.0;
 let heatFloatBoost       = 1.0;
@@ -210,25 +211,25 @@ export const typography3d: Pattern = {
 
     animTime += dt;
 
+    // Accumulate idle spin separately so heat offset is additive, not compounding
+    baseYaw += dt * rotSpeed * 0.8;
+
     if (cameraState.heatEnabled) {
-      const { cx, cy, total } = computeHeatCentroid();
-      // Target yaw/tilt driven by centroid position in camera space
+      const { cx, cy } = computeHeatCentroid();
       const targetYaw  = (cx - 0.5) * Math.PI * 0.6 * heatTrackingStrength;
-      const targetTilt = (cy - 0.5) * 0.3   * heatTrackingStrength;
+      const targetTilt = (cy - 0.5) * 0.3 * heatTrackingStrength;
       const speed = Math.min(1, dt * 2.5);
       heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
       heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
-      // Normalize total: W*H pixels, typical active scene ~0.5–5 total → use /2 as scale
-      const ampBoost = Math.min(total / 2, 1) * heatFloatBoost;
-      textGroup.rotation.y += dt * rotSpeed * 0.8 + heatYawOffset;
+      const ampBoost = (cameraState.level / 100) * heatFloatBoost;
+      textGroup.rotation.y = baseYaw + heatYawOffset;
       if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * (0.3 + ampBoost * 0.5);
     } else {
-      // Decay heat offsets back to zero for smooth transition
       const decay = Math.max(0, 1 - dt * 3);
       heatYawOffset  *= decay;
       heatTiltOffset *= decay;
-      textGroup.rotation.y += dt * rotSpeed * 0.8 + heatYawOffset;
+      textGroup.rotation.y = baseYaw + heatYawOffset;
       if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * 0.3;
     }
@@ -260,6 +261,7 @@ export const typography3d: Pattern = {
     scene = null;
     animTime = 0;
     rotLocked = false;
+    baseYaw = 0;
     heatYawOffset  = 0;
     heatTiltOffset = 0;
     _lastPrimary  = "";

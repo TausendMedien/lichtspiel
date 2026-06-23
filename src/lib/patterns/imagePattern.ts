@@ -329,7 +329,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
       // ── Heat section (shown inside Interactive → Heat subsection) ─────
       { label: 'Heat Strength', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, interactive: 'heat' as const, get: () => heatStrength, set: v => { heatStrength = v; } },
-      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 0.5,  default: 3,   interactive: 'heat' as const, get: () => heatBlurR,    set: v => { heatBlurR = v; } },
+      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 1,    default: 3,   interactive: 'heat' as const, get: () => heatBlurR,    set: v => { heatBlurR = v; } },
     ],
 
     init(ctx: PatternContext) {

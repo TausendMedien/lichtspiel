@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.SphereGeometry | null = null;
@@ -11,6 +14,25 @@ let rotationSpeed = 0.5;
 let facets       = 1;     // select index → 8, 16, 32, 64 segments
 
 let rotX = 0, rotY = 0, rotZ = 0;
+
+// Heat state
+let heatTiltStrength = 1.0;
+let heatSpinBoost    = 1.0;
+let heatYawOffset    = 0;
+let heatTiltOffset   = 0;
+
+function computeHeatCentroid(): { cx: number; cy: number } {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H }
+    : { cx: 0.5, cy: 0.5 };
+}
 
 function facetSegments(idx: number): number {
   return [8, 16, 32, 64][idx] ?? 16;
@@ -97,6 +119,7 @@ export const crystalGem: Pattern = {
   id: "crystalGem",
   name: "Crystal Gem",
   attribution: "Inspired by Mauricio Massaia — proto-07",
+  heatReactive: true,
   controls: [
     { label: "Fresnel",    type: "range",  min: 0.0, max: 3.0, step: 0.1,  default: 1.4,  get: () => fresnelStr,   set: (v) => { fresnelStr = v; } },
     { label: "Rotation",   type: "range",  min: 0.0, max: 2.0, step: 0.05, default: 0.5,  get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
@@ -111,6 +134,8 @@ export const crystalGem: Pattern = {
         }
       },
     },
+    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Spin Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatSpinBoost,    set: v => { heatSpinBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -133,10 +158,28 @@ export const crystalGem: Pattern = {
 
   update(dt: number, _elapsed: number) {
     if (!material || !mesh) return;
-    rotY += dt * rotationSpeed * 0.3;
-    rotX += dt * rotationSpeed * 0.1;
-    rotZ += dt * rotationSpeed * 0.2;
-    mesh.rotation.set(rotX, rotY, rotZ);
+
+    const speed = Math.min(1, dt * 2.5);
+    if (cameraState.heatEnabled) {
+      const { cx, cy } = computeHeatCentroid();
+      const targetYaw  = (cx - 0.5) * Math.PI * 0.7 * heatTiltStrength;
+      const targetTilt = (cy - 0.5) * 0.4 * heatTiltStrength;
+      heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
+      heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
+      const intensity = cameraState.level / 100;
+      const spinMult  = 1 + intensity * heatSpinBoost;
+      rotY += dt * rotationSpeed * 0.3 * spinMult;
+      rotX += dt * rotationSpeed * 0.1 * spinMult;
+      rotZ += dt * rotationSpeed * 0.2 * spinMult;
+    } else {
+      heatYawOffset  *= Math.max(0, 1 - dt * 3);
+      heatTiltOffset *= Math.max(0, 1 - dt * 3);
+      rotY += dt * rotationSpeed * 0.3;
+      rotX += dt * rotationSpeed * 0.1;
+      rotZ += dt * rotationSpeed * 0.2;
+    }
+
+    mesh.rotation.set(rotX + heatTiltOffset, rotY + heatYawOffset, rotZ);
     material.uniforms.uFresnel.value = fresnelStr;
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
@@ -149,5 +192,6 @@ export const crystalGem: Pattern = {
     geometry?.dispose(); material?.dispose();
     mesh = null; geometry = null; material = null;
     rotX = 0; rotY = 0; rotZ = 0;
+    heatYawOffset = 0; heatTiltOffset = 0;
   },
 };

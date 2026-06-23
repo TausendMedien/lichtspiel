@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.SphereGeometry | null = null;
@@ -15,6 +18,25 @@ let palette       = 0;
 let accTime = 0;
 let rotX = 0, rotY = 0, rotZ = 0;
 let smoothedAmplitude = 0.35;
+
+// Heat state
+let heatTiltStrength = 1.0;
+let heatAmplBoost    = 1.0;
+let heatYawOffset    = 0;
+let heatTiltOffset   = 0;
+
+function computeHeatCentroid(): { cx: number; cy: number } {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H }
+    : { cx: 0.5, cy: 0.5 };
+}
 
 // ─── Vertex shader ────────────────────────────────────────────────────────────
 // Uses additive time (angle + uTime) so wave frequency stays constant instead
@@ -104,6 +126,7 @@ export const wavySphere: Pattern = {
   id: "wavySphere",
   name: "Wavy Sphere",
   attribution: "Adapted from Mauricio Massaia — proto-02",
+  heatReactive: true,
   controls: [
     { label: "Wave Speed",   type: "range", min: 0.0, max: 0.20, step: 0.005, default: 0.04, get: () => waveSpeed,     set: (v) => { waveSpeed = v; } },
     { label: "Amplitude",    type: "range", min: 0.0, max: 0.80, step: 0.01,  default: 0.35, get: () => amplitude,     set: (v) => { amplitude = v; } },
@@ -111,6 +134,8 @@ export const wavySphere: Pattern = {
     { label: "Color Shift",  type: "range", min: 0.0, max: 1.0,  step: 0.01,  default: 0.0,  get: () => colorShift,    set: (v) => { colorShift = v; } },
     { label: "Palette",      type: "select", options: ["Gold/Cyan", "Pink/Magenta", "Violet/Cyan"],
       get: () => palette, set: (v) => { palette = v; } },
+    { label: "Tilt Strength",  type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Amplitude Boost", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, get: () => heatAmplBoost,    set: v => { heatAmplBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -144,8 +169,21 @@ export const wavySphere: Pattern = {
     rotX    += dt * rotationSpeed * 0.1;
     rotZ    += dt * rotationSpeed * 0.3;
 
-    // Lerp smoothed amplitude toward target — waves dissolve when amplitude drops
-    smoothedAmplitude += (amplitude - smoothedAmplitude) * Math.min(1, dt * 2.0);
+    const speed = Math.min(1, dt * 2.0);
+    if (cameraState.heatEnabled) {
+      const { cx, cy } = computeHeatCentroid();
+      const targetYaw  = (cx - 0.5) * Math.PI * 0.8 * heatTiltStrength;
+      const targetTilt = (cy - 0.5) * 0.5 * heatTiltStrength;
+      heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
+      heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
+      const intensity = cameraState.level / 100;
+      const ampTarget = amplitude * (1 + intensity * heatAmplBoost);
+      smoothedAmplitude += (ampTarget - smoothedAmplitude) * speed;
+    } else {
+      heatYawOffset  *= Math.max(0, 1 - dt * 3);
+      heatTiltOffset *= Math.max(0, 1 - dt * 3);
+      smoothedAmplitude += (amplitude - smoothedAmplitude) * speed;
+    }
 
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uAmplitude.value  = smoothedAmplitude;
@@ -154,7 +192,7 @@ export const wavySphere: Pattern = {
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     material.uniforms.uColorsV2.value = colorC2.colorsV2;
-    mesh.rotation.set(rotX, rotY, rotZ);
+    mesh.rotation.set(rotX + heatTiltOffset, rotY + heatYawOffset, rotZ);
   },
 
   resize(_width: number, _height: number) {},
@@ -163,6 +201,6 @@ export const wavySphere: Pattern = {
     geometry?.dispose(); material?.dispose();
     mesh = null; geometry = null; material = null;
     accTime = 0; rotX = 0; rotY = 0; rotZ = 0;
-    palette = 0;
+    palette = 0; heatYawOffset = 0; heatTiltOffset = 0;
   },
 };
