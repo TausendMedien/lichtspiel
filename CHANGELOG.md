@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.6.0942-260623 — Heat Reactivity · Control Tooltips
+
+**Heat system** — a global motion-detection layer that turns the camera feed into a real-time heat map. A low-res motion buffer (320×180) tracks inter-frame pixel change and feeds an organic, blur-smoothed heat texture that influences particle attraction, shader warping, and camera shake across patterns.
+
+**Heat-reactive patterns** — Particle Field Heat, Hyper Mix Heat, and Heat Map ship as dedicated slots; Wavy Sphere, Crystal Gem, and 3D Typography gain heat reactivity via centroid tracking (the camera's strongest-motion zone pulls the focal point). Static Images gain a heat-haze distortion layer. Heat Strength, Heat Gain, and Blur Radius are tunable per pattern.
+
+**Heat controls** — a single **Heat** toggle in the Interactive section activates the shared heat sensor (independent from Motion). Demo mode has its own Heat toggle. The Colorize Light control was renamed for clarity.
+
+**Control tooltips** — every slider and toggle in the HUD shows a short description on hover/focus, making the controls self-documenting for new users.
+
+**Preset pattern-set for Demo** — a curated heat-optimised pattern set ships as the demo default.
+
+---
+
 ## v0.5.260601-1911 — New patterns · Demo intensity modes · Audio & Camera rework
 
 **Four new static-image patterns** — **Two Feather**, **Root Wave**, **Purple Ornate** and **Flowing Dots** — join the Static Images category. Each shares the full image engine (Drift, Zoom Breathe, Ripple, Chromatic Aberration, Edge Pulse, Vignette), reacts to pose and audio, and ships with the same Chilled / Balanced / Active preset slots as the other image patterns.

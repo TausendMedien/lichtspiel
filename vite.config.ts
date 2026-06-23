@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // Bump this when releasing a significant new version
-const BASE_VERSION = "0.5";
+const BASE_VERSION = "0.6";
 
 const buildVersion = (() => {
   // Use the git commit timestamp so the version is fixed at commit time,
@@ -28,7 +28,7 @@ const buildVersion = (() => {
     hour12: false,
   });
   const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
-  const ts = `${parts.year}${parts.month}${parts.day}-${parts.hour}${parts.minute}`;
+  const ts = `${parts.hour}${parts.minute}-${parts.year}${parts.month}${parts.day}`;
   return `v${BASE_VERSION}.${ts}`;
 })();
 

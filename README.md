@@ -1,6 +1,6 @@
 # Lichtspiel
 
-A browser-based, keyboard-operated abstract visual instrument built with Svelte 5, Three.js, and Tailwind CSS. Drop it on a projector PC, go fullscreen, and cycle through animated visuals entirely from the keyboard.
+A browser-based, keyboard-operated abstract visual instrument built with Svelte 5, Three.js, and Tailwind CSS. Drop it on a projector PC, go fullscreen, and cycle through animated visuals entirely from the keyboard — or let Demo mode run it hands-free.
 
 ## Controls
 
@@ -9,15 +9,34 @@ A browser-based, keyboard-operated abstract visual instrument built with Svelte 
 | `F` | Toggle fullscreen |
 | `→` / `↓` | Next pattern |
 | `←` / `↑` | Previous pattern |
-| `1`–`4` | Jump to pattern by number |
-| `Esc` | Exit fullscreen |
+| `1`–`4` | Jump to pattern category |
+| `Space` | Freeze / unfreeze |
+| `P` | Start / stop Demo mode |
+| `Esc` | Exit fullscreen / stop Demo |
 
 ## Patterns
 
-1. **3D Lines** — Catmull-Rom curves animated with wave noise, slow scene rotation
-2. **Particle Field** — 50k GPU particles driven by a flow-noise vertex shader
-3. **Tunnel** — Wireframe rings flying toward the camera, hue-cycling colour
-4. **Shader Gradient** — Domain-warped FBM noise gradient in a fullscreen GLSL shader
+**Generative** — 3D Lines, Particle Field, Particle Field Heat, Tunnel, Tunnel Edge, Parallel Lines, Flow Lines, Curl Orbs, Baroque Swirls, Wavy Sphere, Crystal Gem, Hyper Mix, Hyper Mix Heat, Heat Map, Shader Gradient, 3D Typography, Warp Surfaces, ASCII Swirls
+
+**Static Images** — artwork and photos with live Drift, Zoom Breathe, Ripple, Chromatic Aberration, Edge Pulse, and heat-haze effects
+
+**Light Painting** — camera-based light-trail and brush patterns with Kaleidoscope, Bloom, RGB Split, Vortex, and Fly effects
+
+**Interactive** — body-pose tracking, audio reactivity, heat reactivity, and a real-time motion heat map
+
+## Features
+
+- **Heat system** — camera-based motion detection drives a live heat texture that pulls particles, warps shaders, and tracks focal points
+- **Body pose tracking** — MediaPipe detects body position and routes it to particle and wave patterns
+- **Audio reactivity** — noise-gated microphone feeds frequency-band reactivity to eligible patterns
+- **Demo / kiosk mode** — cycles patterns automatically with configurable dwell time, intensity modes (Chilled / Balanced / Active), and auto-restart on idle
+- **Preset slots** — three save slots per pattern; Demo can target a slot for a consistent energy level
+- **Sensor block** — one-tap global kill-switch for all camera and microphone streams
+- **Gamepad** — right stick for sliders, left stick for pattern cycle, L1 for keyboard reference
+- **MIDI** — optional MIDI controller input
+- **Control tooltips** — every slider and toggle shows a description on hover
+- **Favourites** — star patterns; Demo can scope itself to favourites only
+- **URL sharing** — share current pattern and settings via URL
 
 ## Development
 
