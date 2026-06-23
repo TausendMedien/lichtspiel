@@ -20,10 +20,9 @@ let points:      THREE.Points | null = null;
 let geometry:    THREE.BufferGeometry | null = null;
 let material:    THREE.ShaderMaterial | null = null;
 let heatTexture: THREE.DataTexture | null = null;
-let heatTexData: Uint8Array | null    = null;  // byte data for GPU (UnsignedByteType — iOS safe)
-let smoothedRaw: Float32Array | null = null;  // temporally smoothed raw heat
-let tmpBuf:      Float32Array | null = null;  // H-pass intermediate
-let blurredFloat: Float32Array | null = null; // boxBlur output before byte-conversion
+let heatTexData: Float32Array | null = null;
+let smoothedRaw: Float32Array | null = null;
+let tmpBuf:      Float32Array | null = null;
 let accTime      = 0;
 let currentAspect = 1;
 
@@ -57,14 +56,12 @@ function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: num
 }
 
 function updateHeatTexture() {
-  if (!smoothedRaw || !tmpBuf || !blurredFloat || !heatTexData || !heatTexture) return;
+  if (!smoothedRaw || !tmpBuf || !heatTexData || !heatTexture) return;
   const raw = cameraState.heatMap;
   for (let i = 0; i < W * H; i++) {
     smoothedRaw[i] = smoothedRaw[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
   }
-  boxBlur(smoothedRaw, tmpBuf, blurredFloat, blurRadius);
-  // Convert float→byte: UnsignedByteType works on all iOS (no OES_texture_float_linear needed)
-  for (let i = 0; i < W * H; i++) heatTexData[i] = Math.min(255, blurredFloat[i] * 255) | 0;
+  boxBlur(smoothedRaw, tmpBuf, heatTexData, blurRadius);
   heatTexture.needsUpdate = true;
 }
 
@@ -200,11 +197,10 @@ export const particlesHeat: Pattern = {
     ctx.camera.lookAt(0, 0, 0);
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
 
-    heatTexData  = new Uint8Array(W * H);
-    smoothedRaw  = new Float32Array(W * H);
-    tmpBuf       = new Float32Array(W * H);
-    blurredFloat = new Float32Array(W * H);
-    heatTexture  = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.UnsignedByteType);
+    heatTexData = new Float32Array(W * H);
+    smoothedRaw = new Float32Array(W * H);
+    tmpBuf      = new Float32Array(W * H);
+    heatTexture = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
     heatTexture.minFilter = THREE.LinearFilter;
     heatTexture.magFilter = THREE.LinearFilter;
     heatTexture.needsUpdate = true;
@@ -257,11 +253,10 @@ export const particlesHeat: Pattern = {
     points      = null;
     geometry    = null;
     material    = null;
-    heatTexture  = null;
-    heatTexData  = null;
-    smoothedRaw  = null;
-    tmpBuf       = null;
-    blurredFloat = null;
+    heatTexture = null;
+    heatTexData = null;
+    smoothedRaw = null;
+    tmpBuf      = null;
     accTime     = 0;
     storedCount = 0;
   },

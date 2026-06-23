@@ -52,14 +52,12 @@ function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: num
 }
 
 function updateHeatTexture() {
-  if (!smoothedRaw || !tmpBuf || !blurredFloat || !heatTexData || !heatTexture) return;
+  if (!smoothedRaw || !tmpBuf || !heatTexData || !heatTexture) return;
   const raw = cameraState.heatMap;
   for (let i = 0; i < W * H; i++) {
     smoothedRaw[i] = smoothedRaw[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
   }
-  boxBlur(smoothedRaw, tmpBuf, blurredFloat, blurRadius);
-  // Convert float→byte: UnsignedByteType works on all iOS (no OES_texture_float_linear needed)
-  for (let i = 0; i < W * H; i++) heatTexData[i] = Math.min(255, blurredFloat[i] * 255) | 0;
+  boxBlur(smoothedRaw, tmpBuf, heatTexData, blurRadius);
   heatTexture.needsUpdate = true;
 }
 
@@ -241,11 +239,10 @@ let geometry: THREE.BufferGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
 let cam:      THREE.PerspectiveCamera | null = null;
 let sceneRef: THREE.Scene | null = null;
-let heatTexture:  THREE.DataTexture | null = null;
-let heatTexData:  Uint8Array | null    = null;
-let smoothedRaw:  Float32Array | null = null;
-let tmpBuf:       Float32Array | null = null;
-let blurredFloat: Float32Array | null = null;
+let heatTexture: THREE.DataTexture | null = null;
+let heatTexData: Float32Array | null = null;
+let smoothedRaw: Float32Array | null = null;
+let tmpBuf:      Float32Array | null = null;
 
 function effectiveCount() {
   return qualityLow ? Math.max(5000, Math.round(params.pointCount / 2)) : params.pointCount;
@@ -371,11 +368,10 @@ export const hyperMixHeat: Pattern = {
     cam.position.set(0, 0, 8);
     cam.lookAt(0, 0, 0);
 
-    heatTexData  = new Uint8Array(W * H);
-    smoothedRaw  = new Float32Array(W * H);
-    tmpBuf       = new Float32Array(W * H);
-    blurredFloat = new Float32Array(W * H);
-    heatTexture  = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.UnsignedByteType);
+    heatTexData = new Float32Array(W * H);
+    smoothedRaw = new Float32Array(W * H);
+    tmpBuf      = new Float32Array(W * H);
+    heatTexture = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
     heatTexture.minFilter = THREE.LinearFilter;
     heatTexture.magFilter = THREE.LinearFilter;
     heatTexture.needsUpdate = true;
@@ -437,10 +433,9 @@ export const hyperMixHeat: Pattern = {
     points      = null;
     geometry    = null;
     material    = null;
-    heatTexture  = null;
-    heatTexData  = null;
-    smoothedRaw  = null;
-    blurredFloat = null;
+    heatTexture = null;
+    heatTexData = null;
+    smoothedRaw = null;
     tmpBuf      = null;
     cam         = null;
     sceneRef    = null;
