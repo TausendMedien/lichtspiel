@@ -3,6 +3,34 @@ import type { Pattern, PatternContext } from './types';
 import { poseState } from '../pose';
 import { audioState } from '../globalAudioSettings.svelte';
 import { colorC2 } from '../colorC2.svelte';
+import { cameraState } from '../globalCameraSettings.svelte';
+
+const HW = 160, HH = 90;
+
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < HH; y++) {
+    const yo = y * HW;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HW - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < HW; x++) {
+      if (x + r < HW)      { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0)  { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < HW; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HH - 1); k++) { sum += tmp[k * HW + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < HH; y++) {
+      if (y + r < HH)      { sum += tmp[(y + r) * HW + x];     cnt++; }
+      if (y - r - 1 >= 0)  { sum -= tmp[(y - r - 1) * HW + x]; cnt--; }
+      dst[y * HW + x] = sum / cnt;
+    }
+  }
+}
 
 // ─── Vertex shader ────────────────────────────────────────────────────────────
 
@@ -38,6 +66,8 @@ const fragmentShader = /* glsl */`
   uniform float uFitMode;        // 0=cover, 1=fitWidth
   uniform float uColorsV2;
   uniform vec3  uMainColor;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;   // 0 when heat off
 
   varying vec2 vUv;
 
@@ -127,6 +157,19 @@ const fragmentShader = /* glsl */`
     if (uRipple > 0.001) {
       float r = uRipple * 0.012 * sin(uv.x * 9.0 + uTime * 1.1) * cos(uv.y * 7.0 + uTime * 0.8);
       uv += vec2(r);
+    }
+
+    // 6b. Heat-haze distortion (Sobel gradient of heat map → UV push toward hot zone)
+    if (uHeatStrength > 0.001) {
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      // Mirror X + flip Y to match camera orientation (front-facing, Three.js UV y=0 = bottom)
+      vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      vec2 grad = vec2(hR - hL, hU - hD);
+      uv += grad * uHeatStrength * 0.08;
     }
 
     // 7. Pose distort (joints push UV outward)
@@ -238,6 +281,14 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
   let chromaticAb  = 0.0;
   let edgePulse    = 0.0;
 
+  // Heat haze
+  let heatStrength  = 0.5;
+  let heatBlurR     = 3;
+  let heatTexData: Float32Array | null = null;
+  let heatSmoothed: Float32Array | null = null;
+  let heatTmp: Float32Array | null = null;
+  let heatTex: THREE.DataTexture | null = null;
+
   let mesh: THREE.Mesh | null = null;
   let material: THREE.ShaderMaterial | null = null;
   let geometry: THREE.PlaneGeometry | null = null;
@@ -250,6 +301,7 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
   const pattern = {
     id,
     name,
+    heatReactive: true,
     usesPose: true,
     motionReactive: true,
     motionControlLabels: ['Drift', 'Ripple'],
@@ -274,6 +326,10 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       { label: 'Vignette',     type: 'range', min: 0, max: 3, step: 0.1,  default: 0.0, get: () => vignette,   set: v => { vignette = v; } },
       { label: 'Chromatic AB', type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => chromaticAb, set: v => { chromaticAb = v; } },
       { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, get: () => edgePulse,  set: v => { edgePulse = v; } },
+
+      // ── Heat section (shown inside Interactive → Heat subsection) ─────
+      { label: 'Heat Strength', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, interactive: 'heat' as const, get: () => heatStrength, set: v => { heatStrength = v; } },
+      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 0.5,  default: 3,   interactive: 'heat' as const, get: () => heatBlurR,    set: v => { heatBlurR = v; } },
     ],
 
     init(ctx: PatternContext) {
@@ -283,6 +339,15 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       const cached = _textureCache.get(src) ?? (() => { prewarmTexture(src); return _textureCache.get(src)!; })();
       texture = cached.tex;
       imgAspect = cached.aspect;
+
+      // Heat haze buffers
+      heatTexData = new Float32Array(HW * HH);
+      heatSmoothed = new Float32Array(HW * HH);
+      heatTmp = new Float32Array(HW * HH);
+      heatTex = new THREE.DataTexture(heatTexData, HW, HH, THREE.RedFormat, THREE.FloatType);
+      heatTex.minFilter = THREE.LinearFilter;
+      heatTex.magFilter = THREE.LinearFilter;
+      heatTex.needsUpdate = true;
 
       geometry = new THREE.PlaneGeometry(2, 2);
       material = new THREE.ShaderMaterial({
@@ -306,6 +371,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
           uFitMode:      { value: fitMode === 'fitWidth' ? 1.0 : 0.0 },
           uColorsV2:     { value: colorC2.colorsV2 },
           uMainColor:    { value: new THREE.Vector3() },
+          uHeatMap:      { value: heatTex },
+          uHeatStrength: { value: 0 },
         },
         vertexShader,
         fragmentShader,
@@ -320,8 +387,22 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
     update(dt: number, elapsed: number) {
       if (!material) return;
+      void dt;
 
       const u = material.uniforms;
+
+      // Heat haze: upload blurred heat map each frame when active
+      if (cameraState.heatEnabled && heatSmoothed && heatTmp && heatTexData && heatTex) {
+        const raw = cameraState.heatMap;
+        for (let i = 0; i < HW * HH; i++) {
+          heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+        }
+        heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
+        heatTex.needsUpdate = true;
+        u.uHeatStrength.value = heatStrength;
+      } else {
+        u.uHeatStrength.value = 0;
+      }
 
       u.uTime.value          = elapsed;
       u.uRotation.value      = rotation;
@@ -389,10 +470,12 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     },
 
     dispose() {
+      heatTex?.dispose();
       geometry?.dispose();
       material?.dispose();
       // texture stays in _textureCache — do not dispose it
       mesh = null; geometry = null; material = null; texture = null;
+      heatTex = null; heatTexData = null; heatSmoothed = null; heatTmp = null;
     },
   };
 

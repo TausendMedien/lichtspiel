@@ -3,6 +3,9 @@ import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 // Module-scope state — reset in dispose()
 let scene: THREE.Scene | null = null;
@@ -16,6 +19,26 @@ let rotSpeed   = 0.6;
 let floatSpeed = 0.4;
 let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
+
+// Heat centroid tracking state
+let heatYawOffset  = 0;  // decays to 0 when heat off
+let heatTiltOffset = 0;
+let heatTrackingStrength = 1.0;
+let heatFloatBoost       = 1.0;
+
+function computeHeatCentroid(): { cx: number; cy: number; total: number } {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 // Track last-seen colors to detect changes and rebuild
 let _lastPrimary  = "";
@@ -126,6 +149,7 @@ function scheduleRebuild() {
 export const typography3d: Pattern = {
   id: "typography3d",
   name: "3D Typography",
+  heatReactive: true,
   controls: [
     { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
       set: v => { textStr = v; scheduleRebuild(); } },
@@ -143,6 +167,10 @@ export const typography3d: Pattern = {
       get: () => floatSpeed, set: v => { floatSpeed = v; } },
     { label: "Style",         type: "select", options: ["Solid", "Wireframe", "Neon"],
       get: () => styleIndex, set: v => { styleIndex = v; buildText(); } },
+    { label: "Tracking Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
+      interactive: 'heat' as const, get: () => heatTrackingStrength, set: v => { heatTrackingStrength = v; } },
+    { label: "Float Boost",       type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
+      interactive: 'heat' as const, get: () => heatFloatBoost,       set: v => { heatFloatBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -181,9 +209,29 @@ export const typography3d: Pattern = {
     }
 
     animTime += dt;
-    textGroup.rotation.y += dt * rotSpeed * 0.8;
-    if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15;
-    textGroup.position.y = Math.sin(animTime * floatSpeed) * 0.3;
+
+    if (cameraState.heatEnabled) {
+      const { cx, cy, total } = computeHeatCentroid();
+      // Target yaw/tilt driven by centroid position in camera space
+      const targetYaw  = (cx - 0.5) * Math.PI * 0.6 * heatTrackingStrength;
+      const targetTilt = (cy - 0.5) * 0.3   * heatTrackingStrength;
+      const speed = Math.min(1, dt * 2.5);
+      heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
+      heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
+      // Normalize total: W*H pixels, typical active scene ~0.5–5 total → use /2 as scale
+      const ampBoost = Math.min(total / 2, 1) * heatFloatBoost;
+      textGroup.rotation.y += dt * rotSpeed * 0.8 + heatYawOffset;
+      if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.position.y = Math.sin(animTime * floatSpeed) * (0.3 + ampBoost * 0.5);
+    } else {
+      // Decay heat offsets back to zero for smooth transition
+      const decay = Math.max(0, 1 - dt * 3);
+      heatYawOffset  *= decay;
+      heatTiltOffset *= decay;
+      textGroup.rotation.y += dt * rotSpeed * 0.8 + heatYawOffset;
+      if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.position.y = Math.sin(animTime * floatSpeed) * 0.3;
+    }
   },
 
   resize(width: number, height: number) {
@@ -212,6 +260,8 @@ export const typography3d: Pattern = {
     scene = null;
     animTime = 0;
     rotLocked = false;
+    heatYawOffset  = 0;
+    heatTiltOffset = 0;
     _lastPrimary  = "";
     _lastGlow     = "";
     _lastColorsV2 = -1;
