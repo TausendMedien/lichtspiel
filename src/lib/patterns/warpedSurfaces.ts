@@ -18,31 +18,34 @@ let palette       = 0;   // select: Iridescent / Fire / Ocean / Void
 let accTime = 0;
 
 // Heat state — DataTexture drives Sobel UV distortion in fragment shader
-let heatStrength = 0.5;
-let heatBlurR    = 3;
+let heatStrength  = 0.5;
+let heatBlurR     = 3;
 let heatSmoothed: Float32Array | null = null;
 let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
 let heatTex:      THREE.DataTexture | null = null;
 
-function heatBoxBlur(src: Float32Array, dst: Float32Array, tmp: Float32Array, W: number, H: number, r: number) {
-  const R = Math.max(1, Math.round(r));
-  const inv = 1 / (2 * R + 1);
-  for (let y = 0; y < H; y++) {
-    let sum = 0;
-    for (let x = 0; x <= R; x++) sum += src[y * W + Math.min(x, W - 1)];
-    for (let x = 0; x < W; x++) {
-      if (x + R < W) sum += src[y * W + x + R];
-      if (x - R - 1 >= 0) sum -= src[y * W + x - R - 1];
-      tmp[y * W + x] = sum * inv;
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < HH; y++) {
+    const yo = y * HW;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HW - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < HW; x++) {
+      if (x + r < HW)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
     }
   }
-  for (let x = 0; x < W; x++) {
-    let sum = 0;
-    for (let y = 0; y <= R; y++) sum += tmp[Math.min(y, H - 1) * W + x];
-    for (let y = 0; y < H; y++) {
-      if (y + R < H) sum += tmp[(y + R) * W + x];
-      if (y - R - 1 >= 0) sum -= tmp[(y - R - 1) * W + x];
-      dst[y * W + x] = sum * inv;
+  for (let x = 0; x < HW; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HH - 1); k++) { sum += tmp[k * HW + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < HH; y++) {
+      if (y + r < HH)     { sum += tmp[(y + r) * HW + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * HW + x]; cnt--; }
+      dst[y * HW + x] = sum / cnt;
     }
   }
 }
@@ -187,7 +190,8 @@ export const warpedSurfaces: Pattern = {
   init(ctx: PatternContext) {
     heatSmoothed = new Float32Array(HW * HH);
     heatTmp      = new Float32Array(HW * HH);
-    heatTex = new THREE.DataTexture(heatSmoothed, HW, HH, THREE.RedFormat, THREE.FloatType);
+    heatTexData  = new Float32Array(HW * HH);
+    heatTex = new THREE.DataTexture(heatTexData, HW, HH, THREE.RedFormat, THREE.FloatType);
     heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
     heatTex.needsUpdate = true;
 
@@ -219,7 +223,7 @@ export const warpedSurfaces: Pattern = {
     const raw = cameraState.heatMap;
     for (let i = 0; i < HW * HH; i++)
       heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-    if (heatBlurR >= 1) heatBoxBlur(heatSmoothed, heatSmoothed, heatTmp, HW, HH, heatBlurR);
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
     heatTex.needsUpdate = true;
 
     material.uniforms.uTime.value         = accTime;
@@ -242,7 +246,7 @@ export const warpedSurfaces: Pattern = {
     geometry?.dispose(); material?.dispose();
     heatTex?.dispose();
     mesh = null; geometry = null; material = null;
-    heatTex = null; heatSmoothed = null; heatTmp = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
     accTime = 0;
   },
 };

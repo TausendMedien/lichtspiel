@@ -436,10 +436,10 @@
         : true;
       interactiveOn = _perPatternInteractiveOn.has(pat.id)
         ? _perPatternInteractiveOn.get(pat.id)!
-        : !!(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera);  // camera/pose/audio patterns default to interactive ON
+        : !!(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera || pat.heatReactive);  // camera/pose/audio/heat patterns default to interactive ON
       interactiveCollapsed = _perPatternInteractiveCollapsed.has(pat.id)
         ? _perPatternInteractiveCollapsed.get(pat.id)!
-        : !(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera);   // camera/pose/audio patterns default to interactive expanded
+        : !(pat.usesCameraBlend || pat.usesPose || pat.audioReactive || pat.requiresCamera || pat.heatReactive);   // camera/pose/audio/heat patterns default to interactive expanded
       // Enforce camera/audio/pose based on the incoming pattern's interactive state.
       // Skip in demo mode — Demo Options manages these features independently.
       if (!interactiveOn && !demoActive) {
