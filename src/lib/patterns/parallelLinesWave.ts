@@ -21,21 +21,37 @@ let colorPhase = 0;
 let rotAngle = 0;
 let accTime = 0;
 
-// Heat state
-let heatWaveBoost = 1.0;
-let heatRotOffset = 0;
+// Heat state — DataTexture: Sobel bends lines + per-pixel heat boosts local wave amplitude
+let heatStrength  = 0.5;
+let heatBlurR     = 3;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatTex:      THREE.DataTexture | null = null;
 
-function computeHeatCentroid() {
-  const map = cameraState.heatMap;
-  let wx = 0, wy = 0, total = 0;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const v = map[y * W + x];
-      wx += v * x; wy += v * y; total += v;
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
     }
-  return total > 0.01
-    ? { cx: wx / total / W, cy: wy / total / H, total }
-    : { cx: 0.5, cy: 0.5, total: 0 };
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
 }
 
 const vertexShader = /* glsl */ `
@@ -58,6 +74,8 @@ const fragmentShader = /* glsl */ `
   uniform float uColorRange;
   uniform float uColorPhase;
   uniform float uRotAngle;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
 
   vec3 hsl2rgb(float h, float s, float l) {
     vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -74,11 +92,25 @@ const fragmentShader = /* glsl */ `
     vec2 uv = vec2(centered.x * cosR - centered.y * sinR,
                    centered.x * sinR + centered.y * cosR);
 
+    // Heat: Sobel bends uv + local heat value boosts wave amplitude near the body
+    float localHeatBoost = 1.0;
+    if (uHeatStrength > 0.001) {
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+      float hC = texture2D(uHeatMap, hUv).r;
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      uv += vec2(hR - hL, hU - hD) * uHeatStrength * 0.25;
+      localHeatBoost = 1.0 + hC * uHeatStrength * 4.0;
+    }
+
     float waveFreq = 3.0;
     float scroll = uTime;
 
-    float wave = sin(uv.y * waveFreq * 3.14159 + uTime * 1.4 * uWaveSpeed) * uWaveAmp
-               + sin(uv.y * waveFreq * 1.7  + uTime * 0.9 * uWaveSpeed) * uWaveAmp * 0.5;
+    float wave = sin(uv.y * waveFreq * 3.14159 + uTime * 1.4 * uWaveSpeed) * uWaveAmp * localHeatBoost
+               + sin(uv.y * waveFreq * 1.7  + uTime * 0.9 * uWaveSpeed) * uWaveAmp * localHeatBoost * 0.5;
 
     float stripe = fract((uv.x + wave) * uLineCount * 0.5 + scroll);
 
@@ -115,11 +147,18 @@ export const parallelLinesWave: Pattern = {
     { label: "Wave Speed",     type: "range", min: 0.0, max: 8.0,  step: 0.1,   default: 1,     audioWeight: 0.3, tip: "How fast the wave propagates along each line.",            get: () => waveSpeed,   set: (v) => { waveSpeed = v; } },
     { label: "Color Speed",    type: "range", min: 0.0, max: 1.0,  step: 0.05,  default: 1,     tip: "How fast the palette cycles along the lines.",                               get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",         type: "range", min: 0.0, max: 0.5,  step: 0.01,  default: 0.02,  tip: "Slow rotation of the entire scene.",                                         get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
-    { label: "Wave Boost",     type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion amplifies wave height and rotates the field. Requires Heat.", get: () => heatWaveBoost, set: v => { heatWaveBoost = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2, step: 0.1, default: 0.5, interactive: 'heat' as const, tip: "How much heat-map motion bends lines and boosts wave amplitude near the body. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 3,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
   motionControlLabels: ["Scroll Speed", "Rotate"],
 
   init(ctx: PatternContext) {
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -132,6 +171,8 @@ export const parallelLinesWave: Pattern = {
         uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
+        uHeatMap:     { value: heatTex },
+        uHeatStrength:{ value: 0 },
       },
       vertexShader,
       fragmentShader,
@@ -146,29 +187,27 @@ export const parallelLinesWave: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material) return;
+    if (!material || !heatSmoothed || !heatTmp || !heatTex) return;
     accTime    += dt * scrollSpeed;
     colorPhase += dt * colorSpeed * 0.6;
     rotAngle   += dt * rotateSpeed * 1.5;
 
-    let effectiveWaveAmp = waveAmp;
-    if (cameraState.heatEnabled) {
-      const { cx, total } = computeHeatCentroid();
-      const target = (0.5 - cx) * Math.PI * 0.3 * heatWaveBoost;
-      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
-      effectiveWaveAmp = waveAmp * (1 + Math.min(total * 10, 3) * heatWaveBoost);
-    } else {
-      heatRotOffset *= Math.max(0, 1 - dt * 3);
-    }
+    const raw = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++)
+      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+    heatTex.needsUpdate = true;
 
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uLineCount.value   = lineCount;
     material.uniforms.uLineWidth.value   = lineWidth;
-    material.uniforms.uWaveAmp.value     = effectiveWaveAmp;
+    material.uniforms.uWaveAmp.value     = waveAmp;
     material.uniforms.uWaveSpeed.value   = waveSpeed;
     material.uniforms.uColorRange.value  = colorC2.colorsV2;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uRotAngle.value    = rotAngle + heatRotOffset;
+    material.uniforms.uRotAngle.value    = rotAngle;
+    material.uniforms.uHeatMap.value     = heatTex;
+    material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
   },
 
   resize(width: number, height: number) {
@@ -176,12 +215,9 @@ export const parallelLinesWave: Pattern = {
   },
 
   dispose() {
-    geometry?.dispose();
-    material?.dispose();
-    mesh = null;
-    geometry = null;
-    material = null;
+    geometry?.dispose(); material?.dispose(); heatTex?.dispose();
+    mesh = null; geometry = null; material = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
     accTime = 0;
-    heatRotOffset = 0;
   },
 };

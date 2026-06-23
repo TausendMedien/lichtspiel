@@ -282,8 +282,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
   let edgePulse    = 0.0;
 
   // Heat haze
-  let heatStrength  = 0.5;
-  let heatBlurR     = 3;
+  let heatStrength  = 1.8;
+  let heatBlurR     = 1;
   let heatTexData: Float32Array | null = null;
   let heatSmoothed: Float32Array | null = null;
   let heatTmp: Float32Array | null = null;
@@ -328,8 +328,8 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       { label: 'Edge Pulse',   type: 'range', min: 0, max: 1, step: 0.05, default: 0.0, tip: 'Audio-reactive glow on the image edges.',                               get: () => edgePulse,   set: v => { edgePulse = v; } },
 
       // ── Heat section (shown inside Interactive → Heat subsection) ─────
-      { label: 'Heat Strength', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, interactive: 'heat' as const, tip: 'How strongly heat-map motion displaces the image. Requires Heat.',     get: () => heatStrength, set: v => { heatStrength = v; } },
-      { label: 'Blur Radius',   type: 'range', min: 0, max: 8, step: 1,    default: 3,   interactive: 'heat' as const, tip: 'Blur applied to the heat map (smoother displacement). Requires Heat.', get: () => heatBlurR,    set: v => { heatBlurR = v; } },
+      { label: 'Heat Strength', type: 'range', min: 0, max: 2.5, step: 0.05, default: 1.8, interactive: 'heat' as const, tip: 'How strongly heat-map motion displaces the image. Requires Heat.',     get: () => heatStrength, set: v => { heatStrength = v; } },
+      { label: 'Blur Radius',   type: 'range', min: 0, max: 8,   step: 1,    default: 1,   interactive: 'heat' as const, tip: 'Blur applied to the heat map (smoother displacement). Requires Heat.', get: () => heatBlurR,    set: v => { heatBlurR = v; } },
     ],
 
     init(ctx: PatternContext) {
