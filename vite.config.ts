@@ -28,7 +28,7 @@ const buildVersion = (() => {
     hour12: false,
   });
   const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
-  const ts = `${parts.hour}${parts.minute}-${parts.year}${parts.month}${parts.day}`;
+  const ts = `${parts.year}${parts.month}${parts.day}-${parts.hour}${parts.minute}`;
   return `v${BASE_VERSION}.${ts}`;
 })();
 
