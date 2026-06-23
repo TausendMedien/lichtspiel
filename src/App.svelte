@@ -206,7 +206,7 @@
   const DEMO_AUTORESTART_TIME_KEY = 'pp:demo-autorestart-time';
   // Default ON: an idle kiosk relaunches the demo automatically. Respect a stored choice.
   let demoAutoRestart = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_KEY) ?? 'true') === 'true' : true);
-  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:03') : '00:03');
+  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:06') : '00:06');
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Start straight into Demo Mode when the app is first opened. Default OFF — opt-in for kiosks.
@@ -1122,19 +1122,26 @@
     snap['__evoActive']     = evolving.active;
     snap['__evoSpeed']      = evolving.speed;
     snap['__evoConcurrent'] = evolving.maxConcurrent;
+    // Which patterns are enabled in Demo (restored only for named presets).
+    snap['__demoPatternIds'] = [...demoPatternIds].join(',');
     return snap;
   }
 
   function restorePreset(idx: number) {
     const snap = presetSlots[idx];
     if (!snap) return;
-    applySnapshot(snap, idx + 1);
+    applySnapshot(snap, idx + 1, false);
   }
 
   // Apply a full snapshot to the *current* pattern. evoFallbackSlot: when the snapshot
   // carries no Evolving keys, use this Pattern-Start slot's factory bands (light*), or
-  // null to skip the fallback (named presets / non-light patterns).
-  function applySnapshot(snap: Snapshot, evoFallbackSlot: number | null) {
+  // null to skip the fallback (named presets / non-light patterns). restoreDemo: also
+  // restore the saved Demo active-pattern set (named presets only — slots leave it alone).
+  function applySnapshot(snap: Snapshot, evoFallbackSlot: number | null, restoreDemo: boolean) {
+    if (restoreDemo && typeof snap['__demoPatternIds'] === 'string') {
+      const ids = String(snap['__demoPatternIds']).split(',').filter(Boolean);
+      if (ids.length) applyDemoPatternIds(new Set(ids));
+    }
     const anims: Record<string, RandAnim> = {};
     const now = performance.now();
     for (const ctrl of patterns[index].controls ?? []) {
@@ -1252,7 +1259,7 @@
     if (target >= 0 && target !== index) activatePattern(target);
     // Reload per-pattern evo config for the (possibly new) pattern before applying.
     evoConfig = getEvo(patterns[index].id);
-    applySnapshot(preset.snap, null);
+    applySnapshot(preset.snap, null, true);
   }
 
   function deleteNamedPreset(name: string) {
@@ -2650,6 +2657,15 @@
               }
             }}
           >Audio</button>
+          <button
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {cameraState.heatEnabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => {
+              const next = !cameraState.heatEnabled;
+              cameraState.heatEnabled = next;
+              if (next) { cameraState.enabled = true; enumerateCameras(); }
+              else if (!cameraState.motionEnabled) cameraState.enabled = false;
+            }}
+          >Heat</button>
         </div>
         {#if poseError}
           <div class="mt-1.5 text-[11px] text-red-400/80">{poseError}</div>
@@ -2777,7 +2793,7 @@
               />
             </div>
             <div class="flex flex-col items-end gap-0.5">
-              <span class="text-[10px] text-white/50">Concurrent</span>
+              <span class="text-[10px] text-white/50" title="How many sliders may drift at the same time.">Max at once</span>
               <div class="flex gap-1">
                 {#each [1, 2, 3] as n}
                   <button
@@ -2945,7 +2961,7 @@
             />
           </div>
           <div class="flex items-center justify-between text-[10px] text-white/50">
-            <span>Concurrent</span>
+            <span title="How many sliders may drift at the same time.">Max at once</span>
             <div class="flex gap-1">
               {#each [1, 2, 3] as n}
                 <button
@@ -3064,7 +3080,7 @@
             {:else if !hidden && ctrl.type === "toggle" && !(ctrl as any).linkedTo}
               {@const isOn = !!(ctrlVals[ctrl.label] ?? 0)}
               <!-- Standalone toggle row -->
-              <div title={(ctrl as any).title ?? ''} class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
+              <div title={(ctrl as any).tip ?? (ctrl as any).title ?? ''} class="flex items-center justify-between text-xs text-white/70 transition-opacity duration-200 {groupDisabled ? 'opacity-35 pointer-events-none' : ''}">
                 <span class="flex items-center gap-1.5">
                   {ctrl.label}
                   {#if ctrl.label === 'Burst' && cameraState.burst > 0}
@@ -3086,7 +3102,7 @@
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <span
                     class={ctrl.type === "range" && !ctrl.readonly && ctrl.default !== undefined ? "cursor-pointer select-none hover:text-white transition-colors" : ""}
-                    title={ctrl.type === "range" && !ctrl.readonly && ctrl.default !== undefined ? "Click to reset" : undefined}
+                    title={(() => { const tip = (ctrl as any).tip; const resettable = ctrl.type === "range" && !ctrl.readonly && ctrl.default !== undefined; if (tip) return resettable ? tip + " · Click to reset" : tip; return resettable ? "Click to reset" : undefined; })()}
                     onclick={() => { if (ctrl.type === "range" && !ctrl.readonly) resetCtrl(ctrl); }}
                   >{ctrl.label}</span>
                   {#if (ctrl as any).exp}
@@ -3097,7 +3113,7 @@
                     {#if linkedToggle}
                       {@const isLinkedOn = !!(ctrlVals[linkedToggle.label] ?? linkedToggle.get())}
                       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                      <div class="flex items-center gap-1 ml-1 mr-auto" title={linkedToggle.title ?? linkedToggle.label}>
+                      <div class="flex items-center gap-1 ml-1 mr-auto" title={(linkedToggle as any).tip ?? linkedToggle.title ?? linkedToggle.label}>
                         <span class="text-[10px] text-white/30">{linkedToggle.label}</span>
                         <div
                           class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isLinkedOn ? 'bg-white/60' : 'bg-white/20'}"
@@ -3225,6 +3241,7 @@
                   />
                 {:else if ctrl.type === "button"}
                   <button
+                    title={(ctrl as any).tip ?? undefined}
                     onclick={() => { ctrl.action(); syncCtrlVals(); }}
                     class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white cursor-pointer hover:bg-white/20 active:bg-white/30 transition-colors"
                   >{ctrl.label}</button>
@@ -3248,7 +3265,7 @@
           {#if !colourCollapsed}
             <!-- Apply Colors toggle -->
             <div class="mt-1 flex items-center justify-between">
-              <span class="text-xs text-white/70 select-none">Apply Colors</span>
+              <span class="text-xs text-white/70 select-none" title='Remap the entire finished image onto your Main/Contrast/Glow palette (off = original colours). Applies on top of everything, including trails already tinted by "Colorize Light".'>Apply Colors</span>
               <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
               <div class="relative h-[18px] w-7 shrink-0 cursor-pointer rounded-full transition-colors duration-200 {colorShuffle.enabled ? 'bg-white/70' : 'bg-white/20'}"
                 onclick={() => { colorShuffle.enabled = !colorShuffle.enabled; savePatternColor(patterns[index].id); }}>

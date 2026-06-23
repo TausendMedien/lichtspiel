@@ -95,19 +95,19 @@ const LIGHT_PAINT_IDS = new Set([
 type Bands = Record<string, [number, number]>;
 const LP_BANDS: Bands[] = [
   { // Default
-    'Fade Speed': [0.005, 0.020], 'Colorize': [0.0, 1.0], 'Black': [0.6, 1.0],
+    'Fade Speed': [0.005, 0.020], 'Colorize Light': [0.0, 1.0], 'Black': [0.6, 1.0],
     'Fly In/Out': [-0.2, 0.2], 'Vortex': [-0.05, 0.05], 'RGB Split': [0.0, 0.03],
   },
   { // 1 — Chilled
-    'Fade Speed': [0.005, 0.015], 'Colorize': [0.0, 0.30], 'Black': [0.6, 1.0],
+    'Fade Speed': [0.005, 0.015], 'Colorize Light': [0.0, 0.30], 'Black': [0.6, 1.0],
     'Fly In/Out': [-0.01, 0.01], 'Vortex': [-0.01, 0.01], 'RGB Split': [0.0, 0.01],
   },
   { // 2 — Balanced
-    'Fade Speed': [0.005, 0.025], 'Colorize': [0.0, 0.50], 'Black': [0.6, 1.0],
+    'Fade Speed': [0.005, 0.025], 'Colorize Light': [0.0, 0.50], 'Black': [0.6, 1.0],
     'Fly In/Out': [-0.15, 0.15], 'Vortex': [-0.05, 0.05], 'RGB Split': [0.0, 0.03],
   },
   { // 3 — Active
-    'Fade Speed': [0.005, 0.025], 'Colorize': [0.0, 1.0], 'Black': [0.6, 1.0],
+    'Fade Speed': [0.005, 0.025], 'Colorize Light': [0.0, 1.0], 'Black': [0.6, 1.0],
     'Fly In/Out': [-0.3, 0.3], 'Vortex': [-0.2, 0.2], 'RGB Split': [0.0, 0.03],
   },
 ];
