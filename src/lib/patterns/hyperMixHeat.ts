@@ -2,7 +2,6 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
-import { triggerMotionCameraStart } from "../motionCameraWrapper";
 
 const W = 160;
 const H = 90;
@@ -290,11 +289,11 @@ export const hyperMixHeat: Pattern = {
   audioControlLabels:  ['Speed', 'Point Size'],
 
   activate() {
+    cameraState.heatEnabled = true;
     cameraState.enabled = true;
   },
 
   controls: [
-    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; if (v) triggerMotionCameraStart('hyperMixHeat'); } },
     {
       label: "Speed",
       type: "range", min: 0, max: 0.2, step: 0.005,
@@ -344,6 +343,7 @@ export const hyperMixHeat: Pattern = {
       label: "Heat Strength",
       type: "range", min: 0.35, max: 1.0, step: 0.01,
       default: 0.5,
+      interactive: 'heat' as const,
       get: () => params.heatStrength,
       set: (v) => { params.heatStrength = v; },
     },
@@ -351,6 +351,7 @@ export const hyperMixHeat: Pattern = {
       label: "Heat Gain",
       type: "range", min: 4.0, max: 20.0, step: 0.5,
       default: 11.0,
+      interactive: 'heat' as const,
       get: () => params.heatGain,
       set: (v) => { params.heatGain = v; },
     },
@@ -358,6 +359,7 @@ export const hyperMixHeat: Pattern = {
       label: "Blur Radius",
       type: "range", min: 0, max: 5, step: 0.1,
       default: 2,
+      interactive: 'heat' as const,
       get: () => blurRadius,
       set: (v) => { blurRadius = v; },
     },

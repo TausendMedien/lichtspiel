@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { cameraState } from "../globalCameraSettings.svelte";
-import { triggerMotionCameraStart } from "../motionCameraWrapper";
 import { colorC2 } from "../colorC2.svelte";
 
 const W = 160;
@@ -183,16 +182,16 @@ export const particlesHeat: Pattern = {
   audioControlLabels:  ['Point Size', 'Flow Speed', 'Heat Strength'],
 
   activate() {
+    cameraState.heatEnabled = true;
     cameraState.enabled = true;
   },
 
   controls: [
-    { label: "Heat", type: "toggle" as const, get: () => cameraState.enabled, set: (v: boolean) => { cameraState.enabled = v; if (v) triggerMotionCameraStart('particlesHeat'); } },
     { label: "Point Size",    type: "range",  min: 1.0,  max: 6.0,   step: 0.1,  default: 3,    get: () => pointSize,    set: v => { pointSize = v; } },
     { label: "Flow Speed",    type: "range",  min: 0.0,  max: 3.0,   step: 0.1,  default: 0.2,  get: () => flowSpeed,    set: v => { flowSpeed = v; } },
-    { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,  get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,   get: () => heatGain,     set: v => { heatGain = v; } },
-    { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,    get: () => blurRadius,   set: v => { blurRadius = v; } },
+    { label: "Heat Strength", type: "range",  min: 0.35, max: 1.0,   step: 0.01, default: 0.5,  interactive: 'heat' as const, get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,   interactive: 'heat' as const, get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,    interactive: 'heat' as const, get: () => blurRadius,   set: v => { blurRadius = v; } },
     { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000, get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
   ],
 

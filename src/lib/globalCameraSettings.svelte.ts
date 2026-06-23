@@ -56,6 +56,7 @@ export function saveCameraDevice(): void {
 
 export const cameraState = $state({
   enabled:        false,  // camera hardware on/off (starts the stream)
+  heatEnabled:    false,  // user wants heat map active (independent of motionEnabled)
   motionEnabled:  true,   // motion detection on/off (uses stream to boost controls)
   deviceId:       _savedCamera.deviceId ?? '',
   devices:        [] as DeviceInfo[],

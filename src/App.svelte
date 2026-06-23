@@ -24,6 +24,7 @@
   import { listNamed, saveNamed, deleteNamed, type NamedPreset } from "./lib/named-presets";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
+  import { triggerMotionCameraStart } from "./lib/motionCameraWrapper";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
   import { killAllStreams } from "./lib/sensorGuard";
@@ -3319,11 +3320,13 @@
                   _perPatternInteractiveCollapsed.set(patterns[index].id, false);
                   // Restart camera for patterns where it is the primary content
                   if (patterns[index].requiresCamera && !privacyMode.active) {
+                    cameraState.heatEnabled = true;
                     cameraState.enabled = true;
                   }
                 }
                 _perPatternInteractiveOn.set(patterns[index].id, interactiveOn);
                 if (!interactiveOn) {
+                  cameraState.heatEnabled = false;
                   cameraState.motionEnabled = false;
                   cameraState.enabled = false;
                   audioState.enabled = false;
@@ -3469,16 +3472,41 @@
                   <span>Heat</span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
-                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.heatEnabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => {
-                      const next = !cameraState.enabled;
-                      cameraState.enabled = next;
-                      if (next) enumerateCameras();
+                      const next = !cameraState.heatEnabled;
+                      cameraState.heatEnabled = next;
+                      if (next) { cameraState.enabled = true; enumerateCameras(); triggerMotionCameraStart(patterns[index].id); }
+                      else if (!cameraState.motionEnabled) cameraState.enabled = false;
                     }}
                   >
-                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.heatEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
                   </div>
                 </div>
+                {#if cameraState.heatEnabled}
+                  {@const heatControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'heat' && c.type === 'range')}
+                  {#if heatControls.length > 0}
+                    <div class="flex flex-col gap-1.5 pl-1">
+                      {#each heatControls as ctrl}
+                        {@const c = ctrl as (typeof ctrl & { type: 'range' })}
+                        <div>
+                          <div class="flex justify-between mb-1 text-xs text-white/70">
+                            <span class="cursor-pointer hover:text-white transition-colors select-none"
+                              onclick={() => { if (c.default !== undefined) { c.set(c.default); ctrlVals[c.label] = c.default; saveSettings(patterns); } }}
+                              title="Click to reset"
+                            >{c.label}</span>
+                            <span class="font-mono text-white/40">{Number(ctrlVals[c.label] ?? c.get()).toFixed(c.step < 0.1 ? 2 : c.step < 1 ? 1 : 0)}</span>
+                          </div>
+                          <input type="range" min={c.min} max={c.max} step={c.step}
+                            value={ctrlVals[c.label] ?? c.get()}
+                            oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); c.set(v); ctrlVals[c.label] = v; }}
+                            onchange={() => saveSettings(patterns)}
+                            class="w-full accent-white cursor-pointer" />
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                {/if}
               {/if}
 
               <!-- Motion Detection -->
@@ -3487,18 +3515,18 @@
                   <span class="flex items-center gap-1.5">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
-                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => {
-                      const isOn = cameraState.enabled && cameraState.motionEnabled;
-                      const next = !isOn;
+                      const next = !cameraState.motionEnabled;
                       cameraState.motionEnabled = next;
                       if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); }
+                      if (!next && !cameraState.heatEnabled) cameraState.enabled = false;
                     }}
                   >
-                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.enabled && cameraState.motionEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.motionEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
                   </div>
                 </div>
-                {#if cameraState.enabled && cameraState.motionEnabled}
+                {#if cameraState.motionEnabled}
                   <div class="flex flex-col gap-1.5 pl-1">
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
