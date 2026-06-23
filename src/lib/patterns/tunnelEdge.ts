@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -17,6 +20,23 @@ let colorDrift = 0.2;
 
 let colorPhase = 0;
 let accTime    = 0;
+
+// Heat state — centroid shifts tunnel center toward person
+let heatCenterStr = 1.0;
+const heatOffset  = new THREE.Vector2();
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const _colorA = new THREE.Color();
 const _colorB = new THREE.Color();
@@ -46,6 +66,7 @@ const fragmentShader = /* glsl */ `
   uniform float uColorPhase;
   uniform vec3  uColorA;
   uniform vec3  uColorB;
+  uniform vec2  uHeatOffset;
 
   const float PI = 3.14159265358979;
 
@@ -63,7 +84,7 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     float aspect = uResolution.x / max(uResolution.y, 1.0);
-    vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
+    vec2 uv = (vUv - 0.5 - uHeatOffset) * vec2(aspect, 1.0);
 
     float globalAngle = PI / uEdges + uTime * uRotSpeed;
     vec2 ruv = rot2d(uv, globalAngle);
@@ -120,6 +141,7 @@ const fragmentShader = /* glsl */ `
 export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
+  heatReactive: true,
   motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
@@ -131,6 +153,7 @@ export const tunnelEdge: Pattern = {
     { label: "Wobble",       type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0,    tip: "Camera sway as you fly through.",                                                       get: () => wobble,      set: (v) => { wobble = v; } },
     { label: "Shadow Width", type: "range", min: 0.05,  max: 0.8,  step: 0.01, default: 0.35, tip: "Width of the shaded gap between the bright and dark faces of each edge.",               get: () => shadowWidth, set: (v) => { shadowWidth = v; } },
     { label: "Color Drift",  type: "range", min: 0.0,   max: 1.0,  step: 0.05, default: 0.2,  tip: "How fast the palette shifts along the tunnel.",                                         get: () => colorDrift,  set: (v) => { colorDrift = v; } },
+    { label: "Center Shift", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position shifts the tunnel center toward the person. Requires Heat.", get: () => heatCenterStr, set: v => { heatCenterStr = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -151,6 +174,7 @@ export const tunnelEdge: Pattern = {
         uColorPhase:  { value: colorPhase },
         uColorA:      { value: new THREE.Vector3(_colorA.r, _colorA.g, _colorA.b) },
         uColorB:      { value: new THREE.Vector3(_colorB.r, _colorB.g, _colorB.b) },
+        uHeatOffset:  { value: new THREE.Vector2(0, 0) },
       },
       vertexShader,
       fragmentShader,
@@ -166,6 +190,19 @@ export const tunnelEdge: Pattern = {
     if (!material) return;
     accTime    += dt * speed;
     colorPhase += dt * colorDrift * 0.1;
+
+    if (cameraState.heatEnabled) {
+      const { cx, cy } = computeHeatCentroid();
+      const tx = (0.5 - cx) * 0.35 * heatCenterStr;
+      const ty = (cy - 0.5) * 0.35 * heatCenterStr;
+      const spd = Math.min(1, dt * 2.5);
+      heatOffset.x += (tx - heatOffset.x) * spd;
+      heatOffset.y += (ty - heatOffset.y) * spd;
+    } else {
+      const decay = Math.max(0, 1 - dt * 3);
+      heatOffset.x *= decay;
+      heatOffset.y *= decay;
+    }
     _cTemp.set(colorC2.main);
     const _ph1 = Math.min(1.0, colorC2.colorsV2);
     const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
@@ -184,6 +221,7 @@ export const tunnelEdge: Pattern = {
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uColorA.value.set(_colorA.r, _colorA.g, _colorA.b);
     material.uniforms.uColorB.value.set(_colorB.r, _colorB.g, _colorB.b);
+    material.uniforms.uHeatOffset.value.copy(heatOffset);
   },
 
   resize(width: number, height: number) {
@@ -198,5 +236,6 @@ export const tunnelEdge: Pattern = {
     material = null;
     accTime = 0;
     colorPhase = 0;
+    heatOffset.set(0, 0);
   },
 };

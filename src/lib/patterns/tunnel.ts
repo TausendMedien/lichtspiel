@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -14,6 +17,23 @@ let colorSpeed = 0.60;
 
 let colorPhase = 0;
 let accTime    = 0;
+
+// Heat state — centroid shifts tunnel center toward person
+let heatCenterStr = 1.0;
+const heatOffset  = new THREE.Vector2();
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -33,6 +53,7 @@ const fragmentShader = /* glsl */ `
   uniform float uLineWidth;
   uniform float uColorPhase;
   uniform float uColorSpread;
+  uniform vec2  uHeatOffset;
 
   vec3 hsl2rgb(float h, float s, float l) {
     vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -41,7 +62,7 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     float aspect = uResolution.x / max(uResolution.y, 1.0);
-    vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
+    vec2 uv = (vUv - 0.5 - uHeatOffset) * vec2(aspect, 1.0);
 
     float r = length(uv);
     if (r < 0.001) discard;
@@ -95,14 +116,16 @@ const fragmentShader = /* glsl */ `
 export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
+  heatReactive: true,
   motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Thickness"],
   controls: [
-    { label: "Speed",       type: "range", min: -40,  max: 40,  step: 1,    default: 10,  tip: "Fly-through speed. Positive = forwards, negative = backwards.", get: () => speed,         set: (v) => { speed = v; } },
-    { label: "Wobble",      type: "range", min: 0,    max: 1.0, step: 0.05, default: 0,   tip: "Camera sway from side to side as you fly.",                   get: () => wobble,        set: (v) => { wobble = v; } },
-    { label: "Ring Count",  type: "range", min: 1,    max: 50,  step: 1,    default: 42,  tip: "Number of rings visible at once.",                            get: () => ringCount,     set: (v) => { ringCount = v; } },
-    { label: "Thickness",   type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, tip: "Width of each ring line.",                                    get: () => lineThickness, set: (v) => { lineThickness = v; } },
-    { label: "Color Speed", type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 0.6, tip: "How fast the palette cycles along the tunnel.",              get: () => colorSpeed,    set: (v) => { colorSpeed = v; } },
+    { label: "Speed",         type: "range", min: -40,  max: 40,  step: 1,    default: 10,  tip: "Fly-through speed. Positive = forwards, negative = backwards.", get: () => speed,         set: (v) => { speed = v; } },
+    { label: "Wobble",        type: "range", min: 0,    max: 1.0, step: 0.05, default: 0,   tip: "Camera sway from side to side as you fly.",                   get: () => wobble,        set: (v) => { wobble = v; } },
+    { label: "Ring Count",    type: "range", min: 1,    max: 50,  step: 1,    default: 42,  tip: "Number of rings visible at once.",                            get: () => ringCount,     set: (v) => { ringCount = v; } },
+    { label: "Thickness",     type: "range", min: 0.02, max: 0.5, step: 0.02, default: 0.1, tip: "Width of each ring line.",                                    get: () => lineThickness, set: (v) => { lineThickness = v; } },
+    { label: "Color Speed",   type: "range", min: 0.0,  max: 1.0, step: 0.05, default: 0.6, tip: "How fast the palette cycles along the tunnel.",              get: () => colorSpeed,    set: (v) => { colorSpeed = v; } },
+    { label: "Center Shift",  type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position shifts the tunnel center toward the person. Requires Heat.", get: () => heatCenterStr, set: v => { heatCenterStr = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -116,6 +139,7 @@ export const tunnel: Pattern = {
         uLineWidth:  { value: lineThickness },
         uColorPhase:  { value: colorPhase },
         uColorSpread: { value: colorC2.colorsV2 },
+        uHeatOffset:  { value: new THREE.Vector2(0, 0) },
       },
       vertexShader,
       fragmentShader,
@@ -133,12 +157,27 @@ export const tunnel: Pattern = {
     if (!material) return;
     accTime    += dt * speed;
     colorPhase += dt * colorSpeed * 2.0;
-    material.uniforms.uTime.value       = accTime;
-    material.uniforms.uWobble.value     = wobble;
-    material.uniforms.uRingCount.value  = ringCount;
-    material.uniforms.uLineWidth.value  = lineThickness;
+
+    if (cameraState.heatEnabled) {
+      const { cx, cy } = computeHeatCentroid();
+      const tx = (0.5 - cx) * 0.35 * heatCenterStr;
+      const ty = (cy - 0.5) * 0.35 * heatCenterStr;
+      const spd = Math.min(1, dt * 2.5);
+      heatOffset.x += (tx - heatOffset.x) * spd;
+      heatOffset.y += (ty - heatOffset.y) * spd;
+    } else {
+      const decay = Math.max(0, 1 - dt * 3);
+      heatOffset.x *= decay;
+      heatOffset.y *= decay;
+    }
+
+    material.uniforms.uTime.value        = accTime;
+    material.uniforms.uWobble.value      = wobble;
+    material.uniforms.uRingCount.value   = ringCount;
+    material.uniforms.uLineWidth.value   = lineThickness;
     material.uniforms.uColorPhase.value  = colorPhase;
     material.uniforms.uColorSpread.value = colorC2.colorsV2;
+    material.uniforms.uHeatOffset.value.copy(heatOffset);
     // Color v2 is now driven universally by the motionCameraWrapper.
   },
 
@@ -153,5 +192,6 @@ export const tunnel: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
+    heatOffset.set(0, 0);
   },
 };

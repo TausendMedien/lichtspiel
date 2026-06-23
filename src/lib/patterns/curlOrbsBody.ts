@@ -2,6 +2,9 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -22,6 +25,22 @@ let rotAngle   = 0;
 let accTime    = 0;
 let currentAspect = 1;
 let lineCountDisplay = lineCount; // eased toward lineCount so slider drags morph instead of strobing
+
+// Heat state
+let heatOrbBoost = 1.0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
 
@@ -152,6 +171,7 @@ export const curlOrbsBody: Pattern = {
   id: "curlOrbsBody",
   usesPose: true,
   name: "Curl Orbs",
+  heatReactive: true,
   motionControlLabels: ["Flow Speed"],
   audioControlLabels:  ["Line Width", "Orb Size"],
   controls: [
@@ -163,6 +183,7 @@ export const curlOrbsBody: Pattern = {
     { label: "Orb Size",    type: "range", min: 0.01, max: 0.15,  step: 0.001, default: 0.06, tip: "Radius of each orb's attraction zone.",                                   get: () => orbSize,     set: (v) => { orbSize = v; } },
     { label: "Color Speed", type: "range", min: 0.0,  max: 1.0,   step: 0.05,  default: 0.05, tip: "How fast the palette cycles through hues.",                                get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0,  max: 0.10,  step: 0.005, default: 0,    tip: "Slow rotation of the entire scene.",                                       get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Orb Boost",   type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion expands orb sizes. Requires Heat.",              get: () => heatOrbBoost, set: v => { heatOrbBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -220,7 +241,10 @@ export const curlOrbsBody: Pattern = {
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uFlowScale.value  = flowScale;
     material.uniforms.uOrbCount.value   = orbCount;
-    material.uniforms.uOrbSize.value    = orbSize;
+    const heatOrbMult = cameraState.heatEnabled
+      ? (1 + Math.min(computeHeatCentroid().total * 10, 3) * heatOrbBoost)
+      : 1;
+    material.uniforms.uOrbSize.value    = orbSize * heatOrbMult;
     material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
     material.uniforms.uRotAngle.value   = rotAngle;

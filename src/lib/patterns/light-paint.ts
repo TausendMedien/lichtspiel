@@ -588,6 +588,8 @@ function createLightPainting(
       resX = width;
       resY = height;
       canvasRef = ctx.renderer.domElement;
+      // Start camera immediately so demo mode auto-advance doesn't stay dark
+      if (!privacyMode.active) startCamera(canvasRef);
 
       blackTexture = new THREE.DataTexture(
         new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat

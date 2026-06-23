@@ -2,10 +2,13 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
+
+const W = 160, H = 90;
 
 let bandCount    = 13;
 let flowSpeed    = 0.0;
@@ -21,6 +24,23 @@ let colorPhase = 0;
 let rotAngle   = 0;
 let accTime    = 0;
 let currentAspect = 1;
+
+// Heat state
+let heatWarpBoost = 1.0;
+let heatRotOffset = 0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const personPoints = Array.from({ length: 15 }, () => new THREE.Vector2());
 
@@ -125,6 +145,7 @@ export const baroqueSwirlsBody: Pattern = {
   id: "baroqueSwirlsBody",
   usesPose: true,
   name: "Baroque Swirls",
+  heatReactive: true,
   audioControlLabels: ["Flow Speed", "Teal"],
   motionControlLabels: ["Rotate", "Purple"],
   controls: [
@@ -136,6 +157,7 @@ export const baroqueSwirlsBody: Pattern = {
     { label: "Purple",      type: "range", min: 0.0, max: 1.5, step: 0.05,  default: 0.8,  tip: "Amount of purple in the colour mix.", get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
     { label: "Color Speed", type: "range", min: 0.0, max: 1.0, step: 0.05,  default: 0.08, tip: "How fast the palette cycles through hues.", get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0, max: 0.5, step: 0.01,  default: 0,    tip: "Slow rotation of the entire pattern.", get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Warp Boost",  type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion boosts warp strength and rotates the swirls. Requires Heat.", get: () => heatWarpBoost, set: v => { heatWarpBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -185,15 +207,27 @@ export const baroqueSwirlsBody: Pattern = {
       }
     }
 
+    let effectiveWarp = warpAmount;
+    let effectiveBodyWarp = bodyWarpStr;
+    if (cameraState.heatEnabled) {
+      const { cx, total } = computeHeatCentroid();
+      const target = (0.5 - cx) * 1.0 * heatWarpBoost;
+      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
+      effectiveWarp = Math.min(3.0, warpAmount * (1 + Math.min(total * 8, 2) * heatWarpBoost));
+      effectiveBodyWarp = bodyWarpStr * (1 + Math.min(total * 5, 1.5) * heatWarpBoost);
+    } else {
+      heatRotOffset *= Math.max(0, 1 - dt * 3);
+    }
+
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uBandCount.value   = bandCount;
-    material.uniforms.uWarpAmount.value  = warpAmount;
+    material.uniforms.uWarpAmount.value  = effectiveWarp;
     material.uniforms.uTealAmt.value     = tealAmt;
     material.uniforms.uPurpleAmt.value   = purpleAmt;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uRotAngle.value    = rotAngle;
+    material.uniforms.uRotAngle.value    = rotAngle + heatRotOffset;
     material.uniforms.uPersonCount.value = count;
-    material.uniforms.uBodyWarpStr.value = bodyWarpStr;
+    material.uniforms.uBodyWarpStr.value = effectiveBodyWarp;
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     material.uniforms.uColorsV2.value = colorC2.colorsV2;
@@ -208,5 +242,6 @@ export const baroqueSwirlsBody: Pattern = {
     geometry?.dispose(); material?.dispose();
     mesh = null; geometry = null; material = null;
     accTime = 0; rotAngle = 0; colorPhase = 0;
+    heatRotOffset = 0;
   },
 };

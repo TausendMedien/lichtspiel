@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -16,6 +19,23 @@ let rotateSpeed = 0.02;
 let colorPhase = 0;
 let rotAngle = 0;
 let accTime = 0;
+
+// Heat state
+let heatRotBoost = 1.0;
+let heatRotOffset = 0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -79,12 +99,14 @@ const fragmentShader = /* glsl */ `
 export const parallelLinesStraight: Pattern = {
   id: "parallelLinesStraight",
   name: "Parallel Lines",
+  heatReactive: true,
   controls: [
     { label: "Line Count",   type: "range", min: 10,  max: 120, step: 1,    default: 47,   tip: "Number of parallel lines.",                              get: () => lineCount,   set: (v) => { lineCount = v; } },
     { label: "Scroll Speed", type: "range", min: 0.02,max: 1.0, step: 0.01, default: 0.06, audioWeight: 0.35, tip: "How fast lines scroll across the screen.",   get: () => scrollSpeed, set: (v) => { scrollSpeed = v; } },
     { label: "Line Width",   type: "range", min: 0.02,max: 0.4, step: 0.01, default: 0.19, tip: "Thickness of each line.",                                get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0,    tip: "How fast the palette cycles along the lines.",           get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.3, tip: "Slow rotation of the entire scene.",     get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Rotation Boost", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position rotates the line pattern. Requires Heat.", get: () => heatRotBoost, set: v => { heatRotBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -116,12 +138,21 @@ export const parallelLinesStraight: Pattern = {
     accTime    += dt * scrollSpeed;
     colorPhase += dt * colorSpeed * 0.6;
     rotAngle   += dt * rotateSpeed * 1.5;
+
+    if (cameraState.heatEnabled) {
+      const { cx } = computeHeatCentroid();
+      const target = (0.5 - cx) * Math.PI * 0.4 * heatRotBoost;
+      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
+    } else {
+      heatRotOffset *= Math.max(0, 1 - dt * 3);
+    }
+
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uLineCount.value   = lineCount;
     material.uniforms.uLineWidth.value   = lineWidth;
     material.uniforms.uColorRange.value  = colorC2.colorsV2;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uRotAngle.value    = rotAngle;
+    material.uniforms.uRotAngle.value    = rotAngle + heatRotOffset;
   },
 
   resize(width: number, height: number) {
@@ -135,5 +166,6 @@ export const parallelLinesStraight: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
+    heatRotOffset = 0;
   },
 };

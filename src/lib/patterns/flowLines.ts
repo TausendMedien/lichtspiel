@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
+import { cameraState } from "../globalCameraSettings.svelte";
+
+const W = 160, H = 90;
 
 let mesh: THREE.Mesh | null = null;
 let geometry: THREE.PlaneGeometry | null = null;
@@ -17,6 +20,23 @@ let colorPhase = 0;
 let rotAngle   = 0;
 let accTime    = 0;
 let warpDisplay = warpAmount; // eased toward warpAmount so slider drags morph instead of flash-jumping
+
+// Heat state
+let heatWarpBoost = 1.0;
+let heatRotOffset = 0;
+
+function computeHeatCentroid() {
+  const map = cameraState.heatMap;
+  let wx = 0, wy = 0, total = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = map[y * W + x];
+      wx += v * x; wy += v * y; total += v;
+    }
+  return total > 0.01
+    ? { cx: wx / total / W, cy: wy / total / H, total }
+    : { cx: 0.5, cy: 0.5, total: 0 };
+}
 
 const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
 
@@ -110,6 +130,7 @@ const fragmentShader = /* glsl */ `
 export const flowLines: Pattern = {
   id: "flowLines",
   name: "Flow Lines",
+  heatReactive: true,
   motionControlLabels: ["Line Width"],
   audioControlLabels:  ["Flow Speed", "Rotate"],
   controls: [
@@ -119,6 +140,7 @@ export const flowLines: Pattern = {
     { label: "Line Width",  type: "range", min: 0.1, max: 0.9,  step: 0.01, default: 0.45, tip: "Thickness of each line.",                                            get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Color Speed", type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0,    tip: "How fast the palette cycles along the lines.",                       get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0, max: 0.5,  step: 0.01, default: 0.01, audioWeight: 0.3, tip: "Slow rotation of the entire scene.",               get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Warp Boost",  type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion boosts warp and rotates lines toward the person. Requires Heat.", get: () => heatWarpBoost, set: v => { heatWarpBoost = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -152,13 +174,24 @@ export const flowLines: Pattern = {
     rotAngle   += dt * rotateSpeed * 1.5;
     // Ease the warp toward its target so dragging the slider morphs instead of flashing
     warpDisplay += (warpAmount - warpDisplay) * (1 - Math.exp(-dt * MORPH_RATE));
+
+    let effectiveWarp = warpDisplay;
+    if (cameraState.heatEnabled) {
+      const { cx, total } = computeHeatCentroid();
+      const target = (0.5 - cx) * 1.2 * heatWarpBoost;
+      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
+      effectiveWarp = Math.min(3.0, warpDisplay * (1 + Math.min(total * 8, 2) * heatWarpBoost));
+    } else {
+      heatRotOffset *= Math.max(0, 1 - dt * 3);
+    }
+
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uLineCount.value  = lineCount;
-    material.uniforms.uWarpAmount.value = warpDisplay;
+    material.uniforms.uWarpAmount.value = effectiveWarp;
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uRotAngle.value   = rotAngle;
+    material.uniforms.uRotAngle.value   = rotAngle + heatRotOffset;
   },
 
   resize(width: number, height: number) {
@@ -173,5 +206,6 @@ export const flowLines: Pattern = {
     material = null;
     accTime = 0;
     warpDisplay = warpAmount;
+    heatRotOffset = 0;
   },
 };
