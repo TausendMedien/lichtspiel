@@ -40,7 +40,7 @@ export function attachKeyboard(
   onDebugKey?: (info: string) => void,
 ): () => void {
   let rHeld = false;
-  let bPressedAt = 0; // tracks keydown time for long-press detection on 'b'
+  let bPressedAt = 0; // tracks keydown time for long-press detection on 'b' / Enter
   let bSingleTimer: ReturnType<typeof setTimeout> | null = null; // pending single press awaiting a possible double
 
   function onKeyDown(e: KeyboardEvent) {
@@ -149,7 +149,8 @@ export function attachKeyboard(
         handler({ type: "toggleOverview" });
         e.preventDefault(); return;
       case "Enter":
-        handler({ type: "freeze" }); // Start button in K-Mode sends Enter
+        if (e.repeat) { e.preventDefault(); return; }
+        bPressedAt = performance.now();
         e.preventDefault(); return;
       case "Escape":
         handler({ type: "escape" });
@@ -180,7 +181,7 @@ export function attachKeyboard(
     //   hold ≥ 500 ms        → long press
     //   two quick taps       → double press (only when enabled)
     //   single tap           → short press
-    if ((e.key === "b" || e.key === "B") && bPressedAt > 0) {
+    if ((e.key === "b" || e.key === "B" || e.key === "Enter") && bPressedAt > 0) {
       const held = performance.now() - bPressedAt;
       bPressedAt = 0;
       if (held >= PEDAL_LONG_MS) {

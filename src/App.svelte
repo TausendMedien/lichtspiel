@@ -180,12 +180,12 @@
       ["Reset controls",       "A",                  "× / A"],
       ["Freeze toggle",        "Space / Start",      "Options / Start"],
       [pedalChangesPattern ? "Randomize + change pattern" : "Randomize",
-       "B  · Pedal",           "○ / B"],
+       "B  · Enter  · Pedal",  "○ / B"],
       ...(pedalDoubleChangesPattern
-        ? [["Change pattern",  "B B  · Pedal",       "—"] as [string, string, string]]
+        ? [["Change pattern",  "B B  · Enter Enter  · Pedal", "—"] as [string, string, string]]
         : []),
       ...(pedalLongAction !== 'none'
-        ? [[pedalLongLabels[pedalLongAction], "B (hold)  · Pedal", "—"] as [string, string, string]]
+        ? [[pedalLongLabels[pedalLongAction], "B (hold)  · Enter (hold)  · Pedal", "—"] as [string, string, string]]
         : []),
       ["Blackout toggle",      "X",                  "△ / Y"],
       ["Hide / show HUD",      "Y",                  "□ / X"],
