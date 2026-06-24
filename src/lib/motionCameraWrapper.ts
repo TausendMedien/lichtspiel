@@ -221,7 +221,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       // Register the gesture-context trigger so heat toggles can call startCamera()
       // synchronously within a user gesture (required for first-time iOS permission).
       _cameraTriggers.set(pattern.id, () => {
-        if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
+        if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active && !_motionCamera) startCamera();
       });
       pattern.init(ctx);
       // Only start a new camera if one isn't already running (kept alive from the previous pattern).

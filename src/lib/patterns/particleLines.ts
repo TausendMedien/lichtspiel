@@ -16,8 +16,15 @@ let lineWidth  = 4.0;  // pixels
 // Heat state
 let heatTiltStr   = 1.0;
 let heatFlowBoost = 1.0;
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
 let heatYaw       = 0;
 let heatTilt      = 0;
+
+let heatSmoothed = new Float32Array(W * H);
+let heatTmp      = new Float32Array(W * H);
+let heatTexData: Float32Array | null = null;
+let heatTex:     THREE.DataTexture | null = null;
 
 function computeHeatCentroid() {
   const map = cameraState.heatMap;
@@ -30,6 +37,29 @@ function computeHeatCentroid() {
   return total > 0.01
     ? { cx: wx / total / W, cy: wy / total / H, total }
     : { cx: 0.5, cy: 0.5, total: 0 };
+}
+
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r <= 0) { dst.set(src); return; }
+  const inv = 1 / (2 * r + 1);
+  for (let y = 0; y < H; y++) {
+    let s = 0;
+    for (let x = -r; x <= r; x++) s += src[y * W + Math.max(0, Math.min(W - 1, x))];
+    for (let x = 0; x < W; x++) {
+      tmp[y * W + x] = s * inv;
+      s += src[y * W + Math.max(0, Math.min(W - 1, x + r + 1))]
+         - src[y * W + Math.max(0, Math.min(W - 1, x - r))];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += tmp[Math.max(0, Math.min(H - 1, y)) * W + x];
+    for (let y = 0; y < H; y++) {
+      dst[y * W + x] = s * inv;
+      s += tmp[Math.max(0, Math.min(H - 1, y + r + 1)) * W + x]
+         - tmp[Math.max(0, Math.min(H - 1, y - r)) * W + x];
+    }
+  }
 }
 
 let lineMesh:   THREE.Mesh   | null = null;
@@ -46,13 +76,10 @@ let needsTailUpdate = false;
 let vpWidth = 1, vpHeight = 1;
 
 // ─── Persistent line store ────────────────────────────────────────────────────
-// Stores stable per-line head positions and tail directions so that changing
-// Line Count only adds/removes lines from the end, and changing Tail Length
-// only slides the tail endpoints — neither scrambles the whole image.
 interface LineEntry {
-  hx: number; hy: number; hz: number;  // head position
-  tdx: number; tdy: number; tdz: number; // tail direction (unscaled, multiply by tailLength)
-  hs: number;  // head seed
+  hx: number; hy: number; hz: number;
+  tdx: number; tdy: number; tdz: number;
+  hs: number;
 }
 let lineStore: LineEntry[] = [];
 let posAttr:      THREE.BufferAttribute | null = null;
@@ -75,7 +102,6 @@ function ensureStore(N: number) {
   }
 }
 
-// Update only position/otherPos when tailLength changes (seeds/sides/indices unchanged).
 function updateTailPositions() {
   if (!posAttr || !otherPosAttr) return;
   const N = Math.round(lineCount);
@@ -87,10 +113,8 @@ function updateTailPositions() {
     const ty = hy + tdy * tailLength;
     const tz = hz + tdz * tailLength;
     const b = i * 4;
-    // HL, HR: position = head (stable), otherPos = tail (changes)
     otherPos[b*3]=tx;     otherPos[b*3+1]=ty;     otherPos[b*3+2]=tz;
     otherPos[(b+1)*3]=tx; otherPos[(b+1)*3+1]=ty; otherPos[(b+1)*3+2]=tz;
-    // TL, TR: position = tail (changes), otherPos = head (stable)
     positions[(b+2)*3]=tx; positions[(b+2)*3+1]=ty; positions[(b+2)*3+2]=tz;
     positions[(b+3)*3]=tx; positions[(b+3)*3+1]=ty; positions[(b+3)*3+2]=tz;
   }
@@ -120,6 +144,9 @@ const lineVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uLineWidth;
   uniform vec2  uResolution;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
+  uniform vec2  uHeatEps;
   attribute vec3  aOtherPos;
   attribute float aSeed;
   attribute float aOtherSeed;
@@ -131,11 +158,29 @@ const lineVertShader = /* glsl */ `
   void main() {
     vSeed = aSeed;
 
-    vec3 thisWorld  = _animPt(position,  aSeed,       uTime);
-    vec3 otherWorld = _animPt(aOtherPos, aOtherSeed,  uTime);
+    vec3 thisWorld  = _animPt(position,  aSeed,      uTime);
+    vec3 otherWorld = _animPt(aOtherPos, aOtherSeed, uTime);
 
     vec4 clipThis  = projectionMatrix * modelViewMatrix * vec4(thisWorld,  1.0);
     vec4 clipOther = projectionMatrix * modelViewMatrix * vec4(otherWorld, 1.0);
+
+    // Sobel-displace each endpoint in clip space based on heat gradient at its screen position.
+    if (uHeatStrength > 0.0) {
+      vec2 hUvT = vec2(1.0 - (clipThis.x/clipThis.w   * 0.5 + 0.5),
+                       1.0 - (clipThis.y/clipThis.w   * 0.5 + 0.5));
+      vec2 hUvO = vec2(1.0 - (clipOther.x/clipOther.w * 0.5 + 0.5),
+                       1.0 - (clipOther.y/clipOther.w * 0.5 + 0.5));
+      float gxT = texture2D(uHeatMap, clamp(hUvT + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
+                - texture2D(uHeatMap, clamp(hUvT - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
+      float gyT = texture2D(uHeatMap, clamp(hUvT + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
+                - texture2D(uHeatMap, clamp(hUvT - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
+      float gxO = texture2D(uHeatMap, clamp(hUvO + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
+                - texture2D(uHeatMap, clamp(hUvO - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
+      float gyO = texture2D(uHeatMap, clamp(hUvO + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
+                - texture2D(uHeatMap, clamp(hUvO - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
+      clipThis.xy  += vec2(gxT, gyT) * uHeatStrength * 0.25 * clipThis.w;
+      clipOther.xy += vec2(gxO, gyO) * uHeatStrength * 0.25 * clipOther.w;
+    }
 
     vec2 ndcDir = (clipOther.xy / clipOther.w) - (clipThis.xy / clipThis.w);
     vec2 pxDir  = vec2(ndcDir.x * uResolution.x, ndcDir.y * uResolution.y);
@@ -146,7 +191,7 @@ const lineVertShader = /* glsl */ `
     vec2 ndcPerp = vec2(pxPerp.x / uResolution.x, pxPerp.y / uResolution.y);
     vec2 offset  = ndcPerp * uLineWidth * aSide * clipThis.w;
 
-    gl_Position    = clipThis;
+    gl_Position     = clipThis;
     gl_Position.xy += offset;
   }
 `;
@@ -174,6 +219,9 @@ const lineFragShader = /* glsl */ `
 const glowVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uSize;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
+  uniform vec2  uHeatEps;
   attribute float aSeed;
   varying float vSeed;
 
@@ -184,6 +232,15 @@ const glowVertShader = /* glsl */ `
     vec3 p  = _animPt(position, aSeed, uTime);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
+    if (uHeatStrength > 0.0) {
+      vec2 hUv = vec2(1.0 - (gl_Position.x/gl_Position.w * 0.5 + 0.5),
+                      1.0 - (gl_Position.y/gl_Position.w * 0.5 + 0.5));
+      float gx = texture2D(uHeatMap, clamp(hUv + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
+               - texture2D(uHeatMap, clamp(hUv - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
+      float gy = texture2D(uHeatMap, clamp(hUv + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
+               - texture2D(uHeatMap, clamp(hUv - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
+      gl_Position.xy += vec2(gx, gy) * uHeatStrength * 0.25 * gl_Position.w;
+    }
     float sizeVar = 0.5 + fract(aSeed * 7.317) * 1.5;
     gl_PointSize  = uSize * sizeVar * (6.0 / -mv.z);
   }
@@ -223,7 +280,6 @@ function buildGeometry() {
   const N = Math.round(lineCount);
   ensureStore(N);
 
-  // 4 vertices per line (HL, HR, TL, TR), 6 indices per line
   const positions  = new Float32Array(N * 4 * 3);
   const otherPos   = new Float32Array(N * 4 * 3);
   const seeds      = new Float32Array(N * 4);
@@ -231,7 +287,6 @@ function buildGeometry() {
   const sides      = new Float32Array(N * 4);
   const indices    = new Uint32Array(N * 6);
 
-  // Glow: one point per line-head
   const glowPositions = new Float32Array(N * 3);
   const glowSeeds     = new Float32Array(N);
 
@@ -243,7 +298,7 @@ function buildGeometry() {
     const headSeed = hs;
     const tailSeed = hs + 0.0001;
 
-    // Layout: base=i*4  → HL(+0), HR(+1), TL(+2), TR(+3)
+    // Layout: base=i*4 → HL(+0), HR(+1), TL(+2), TR(+3)
     const b = i * 4;
     // HL
     positions[b*3]=hx; positions[b*3+1]=hy; positions[b*3+2]=hz;
@@ -304,16 +359,17 @@ export const particleLines: Pattern = {
   motionControlLabels: ["Flow Speed", "Line Width"],
   audioControlLabels:  ["Line Width"],
   controls: [
-    { label: "Flow Speed",  type: "range", min: 0.0,  max: 3.0,  step: 0.05, default: 0.3,  tip: "How fast the particle lines travel through the scene.",                    get: () => flowSpeed,  set: (v) => { flowSpeed  = v; } },
-    { label: "Line Count",  type: "range", min: 50,   max: 2000, step: 50,   default: 1000, tip: "Number of particle line trails. More = denser, heavier on GPU.",           get: () => lineCount,  set: (v) => { lineCount  = v; needsRebuild = true; } },
-    { label: "Line Width",  type: "range", min: 1.5,  max: 14.0, step: 0.5,  default: 4.0,  tip: "Thickness of each line trail.",                                            get: () => lineWidth,  set: (v) => { lineWidth  = v; } },
-    { label: "Tail Length", type: "range", min: 1.0,  max: 20.0, step: 0.5,  default: 6.0,  tip: "Length of each particle trail in frames.",                                 get: () => tailLength, set: (v) => { tailLength = v; needsTailUpdate = true; } },
-    // Hidden control — used by audio wrapper only, not shown in UI
+    { label: "Flow Speed",   type: "range", min: 0.0, max: 3.0,  step: 0.05, default: 0.3,  tip: "How fast the particle lines travel through the scene.",                          get: () => flowSpeed,     set: (v) => { flowSpeed  = v; } },
+    { label: "Line Count",   type: "range", min: 50,  max: 2000, step: 50,   default: 1000, tip: "Number of particle line trails. More = denser, heavier on GPU.",                 get: () => lineCount,     set: (v) => { lineCount  = v; needsRebuild = true; } },
+    { label: "Line Width",   type: "range", min: 1.5, max: 14.0, step: 0.5,  default: 4.0,  tip: "Thickness of each line trail.",                                                  get: () => lineWidth,     set: (v) => { lineWidth  = v; } },
+    { label: "Tail Length",  type: "range", min: 1.0, max: 20.0, step: 0.5,  default: 6.0,  tip: "Length of each particle trail in frames.",                                       get: () => tailLength,    set: (v) => { tailLength = v; needsTailUpdate = true; } },
     { label: "Colors v2", type: "range", min: 0, max: 3, step: 0.1, default: 3,
       interactive: 'internal' as const,
       get: () => colorC2.colorsV2, set: (v) => { colorC2.colorsV2 = v; } },
-    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the particle cloud toward the person. Requires Heat.",  get: () => heatTiltStr,   set: v => { heatTiltStr = v; } },
-    { label: "Flow Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra flow speed when heat-map motion is detected. Requires Heat.",                      get: () => heatFlowBoost, set: v => { heatFlowBoost = v; } },
+    { label: "Tilt Strength", type: "range", min: 0, max: 2,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the particle cloud toward the person. Requires Heat.",  get: () => heatTiltStr,   set: v => { heatTiltStr = v; } },
+    { label: "Flow Boost",    type: "range", min: 0, max: 3,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra flow speed when heat-map motion is detected. Requires Heat.",                      get: () => heatFlowBoost, set: v => { heatFlowBoost = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How strongly body heat bends individual line paths locally. Requires Heat.",             get: () => heatStrength,  set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 3,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Smoothing radius applied to the heat map before bending. Requires Heat.",                get: () => heatBlurR,     set: v => { heatBlurR = Math.round(v); } },
   ],
   colorDefaults: { saturation: 0.9, brightness: 1.8 },
 
@@ -327,13 +383,23 @@ export const particleLines: Pattern = {
     needsRebuild    = false;
     needsTailUpdate = false;
 
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
+
     lineMat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:        { value: 0 },
-        uLineWidth:   { value: lineWidth },
-        uResolution:  { value: new THREE.Vector2(vpWidth, vpHeight) },
-        uColorRange:  { value: colorC2.colorsV2 },
-        uLineOpacity: { value: 1.0 },
+        uTime:         { value: 0 },
+        uLineWidth:    { value: lineWidth },
+        uResolution:   { value: new THREE.Vector2(vpWidth, vpHeight) },
+        uColorRange:   { value: colorC2.colorsV2 },
+        uLineOpacity:  { value: 1.0 },
+        uHeatMap:      { value: heatTex },
+        uHeatStrength: { value: 0 },
+        uHeatEps:      { value: new THREE.Vector2(1 / W, 1 / H) },
       },
       vertexShader:   lineVertShader,
       fragmentShader: lineFragShader,
@@ -345,10 +411,13 @@ export const particleLines: Pattern = {
 
     glowMat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:        { value: 0 },
-        uSize:        { value: 10.0 },
-        uColorRange:  { value: colorC2.colorsV2 },
-        uLineOpacity: { value: 1.0 },
+        uTime:         { value: 0 },
+        uSize:         { value: 10.0 },
+        uColorRange:   { value: colorC2.colorsV2 },
+        uLineOpacity:  { value: 1.0 },
+        uHeatMap:      { value: heatTex },
+        uHeatStrength: { value: 0 },
+        uHeatEps:      { value: new THREE.Vector2(1 / W, 1 / H) },
       },
       vertexShader:   glowVertShader,
       fragmentShader: glowFragShader,
@@ -365,6 +434,14 @@ export const particleLines: Pattern = {
     accTime += dt * flowSpeed;
 
     if (cameraState.heatEnabled) {
+      const raw = cameraState.heatMap;
+      for (let i = 0; i < W * H; i++)
+        heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+      heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+      heatTex!.needsUpdate = true;
+      lineMat.uniforms.uHeatStrength.value = heatStrength;
+      glowMat.uniforms.uHeatStrength.value = heatStrength;
+
       const { cx, cy, total } = computeHeatCentroid();
       const targetYaw  = (0.5 - cx) * 0.6 * heatTiltStr;
       const targetTilt = (cy - 0.5) * 0.4 * heatTiltStr;
@@ -373,12 +450,15 @@ export const particleLines: Pattern = {
       heatTilt += (targetTilt - heatTilt) * spd;
       accTime  += dt * flowSpeed * Math.min(total * 8, 2) * heatFlowBoost;
     } else {
+      lineMat.uniforms.uHeatStrength.value = 0;
+      glowMat.uniforms.uHeatStrength.value = 0;
       heatYaw  *= Math.max(0, 1 - dt * 3);
       heatTilt *= Math.max(0, 1 - dt * 3);
     }
 
     if (lineMesh)   { lineMesh.rotation.y   = heatYaw; lineMesh.rotation.x   = heatTilt; }
     if (glowPoints) { glowPoints.rotation.y = heatYaw; glowPoints.rotation.x = heatTilt; }
+
     if (needsRebuild) {
       needsRebuild    = false;
       needsTailUpdate = false;
@@ -389,11 +469,7 @@ export const particleLines: Pattern = {
       updateTailPositions();
     }
 
-    // Auto-exposure: combined power-law keeps perceived brightness constant.
-    // Reference point: default N=1000, W=4, T=6 → ratio=1 → opacity=1.
-    // Exponent 1.5 makes extreme combos fall much harder than linear.
-    // e.g. N=2000 W=14 T=10 → ratio≈0.086 → opacity≈0.025 (was 0.19 with old formula).
-    const ratio      = 24000 / (lineCount * lineWidth * tailLength);
+    const ratio       = 24000 / (lineCount * lineWidth * tailLength);
     const autoOpacity = Math.min(1.0, Math.pow(ratio, 1.5));
 
     lineMat.uniforms.uTime.value        = accTime;
@@ -416,12 +492,16 @@ export const particleLines: Pattern = {
     if (glowPoints && sceneRef) sceneRef.remove(glowPoints);
     lineGeo?.dispose(); glowGeo?.dispose();
     lineMat?.dispose(); glowMat?.dispose();
+    heatTex?.dispose();
     lineMesh = null; glowPoints = null;
     lineGeo  = null; glowGeo    = null;
     lineMat  = null; glowMat    = null;
+    heatTex  = null; heatTexData = null;
     camera   = null; sceneRef   = null;
     accTime  = 0; needsRebuild = false; needsTailUpdate = false;
     heatYaw = 0; heatTilt = 0;
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
     lineStore    = [];
     posAttr      = null;
     otherPosAttr = null;
