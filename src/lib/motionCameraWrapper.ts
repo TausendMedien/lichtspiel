@@ -26,15 +26,22 @@ export function triggerMotionCameraStart(patternId: string): void {
   _cameraTriggers.get(patternId)?.();
 }
 
+// Shared across all wrapper instances so the camera survives pattern switches.
+let _motionCamera: MotionCamera | null = null;
+let _startId = 0;
+
+// Set true by the renderer around a pattern switch so dispose() doesn't tear
+// down the camera, and init() reuses the running stream instead of restarting.
+let _keepCameraAlive = false;
+export function keepCameraAlive(v: boolean) { _keepCameraAlive = v; }
+
 export function addMotionCamera(pattern: Pattern): Pattern {
   let smoothedMotion = 0;
   let rawMotion      = 0;
   let burstPulse     = 0;
-  let motionCamera: MotionCamera | null = null;
   const detector = new SpatialPatchinessDetector();
   let canvasRef: HTMLCanvasElement | null = null;
   let overlay: HTMLDivElement | null = null;
-  let startId = 0;
 
   let prevEnabled        = false;
   let prevDeviceId       = '';
@@ -157,26 +164,26 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     };
     // Delay the overlay — only show if camera hasn't started within 500ms
     // (avoids a flash when permission is already granted)
-    const myId = ++startId;
+    const myId = ++_startId;
     const ref = canvasRef;
     overlayTimeout = setTimeout(() => {
-      if (myId === startId) overlay = showMotionOverlay(ref, 'Requesting camera…');
+      if (myId === _startId) overlay = showMotionOverlay(ref, 'Requesting camera…');
     }, 500);
     MotionCamera.createWithConstraints(canvasRef, constraints).then(async (cam) => {
       clearTimeout(overlayTimeout!); overlayTimeout = null;
-      if (myId !== startId) { cam?.dispose(); return; }
+      if (myId !== _startId) { cam?.dispose(); return; }
       overlay?.remove();
       overlay = null;
-      motionCamera = cam ?? null;
+      _motionCamera = cam ?? null;
       if (cam) await enumerateCameras();
     });
   }
 
   function stopCamera() {
-    ++startId;
+    ++_startId;
     if (overlayTimeout) { clearTimeout(overlayTimeout); overlayTimeout = null; }
-    motionCamera?.dispose();
-    motionCamera = null;
+    _motionCamera?.dispose();
+    _motionCamera = null;
     smoothedMotion = 0;
     rawMotion      = 0;
     burstPulse     = 0;
@@ -217,18 +224,19 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
       });
       pattern.init(ctx);
-      if (cameraState.enabled && prevPatternEnabled && !privacyMode.active) startCamera();
+      // Only start a new camera if one isn't already running (kept alive from the previous pattern).
+      if (cameraState.enabled && prevPatternEnabled && !privacyMode.active && !_motionCamera) startCamera();
     },
 
     activate() {
       // Call pattern first — it may set cameraState.enabled (e.g. Heat Map auto-enables).
       pattern.activate?.();
-      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active) startCamera();
+      if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active && !_motionCamera) startCamera();
     },
 
     update(dt: number, elapsed: number) {
       // Hard kill: if Sensor Block is active, stop any live camera immediately
-      if (privacyMode.active && motionCamera) { stopCamera(); }
+      if (privacyMode.active && _motionCamera) { stopCamera(); }
 
       // React to global enable/device changes and per-pattern toggle
       const nowEnabled        = cameraState.enabled;
@@ -246,8 +254,8 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       prevPatternEnabled = nowPatternEnabled;
 
       // ── Motion detection ─────────────────────────────────────────────────
-      if (motionCamera) {
-        const diff = motionCamera.tick();
+      if (_motionCamera) {
+        const diff = _motionCamera.tick();
         if (diff) {
           // Always publish the raw diff — heatMap pattern reads it regardless of
           // whether motion analytics (control boosting) are enabled.
@@ -354,11 +362,16 @@ export function addMotionCamera(pattern: Pattern): Pattern {
 
     dispose() {
       _cameraTriggers.delete(pattern.id);
-      stopCamera();
-      canvasRef = null;
-      for (let i = 0; i < boostTargets.length; i++) {
-        boostTargets[i].set(baseVals[i]);
+      if (_keepCameraAlive) {
+        // Pattern switch with heat active — keep the camera running so the
+        // incoming pattern inherits it without a black-screen restart.
+        if (overlayTimeout) { clearTimeout(overlayTimeout); overlayTimeout = null; }
+        overlay?.remove(); overlay = null;
+        for (let i = 0; i < boostTargets.length; i++) boostTargets[i].set(baseVals[i]);
+      } else {
+        stopCamera();
       }
+      canvasRef = null;
       pattern.dispose();
     },
   };

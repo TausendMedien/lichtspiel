@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./patterns/types";
 import { colorC2, colorShuffle, getColorByIndex } from "./colorC2.svelte";
 import { interactionState } from "./interactionState.svelte";
+import { keepCameraAlive } from "./motionCameraWrapper";
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -279,10 +280,12 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   }
 
   function setPattern(next: Pattern) {
+    keepCameraAlive(true);
     current.dispose();
     clearScene();
     current = next;
     current.init(ctx);
+    keepCameraAlive(false);
     current.resize(size.width, size.height);
   }
 
