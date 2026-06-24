@@ -28,6 +28,7 @@ export class MotionCamera {
   private offCtx: CanvasRenderingContext2D;
   private prevLuma: Float32Array | null = null;
   private lastVideoTime = -1;
+  private warmupFrames = 2;
 
   private constructor(video: HTMLVideoElement, stream: MediaStream) {
     this.video = video;
@@ -82,9 +83,13 @@ export class MotionCamera {
 
     let diff: Float32Array | null = null;
     if (this.prevLuma) {
-      diff = new Float32Array(W * H);
-      for (let i = 0; i < W * H; i++) {
-        diff[i] = Math.abs(luma[i] - this.prevLuma[i]);
+      if (this.warmupFrames > 0) {
+        this.warmupFrames--;
+      } else {
+        diff = new Float32Array(W * H);
+        for (let i = 0; i < W * H; i++) {
+          diff[i] = Math.abs(luma[i] - this.prevLuma[i]);
+        }
       }
     }
     this.prevLuma = luma;

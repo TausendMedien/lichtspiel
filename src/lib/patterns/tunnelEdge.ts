@@ -194,7 +194,7 @@ export const tunnelEdge: Pattern = {
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
       const tx = (0.5 - cx) * 0.35 * heatCenterStr;
-      const ty = (cy - 0.5) * 0.35 * heatCenterStr;
+      const ty = (0.5 - cy) * 0.35 * heatCenterStr;
       const spd = Math.min(1, dt * 2.5);
       heatOffset.x += (tx - heatOffset.x) * spd;
       heatOffset.y += (ty - heatOffset.y) * spd;

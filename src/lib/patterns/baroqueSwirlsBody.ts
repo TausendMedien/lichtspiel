@@ -25,21 +25,37 @@ let rotAngle   = 0;
 let accTime    = 0;
 let currentAspect = 1;
 
-// Heat state
-let heatWarpBoost = 1.0;
-let heatRotOffset = 0;
+// Heat state — DataTexture drives Sobel UV distortion in fragment shader
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatTex:      THREE.DataTexture | null = null;
 
-function computeHeatCentroid() {
-  const map = cameraState.heatMap;
-  let wx = 0, wy = 0, total = 0;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const v = map[y * W + x];
-      wx += v * x; wy += v * y; total += v;
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
     }
-  return total > 0.01
-    ? { cx: wx / total / W, cy: wy / total / H, total }
-    : { cx: 0.5, cy: 0.5, total: 0 };
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
 }
 
 const personPoints = Array.from({ length: 15 }, () => new THREE.Vector2());
@@ -65,6 +81,8 @@ const fragmentShader = /* glsl */ `
   uniform float uBodyWarpStr;
   uniform float uColorsV2;
   uniform vec3  uMainColor;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -104,6 +122,17 @@ const fragmentShader = /* glsl */ `
     vec2 r2 = vec2(fbm(pp * 0.9 + uWarpAmount * q + vec2(1.7, 9.2) + t * 0.6),
                    fbm(pp * 0.9 + uWarpAmount * q + vec2(8.3, 2.8) - t * 0.4));
     float phi = fbm(pp * 0.65 + uWarpAmount * 1.2 * r2 + uColorPhase * 0.15);
+
+    // Heat Sobel: locally shifts band phase — bends individual bands at body edges
+    if (uHeatStrength > 0.001) {
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      phi += ((hR - hL) * 0.7 + (hU - hD) * 0.3) * uHeatStrength * 0.4;
+    }
 
     // Color bands
     float band = fract(phi * uBandCount);
@@ -157,11 +186,18 @@ export const baroqueSwirlsBody: Pattern = {
     { label: "Purple",      type: "range", min: 0.0, max: 1.5, step: 0.05,  default: 0.8,  tip: "Amount of purple in the colour mix.", get: () => purpleAmt,  set: (v) => { purpleAmt = v; } },
     { label: "Color Speed", type: "range", min: 0.0, max: 1.0, step: 0.05,  default: 0.08, tip: "How fast the palette cycles through hues.", get: () => colorSpeed, set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0, max: 0.5, step: 0.01,  default: 0,    tip: "Slow rotation of the entire pattern.", get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
-    { label: "Warp Boost",  type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion boosts warp strength and rotates the swirls. Requires Heat.", get: () => heatWarpBoost, set: v => { heatWarpBoost = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion locally bends bands at body edges. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -178,6 +214,8 @@ export const baroqueSwirlsBody: Pattern = {
         uBodyWarpStr:  { value: bodyWarpStr },
         uColorsV2:     { value: colorC2.colorsV2 },
         uMainColor:    { value: new THREE.Vector3() },
+        uHeatMap:      { value: heatTex },
+        uHeatStrength: { value: 0 },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
     });
@@ -187,10 +225,16 @@ export const baroqueSwirlsBody: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material) return;
+    if (!material || !heatSmoothed || !heatTmp || !heatTex) return;
     accTime    += dt * flowSpeed;
     colorPhase += dt * colorSpeed * 0.4;
     rotAngle   += dt * rotateSpeed * 1.5;
+
+    const raw = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++)
+      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+    heatTex.needsUpdate = true;
 
     let count = 0;
     if (bodyTracking) {
@@ -207,27 +251,17 @@ export const baroqueSwirlsBody: Pattern = {
       }
     }
 
-    let effectiveWarp = warpAmount;
-    let effectiveBodyWarp = bodyWarpStr;
-    if (cameraState.heatEnabled) {
-      const { cx, total } = computeHeatCentroid();
-      const target = (0.5 - cx) * 1.0 * heatWarpBoost;
-      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
-      effectiveWarp = Math.min(3.0, warpAmount * (1 + Math.min(total * 8, 2) * heatWarpBoost));
-      effectiveBodyWarp = bodyWarpStr * (1 + Math.min(total * 5, 1.5) * heatWarpBoost);
-    } else {
-      heatRotOffset *= Math.max(0, 1 - dt * 3);
-    }
-
     material.uniforms.uTime.value        = accTime;
     material.uniforms.uBandCount.value   = bandCount;
-    material.uniforms.uWarpAmount.value  = effectiveWarp;
+    material.uniforms.uWarpAmount.value  = warpAmount;
     material.uniforms.uTealAmt.value     = tealAmt;
     material.uniforms.uPurpleAmt.value   = purpleAmt;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uRotAngle.value    = rotAngle + heatRotOffset;
+    material.uniforms.uRotAngle.value    = rotAngle;
     material.uniforms.uPersonCount.value = count;
-    material.uniforms.uBodyWarpStr.value = effectiveBodyWarp;
+    material.uniforms.uBodyWarpStr.value = bodyWarpStr;
+    material.uniforms.uHeatMap.value     = heatTex;
+    material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     material.uniforms.uColorsV2.value = colorC2.colorsV2;
@@ -239,9 +273,9 @@ export const baroqueSwirlsBody: Pattern = {
   },
 
   dispose() {
-    geometry?.dispose(); material?.dispose();
+    geometry?.dispose(); material?.dispose(); heatTex?.dispose();
     mesh = null; geometry = null; material = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
     accTime = 0; rotAngle = 0; colorPhase = 0;
-    heatRotOffset = 0;
   },
 };

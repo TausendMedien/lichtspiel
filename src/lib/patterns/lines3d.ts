@@ -22,10 +22,49 @@ let glow          = 0.45;
 
 let rotationAngle = 0;
 
-// Heat state
+// Centroid — tilts the line ring toward person
 let heatTiltStr = 1.0;
 let heatYaw     = 0;
 let heatTilt    = 0;
+
+// CPU Sobel — locally bends each tube point toward motion edges
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+const _projVec    = new THREE.Vector3();
+
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
+}
+
+function sampleHeatArr(arr: Float32Array, u: number, v: number): number {
+  const col = Math.max(0, Math.min(W - 1, Math.floor((1 - u) * W)));
+  const row = Math.max(0, Math.min(H - 1, Math.floor((1 - v) * H)));
+  return arr[row * W + col];
+}
 
 function computeHeatCentroid() {
   const map = cameraState.heatMap;
@@ -141,7 +180,9 @@ export const lines3d: Pattern = {
     { label: "Thickness",      type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.025, tip: "Width of each line.",                           get: () => thickness,     set: (v) => { thickness = v; } },
     { label: "Glow",           type: "range", min: 0,     max: 1.0,  step: 0.05,  default: 0.45,  tip: "Bloom/glow intensity around the lines.",       get: () => glow,          set: (v) => { glow = v; } },
     { label: "Opacity",        type: "range", min: 0.0,   max: 1.0,  step: 0.05,  default: 0.6,   tip: "Overall transparency of all lines.",            get: () => opacity,       set: (v) => { opacity = v; } },
-    { label: "Tilt Strength",  type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the line ring toward the person. Requires Heat.", get: () => heatTiltStr, set: v => { heatTiltStr = v; } },
+    { label: "Tilt Strength",  type: "range", min: 0, max: 2,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map position tilts the line ring toward the person. Requires Heat.", get: () => heatTiltStr,  set: v => { heatTiltStr = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map edges locally bend the tube lines. Requires Heat.",              get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.", get: () => heatBlurR,  set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -149,6 +190,10 @@ export const lines3d: Pattern = {
     camera.position.set(0, 0, 6);
     camera.lookAt(0, 0, 0);
     rotationAngle = 0;
+
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
 
     group = new THREE.Group();
     ctx.scene.add(group);
@@ -219,6 +264,14 @@ export const lines3d: Pattern = {
 
     group.rotation.y = rotationAngle + heatYaw;
     group.rotation.x = Math.sin(rotationAngle * 0.7) * 0.3 + heatTilt;
+    group.updateMatrixWorld(true);
+
+    if (heatSmoothed && heatTmp && heatTexData) {
+      const raw = cameraState.heatMap;
+      for (let i = 0; i < W * H; i++)
+        heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+      heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
+    }
 
     for (let i = 0; i < lines.length; i++) {
       const visible = i < numLines;
@@ -242,7 +295,22 @@ export const lines3d: Pattern = {
         const t = idx / (POINTS_PER_LINE - 1);
         const wob = (Math.sin(elapsed * 0.8 + line.phase + t * 6)
                    + Math.cos(elapsed * 0.5 + line.phase * 1.7 + t * 4) * 0.6) * wobble;
-        line.animPoints[idx].set(p.x + wob, p.y, p.z + wob * 0.7);
+
+        let hgx = 0, hgz = 0;
+        if (cameraState.heatEnabled && heatStrength > 0 && camera && heatTexData) {
+          _projVec.copy(p).applyMatrix4(group!.matrixWorld).project(camera);
+          if (_projVec.z < 1.0) {
+            const u = _projVec.x * 0.5 + 0.5;
+            const v = _projVec.y * 0.5 + 0.5;
+            const EX = 1.5 / W, EY = 1.5 / H;
+            const gx = sampleHeatArr(heatTexData, u + EX, v) - sampleHeatArr(heatTexData, u - EX, v);
+            const gy = sampleHeatArr(heatTexData, u, v + EY) - sampleHeatArr(heatTexData, u, v - EY);
+            hgx = gx * heatStrength * 2.0;
+            hgz = gy * heatStrength * 2.0;
+          }
+        }
+
+        line.animPoints[idx].set(p.x + wob + hgx, p.y, p.z + wob * 0.7 + hgz);
       }
 
       const pts    = line.curve.getPoints(TUBE_SEGMENTS);
@@ -269,5 +337,6 @@ export const lines3d: Pattern = {
     group  = null;
     camera = null;
     heatYaw = 0; heatTilt = 0;
+    heatSmoothed = null; heatTmp = null; heatTexData = null;
   },
 };

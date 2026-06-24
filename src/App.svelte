@@ -21,7 +21,7 @@
   import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
   import { evolving, saveEvolving, evoDurationMs, getEvo, saveEvo, evoFactory, type EvoConfig, type EvoCtrl } from "./lib/evolving.svelte";
-  import { listNamed, saveNamed, deleteNamed, type NamedPreset } from "./lib/named-presets";
+  import { listDemoConfigs, saveDemoConfig, deleteDemoConfig, type DemoConfig } from "./lib/demo-configs";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
   import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
   import { triggerMotionCameraStart } from "./lib/motionCameraWrapper";
@@ -1238,34 +1238,71 @@
     if (slotPressTimer !== null) { clearTimeout(slotPressTimer); slotPressTimer = null; }
   }
 
-  // ── Named presets (global, carry their pattern) ─────────────────────────────
-  let namedPresets = $state<Record<string, NamedPreset>>(listNamed());
-  let newPresetName = $state('');
-  let selectedPreset = $state('');
+  // ── Demo Configurations (save / recall a complete demo setup) ───────────────
+  let demoConfigs = $state<Record<string, DemoConfig>>(listDemoConfigs());
+  let newConfigName = $state('');
+  let selectedConfig = $state('');
 
-  function saveNamedPreset() {
-    const name = newPresetName.trim();
+  function saveCurrentDemoConfig() {
+    const name = newConfigName.trim();
     if (!name) return;
-    saveNamed(name, { patternId: patterns[index].id, snap: takeSnapshot() });
-    namedPresets = listNamed();
-    selectedPreset = name;
-    newPresetName = '';
+    saveDemoConfig(name, {
+      demoPatternIds: [...demoPatternIds],
+      demoStartBehavior,
+      demoDwell,
+      pedalDwell,
+      demoRandomizeOrder,
+      demoFavoritesOnly,
+      randomizeMode,
+      pedalChangesPattern,
+      pedalDoubleChangesPattern,
+      pedalLongAction,
+      demoHideHud,
+      evoActive: evolving.active,
+      evoSpeed: evolving.speed,
+      evoConcurrent: evolving.maxConcurrent,
+      motionEnabled: cameraState.motionEnabled,
+      heatEnabled: cameraState.heatEnabled,
+      audioEnabled: audioState.enabled,
+    });
+    demoConfigs = listDemoConfigs();
+    selectedConfig = name;
+    newConfigName = '';
   }
 
-  function loadNamedPreset(name: string) {
-    const preset = namedPresets[name];
-    if (!preset) return;
-    const target = patterns.findIndex(p => p.id === preset.patternId);
-    if (target >= 0 && target !== index) activatePattern(target);
-    // Reload per-pattern evo config for the (possibly new) pattern before applying.
-    evoConfig = getEvo(patterns[index].id);
-    applySnapshot(preset.snap, null, true);
+  function loadDemoConfig(name: string) {
+    const cfg = demoConfigs[name];
+    if (!cfg) return;
+    applyDemoPatternIds(new Set(cfg.demoPatternIds));
+    demoStartBehavior = cfg.demoStartBehavior as DemoStartBehavior;
+    demoDwell = cfg.demoDwell;
+    pedalDwell = cfg.pedalDwell;
+    demoRandomizeOrder = cfg.demoRandomizeOrder;
+    demoFavoritesOnly = cfg.demoFavoritesOnly;
+    demoHideHud = cfg.demoHideHud;
+    randomizeMode = cfg.randomizeMode as 'cycle' | 'random';
+    pedalChangesPattern = cfg.pedalChangesPattern;
+    pedalDoubleChangesPattern = cfg.pedalDoubleChangesPattern;
+    pedalLongAction = cfg.pedalLongAction as PedalLongAction;
+    saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+    localStorage.setItem('pp:randomize-mode', randomizeMode);
+    localStorage.setItem('pp:pedal-changes-pattern', String(pedalChangesPattern));
+    localStorage.setItem('pp:pedal-double-changes-pattern', String(pedalDoubleChangesPattern));
+    localStorage.setItem('pp:pedal-long-action', pedalLongAction);
+    localStorage.setItem('pp:demo-hide-hud', String(demoHideHud));
+    evolving.active = cfg.evoActive;
+    evolving.speed = cfg.evoSpeed;
+    evolving.maxConcurrent = cfg.evoConcurrent;
+    saveEvolving();
+    cameraState.motionEnabled = cfg.motionEnabled;
+    cameraState.heatEnabled = cfg.heatEnabled;
+    audioState.enabled = cfg.audioEnabled;
   }
 
-  function deleteNamedPreset(name: string) {
-    deleteNamed(name);
-    namedPresets = listNamed();
-    if (selectedPreset === name) selectedPreset = '';
+  function deleteCurrentDemoConfig(name: string) {
+    deleteDemoConfig(name);
+    demoConfigs = listDemoConfigs();
+    if (selectedConfig === name) selectedConfig = '';
   }
 
   // ── Favorites ─────────────────────────────────────────────────────────────
@@ -2811,40 +2848,40 @@
         {/if}
       </div>
 
-      <!-- Named presets (save / recall a complete look) -->
+      <!-- Demo Configurations (save / recall a complete demo setup) -->
       <div class="mb-4">
-        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Saved Presets</div>
+        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Saved Configs</div>
         <div class="flex gap-1.5">
           <input
-            type="text" placeholder="Preset name…" bind:value={newPresetName}
-            onkeydown={(e) => { if (e.key === 'Enter') saveNamedPreset(); }}
+            type="text" placeholder="Config name…" bind:value={newConfigName}
+            onkeydown={(e) => { if (e.key === 'Enter') saveCurrentDemoConfig(); }}
             class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder:text-white/30"
           />
           <button
-            onclick={saveNamedPreset}
+            onclick={saveCurrentDemoConfig}
             class="rounded border border-white/20 px-2.5 py-1 text-[11px] text-white/80 transition-colors hover:border-white/40 hover:text-white"
           >Save</button>
         </div>
-        {#if Object.keys(namedPresets).length > 0}
+        {#if Object.keys(demoConfigs).length > 0}
           <div class="mt-1.5 flex gap-1.5">
             <select
-              bind:value={selectedPreset}
+              bind:value={selectedConfig}
               class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
             >
-              <option value="">Select preset…</option>
-              {#each Object.entries(namedPresets) as [name, preset]}
-                <option value={name}>{name} · {patterns.find(p => p.id === preset.patternId)?.name ?? preset.patternId}</option>
+              <option value="">Select config…</option>
+              {#each Object.keys(demoConfigs) as name}
+                <option value={name}>{name}</option>
               {/each}
             </select>
             <button
-              disabled={!selectedPreset}
-              onclick={() => loadNamedPreset(selectedPreset)}
+              disabled={!selectedConfig}
+              onclick={() => loadDemoConfig(selectedConfig)}
               class="rounded border border-white/20 px-2.5 py-1 text-[11px] text-white/80 transition-colors hover:border-white/40 hover:text-white disabled:opacity-30"
             >Load</button>
             <button
-              disabled={!selectedPreset}
-              onclick={() => deleteNamedPreset(selectedPreset)}
-              title="Delete preset"
+              disabled={!selectedConfig}
+              onclick={() => deleteCurrentDemoConfig(selectedConfig)}
+              title="Delete config"
               class="rounded border border-white/20 px-2 py-1 text-[11px] text-white/50 transition-colors hover:border-red-400/50 hover:text-red-300 disabled:opacity-30"
             >✕</button>
           </div>

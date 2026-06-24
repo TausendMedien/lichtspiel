@@ -19,11 +19,19 @@ let accTime = 0;
 let rotX = 0, rotY = 0, rotZ = 0;
 let smoothedAmplitude = 0.35;
 
-// Heat state
+// Centroid — tilts sphere toward person
 let heatTiltStrength = 1.0;
 let heatAmplBoost    = 1.0;
 let heatYawOffset    = 0;
 let heatTiltOffset   = 0;
+
+// DataTexture Sobel — locally amplifies waves at body edges
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatTex:      THREE.DataTexture | null = null;
 
 function computeHeatCentroid(): { cx: number; cy: number } {
   const map = cameraState.heatMap;
@@ -38,24 +46,66 @@ function computeHeatCentroid(): { cx: number; cy: number } {
     : { cx: 0.5, cy: 0.5 };
 }
 
-// ─── Vertex shader ────────────────────────────────────────────────────────────
-// Uses additive time (angle + uTime) so wave frequency stays constant instead
-// of compounding as uTime grows. The smoothed amplitude value (lerped in JS)
-// lets waves dissolve gradually when amplitude or speed is reduced.
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
+}
+
+// Vertex shader: heat locally amplifies surface waves at body edges
 const vertexShader = /* glsl */ `
   varying vec3 vNorm;
   varying float vWave;
   uniform float uTime;
   uniform float uAmplitude;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
 
   void main() {
     float angScale = 3.14159 * 4.0 / 1024.0;
     float angle  = (position.x + position.z) * angScale;
     float angle2 = (position.y - position.x) * angScale * 0.7;
 
-    // Additive time → stable oscillating frequency, never accumulates
-    float w1 = cos(angle  + uTime) * uAmplitude;
-    float w2 = sin(angle2 - uTime * 0.7) * uAmplitude * 0.5;
+    // Screen-space heat lookup for local amplitude modulation
+    float localAmpMult = 1.0;
+    if (uHeatStrength > 0.001) {
+      vec4 clipPos0 = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      vec2 hUv = vec2(
+        1.0 - (clipPos0.x / clipPos0.w * 0.5 + 0.5),
+        1.0 - (clipPos0.y / clipPos0.w * 0.5 + 0.5)
+      );
+      hUv = clamp(hUv, 0.0, 1.0);
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float heatMag = length(vec2(hR - hL, hU - hD));
+      localAmpMult = 1.0 + heatMag * uHeatStrength * 4.0;
+    }
+
+    float effectiveAmp = uAmplitude * localAmpMult;
+    float w1 = cos(angle  + uTime) * effectiveAmp;
+    float w2 = sin(angle2 - uTime * 0.7) * effectiveAmp * 0.5;
     float wave = w1 + w2;
 
     vec3 pos = position;
@@ -70,7 +120,6 @@ const vertexShader = /* glsl */ `
   }
 `;
 
-// ─── Fragment shader ──────────────────────────────────────────────────────────
 const fragmentShader = /* glsl */ `
   precision highp float;
   varying vec3  vNorm;
@@ -128,28 +177,40 @@ export const wavySphere: Pattern = {
   attribution: "Adapted from Mauricio Massaia — proto-02",
   heatReactive: true,
   controls: [
-    { label: "Wave Speed",    type: "range", min: 0.0, max: 0.20, step: 0.005, default: 0.04, tip: "How fast the waves ripple across the sphere surface.",                          get: () => waveSpeed,     set: (v) => { waveSpeed = v; } },
-    { label: "Amplitude",     type: "range", min: 0.0, max: 0.80, step: 0.01,  default: 0.35, tip: "Height of the waves — how much the sphere surface deforms.",                get: () => amplitude,     set: (v) => { amplitude = v; } },
-    { label: "Rotation",      type: "range", min: 0.0, max: 2.0,  step: 0.05,  default: 0.4,  tip: "How fast the sphere spins.",                                                get: () => rotationSpeed, set: (v) => { rotationSpeed = v; } },
-    { label: "Color Shift",   type: "range", min: 0.0, max: 1.0,  step: 0.01,  default: 0.0,  tip: "Shift the starting hue of the palette.",                                   get: () => colorShift,    set: (v) => { colorShift = v; } },
-    { label: "Palette",       type: "select", options: ["Gold/Cyan", "Pink/Magenta", "Violet/Cyan"],
+    { label: "Wave Speed",      type: "range", min: 0.0, max: 0.20, step: 0.005, default: 0.04, tip: "How fast the waves ripple across the sphere surface.",              get: () => waveSpeed,        set: (v) => { waveSpeed = v; } },
+    { label: "Amplitude",       type: "range", min: 0.0, max: 0.80, step: 0.01,  default: 0.35, tip: "Height of the waves — how much the sphere surface deforms.",       get: () => amplitude,        set: (v) => { amplitude = v; } },
+    { label: "Rotation",        type: "range", min: 0.0, max: 2.0,  step: 0.05,  default: 0.4,  tip: "How fast the sphere spins.",                                       get: () => rotationSpeed,    set: (v) => { rotationSpeed = v; } },
+    { label: "Color Shift",     type: "range", min: 0.0, max: 1.0,  step: 0.01,  default: 0.0,  tip: "Shift the starting hue of the palette.",                          get: () => colorShift,       set: (v) => { colorShift = v; } },
+    { label: "Palette",         type: "select", options: ["Gold/Cyan", "Pink/Magenta", "Violet/Cyan"],
       tip: "Which colour palette the sphere uses.",
       get: () => palette, set: (v) => { palette = v; } },
-    { label: "Tilt Strength",   type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the sphere. Requires Heat.",                        get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
-    { label: "Amplitude Boost", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra wave amplitude when heat-map motion is detected. Requires Heat.",           get: () => heatAmplBoost,    set: v => { heatAmplBoost = v; } },
+    { label: "Tilt Strength",   type: "range", min: 0, max: 2,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the sphere. Requires Heat.",                     get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Amplitude Boost", type: "range", min: 0, max: 2,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra wave amplitude from motion level. Requires Heat.",                        get: () => heatAmplBoost,    set: v => { heatAmplBoost = v; } },
+    { label: "Heat Strength",   type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map edges locally amplify surface waves. Requires Heat.",         get: () => heatStrength,     set: v => { heatStrength = v; } },
+    { label: "Blur Radius",     type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.", get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
     smoothedAmplitude = amplitude;
+
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
+
     geometry = new THREE.SphereGeometry(1024, 128, 128);
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:       { value: 0 },
-        uAmplitude:  { value: amplitude },
-        uColorShift: { value: colorShift },
-        uPalette:    { value: palette },
-        uColorsV2:   { value: colorC2.colorsV2 },
-        uMainColor:  { value: new THREE.Vector3() },
+        uTime:        { value: 0 },
+        uAmplitude:   { value: amplitude },
+        uColorShift:  { value: colorShift },
+        uPalette:     { value: palette },
+        uColorsV2:    { value: colorC2.colorsV2 },
+        uMainColor:   { value: new THREE.Vector3() },
+        uHeatMap:     { value: heatTex },
+        uHeatStrength:{ value: 0 },
       },
       vertexShader, fragmentShader,
       side: THREE.FrontSide,
@@ -164,11 +225,17 @@ export const wavySphere: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material || !mesh) return;
+    if (!material || !mesh || !heatSmoothed || !heatTmp || !heatTex) return;
     accTime += dt * waveSpeed * 25;
     rotY    += dt * rotationSpeed * 0.5;
     rotX    += dt * rotationSpeed * 0.1;
     rotZ    += dt * rotationSpeed * 0.3;
+
+    const raw = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++)
+      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+    heatTex.needsUpdate = true;
 
     const speed = Math.min(1, dt * 2.0);
     if (cameraState.heatEnabled) {
@@ -186,10 +253,12 @@ export const wavySphere: Pattern = {
       smoothedAmplitude += (amplitude - smoothedAmplitude) * speed;
     }
 
-    material.uniforms.uTime.value       = accTime;
-    material.uniforms.uAmplitude.value  = smoothedAmplitude;
-    material.uniforms.uColorShift.value = colorShift;
-    material.uniforms.uPalette.value    = palette;
+    material.uniforms.uTime.value         = accTime;
+    material.uniforms.uAmplitude.value    = smoothedAmplitude;
+    material.uniforms.uColorShift.value   = colorShift;
+    material.uniforms.uPalette.value      = palette;
+    material.uniforms.uHeatMap.value      = heatTex;
+    material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     material.uniforms.uColorsV2.value = colorC2.colorsV2;
@@ -200,7 +269,9 @@ export const wavySphere: Pattern = {
 
   dispose() {
     geometry?.dispose(); material?.dispose();
+    heatTex?.dispose();
     mesh = null; geometry = null; material = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
     accTime = 0; rotX = 0; rotY = 0; rotZ = 0;
     palette = 0; heatYawOffset = 0; heatTiltOffset = 0;
   },

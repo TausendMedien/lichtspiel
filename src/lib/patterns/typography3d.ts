@@ -21,11 +21,52 @@ let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
 
 // Heat centroid tracking state
-let baseYaw        = 0;  // accumulated idle Y rotation (kept separate from heat offset)
-let heatYawOffset  = 0;  // smooth centroid-driven offset, decays to 0 when heat off
+let baseYaw        = 0;
+let heatYawOffset  = 0;
 let heatTiltOffset = 0;
 let heatTrackingStrength = 1.0;
 let heatFloatBoost       = 1.0;
+
+// CPU Sobel — locally pushes text in XY based on heat gradient at text position
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatXPush     = 0;
+let camera: THREE.PerspectiveCamera | null = null;
+const _tProjVec   = new THREE.Vector3();
+
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
+}
+
+function sampleHeatArr(arr: Float32Array, u: number, v: number): number {
+  const col = Math.max(0, Math.min(W - 1, Math.floor((1 - u) * W)));
+  const row = Math.max(0, Math.min(H - 1, Math.floor((1 - v) * H)));
+  return arr[row * W + col];
+}
 
 function computeHeatCentroid(): { cx: number; cy: number; total: number } {
   const map = cameraState.heatMap;
@@ -176,19 +217,32 @@ export const typography3d: Pattern = {
     { label: "Style",         type: "select", options: ["Solid", "Wireframe", "Neon"],
       tip: "Visual style — Solid, Wireframe (lattice), or Neon (edge glow).",
       get: () => styleIndex, set: v => { styleIndex = v; buildText(); } },
-    { label: "Tracking Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
+    { label: "Tracking Strength", type: "range", min: 0, max: 2,   step: 0.1, default: 1.0,
       interactive: 'heat' as const,
-      tip: "How much heat-map motion shifts the text position. Requires Heat.",
+      tip: "How much heat-map motion rotates the text toward the person. Requires Heat.",
       get: () => heatTrackingStrength, set: v => { heatTrackingStrength = v; } },
-    { label: "Float Boost",       type: "range", min: 0, max: 2, step: 0.1, default: 1.0,
+    { label: "Float Boost",       type: "range", min: 0, max: 2,   step: 0.1, default: 1.0,
       interactive: 'heat' as const,
       tip: "Amplify floating motion when heat-map motion is detected. Requires Heat.",
       get: () => heatFloatBoost,       set: v => { heatFloatBoost = v; } },
+    { label: "Heat Strength",     type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8,
+      interactive: 'heat' as const,
+      tip: "How much heat-map edges locally push the text sideways. Requires Heat.",
+      get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",       type: "range", min: 0, max: 8,   step: 1,   default: 1,
+      interactive: 'heat' as const,
+      tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",
+      get: () => heatBlurR, set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
     scene = ctx.scene;
+    camera = ctx.camera;
     animTime = 0;
+
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     ambient.name = "typo_ambient";
@@ -226,6 +280,13 @@ export const typography3d: Pattern = {
     // Accumulate idle spin separately so heat offset is additive, not compounding
     baseYaw += dt * rotSpeed * 0.8;
 
+    if (heatSmoothed && heatTmp && heatTexData) {
+      const raw = cameraState.heatMap;
+      for (let i = 0; i < W * H; i++)
+        heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+      heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
+    }
+
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
       const targetYaw  = (0.5 - cx) * Math.PI * 0.6 * heatTrackingStrength;
@@ -234,15 +295,29 @@ export const typography3d: Pattern = {
       heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
       heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
       const ampBoost = (cameraState.level / 100) * heatFloatBoost;
+
+      // Local heat push: gradient at text's current screen position nudges text sideways
+      if (heatStrength > 0 && camera && heatTexData) {
+        _tProjVec.set(textGroup.position.x, textGroup.position.y, 0).project(camera);
+        const u = _tProjVec.x * 0.5 + 0.5;
+        const v = _tProjVec.y * 0.5 + 0.5;
+        const EX = 1.5 / W;
+        const gx = sampleHeatArr(heatTexData, u + EX, v) - sampleHeatArr(heatTexData, u - EX, v);
+        heatXPush += (gx * heatStrength * 0.8 - heatXPush) * Math.min(1, dt * 2.5);
+      }
+
       textGroup.rotation.y = baseYaw + heatYawOffset;
       if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.position.x = heatXPush;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * (0.3 + ampBoost * 0.5);
     } else {
       const decay = Math.max(0, 1 - dt * 3);
       heatYawOffset  *= decay;
       heatTiltOffset *= decay;
+      heatXPush      *= decay;
       textGroup.rotation.y = baseYaw + heatYawOffset;
       if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.position.x = heatXPush;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * 0.3;
     }
   },
@@ -271,11 +346,14 @@ export const typography3d: Pattern = {
     }
     textGroup = null;
     scene = null;
+    camera = null;
     animTime = 0;
     rotLocked = false;
     baseYaw = 0;
     heatYawOffset  = 0;
     heatTiltOffset = 0;
+    heatXPush      = 0;
+    heatSmoothed = null; heatTmp = null; heatTexData = null;
     _lastPrimary  = "";
     _lastGlow     = "";
     _lastColorsV2 = -1;

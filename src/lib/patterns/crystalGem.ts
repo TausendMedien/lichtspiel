@@ -11,15 +11,23 @@ let material: THREE.ShaderMaterial | null = null;
 
 let fresnelStr   = 1.4;
 let rotationSpeed = 0.5;
-let facets       = 1;     // select index → 8, 16, 32, 64 segments
+let facets       = 1;
 
 let rotX = 0, rotY = 0, rotZ = 0;
 
-// Heat state
+// Centroid — tilts and spins gem toward person
 let heatTiltStrength = 1.0;
 let heatSpinBoost    = 1.0;
 let heatYawOffset    = 0;
 let heatTiltOffset   = 0;
+
+// DataTexture Sobel — locally displaces vertices at body edges
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatTex:      THREE.DataTexture | null = null;
 
 function computeHeatCentroid(): { cx: number; cy: number } {
   const map = cameraState.heatMap;
@@ -34,18 +42,66 @@ function computeHeatCentroid(): { cx: number; cy: number } {
     : { cx: 0.5, cy: 0.5 };
 }
 
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
+}
+
 function facetSegments(idx: number): number {
   return [8, 16, 32, 64][idx] ?? 16;
 }
 
+// Vertex shader: heat locally pops facets outward at body edges
 const vertexShader = /* glsl */ `
   varying vec3 vWorldPos;
   varying vec3 vViewDir;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
+
   void main() {
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vec3 displacedPos = position;
+
+    if (uHeatStrength > 0.001) {
+      vec4 clipPos0 = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      vec2 hUv = vec2(
+        1.0 - (clipPos0.x / clipPos0.w * 0.5 + 0.5),
+        1.0 - (clipPos0.y / clipPos0.w * 0.5 + 0.5)
+      );
+      hUv = clamp(hUv, 0.0, 1.0);
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float heatMag = length(vec2(hR - hL, hU - hD));
+      // Displace vertex outward along normal — facets pop out toward body edges
+      displacedPos += normalize(position) * heatMag * uHeatStrength * 0.25;
+    }
+
+    vec4 worldPos = modelMatrix * vec4(displacedPos, 1.0);
     vWorldPos = worldPos.xyz;
     vViewDir  = normalize(cameraPosition - worldPos.xyz);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPos, 1.0);
   }
 `;
 
@@ -63,37 +119,29 @@ const fragmentShader = /* glsl */ `
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
   }
 
-  // Remap [0,1] hue to skip the green zone [0.20, 0.45]
-  // → warm reds/oranges/yellows (0–0.20) then cyan/blues/violets/magentas (0.45–1.0)
   float remapHue(float h) {
-    float t = fract(h) * 0.75;          // squeeze into 75 % of the wheel
-    return t < 0.20 ? t : t + 0.25;    // shift up past the green gap
+    float t = fract(h) * 0.75;
+    return t < 0.20 ? t : t + 0.25;
   }
 
   void main() {
-    // Flat (per-face) normal via screen-space derivatives — creates the faceted gem look
     vec3 vNormal = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
 
-    // Fake environment: map normal to gradient
     float up   = dot(vNormal, vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5;
     float side = dot(vNormal, vec3(1.0, 0.0, 0.0)) * 0.5 + 0.5;
 
-    // Primary gem color — green zone excluded via remapHue
     float h1 = remapHue(0.6 + up * 0.15);
     float h2 = remapHue(0.6 + 0.5 + side * 0.2);
     vec3 col1 = hsv2rgb(vec3(h1, 1.0, 0.9));
     vec3 col2 = hsv2rgb(vec3(h2, 0.6, 0.5));
 
-    // Blend based on viewing angle to simulate internal reflections
     float facetAngle = abs(dot(vNormal, vViewDir));
     vec3 col = mix(col2, col1, smoothstep(0.1, 0.7, facetAngle));
 
-    // Fresnel rim glow
     float fresnel = pow(1.0 - max(0.0, dot(vNormal, vViewDir)), 3.0);
     vec3 rimColor = hsv2rgb(vec3(fract(0.6 + 0.15), 0.4, 1.0));
     col = mix(col, rimColor, fresnel * uFresnel * 0.6);
 
-    // Specular highlight
     vec3 lightDir = normalize(vec3(0.5, 1.0, 0.8));
     float spec = pow(max(0.0, dot(reflect(-lightDir, vNormal), vViewDir)), 64.0);
     col += vec3(spec * 0.8);
@@ -110,7 +158,6 @@ const fragmentShader = /* glsl */ `
 function buildGeometry() {
   const segs = facetSegments(facets);
   const geo  = new THREE.SphereGeometry(1, segs, segs);
-  // Compute flat (per-face) normals for the faceted crystal look
   geo.computeVertexNormals();
   return geo;
 }
@@ -134,17 +181,28 @@ export const crystalGem: Pattern = {
         }
       },
     },
-    { label: "Tilt Strength", type: "range", min: 0, max: 2, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the gem. Requires Heat.",                           get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
-    { label: "Spin Boost",    type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra spin speed when heat-map motion is detected. Requires Heat.",                get: () => heatSpinBoost,    set: v => { heatSpinBoost = v; } },
+    { label: "Tilt Strength", type: "range", min: 0, max: 2,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion tilts the gem. Requires Heat.",                          get: () => heatTiltStrength, set: v => { heatTiltStrength = v; } },
+    { label: "Spin Boost",    type: "range", min: 0, max: 3,   step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "Extra spin speed when heat-map motion is detected. Requires Heat.",               get: () => heatSpinBoost,    set: v => { heatSpinBoost = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map edges locally pop facets outward. Requires Heat.",              get: () => heatStrength,     set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.", get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
+
     geometry = buildGeometry();
     material = new THREE.ShaderMaterial({
       uniforms: {
-        uFresnel:   { value: fresnelStr },
-        uColorsV2:  { value: colorC2.colorsV2 },
-        uMainColor: { value: new THREE.Vector3() },
+        uFresnel:     { value: fresnelStr },
+        uColorsV2:    { value: colorC2.colorsV2 },
+        uMainColor:   { value: new THREE.Vector3() },
+        uHeatMap:     { value: heatTex },
+        uHeatStrength:{ value: 0 },
       },
       vertexShader, fragmentShader,
     });
@@ -157,7 +215,13 @@ export const crystalGem: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material || !mesh) return;
+    if (!material || !mesh || !heatSmoothed || !heatTmp || !heatTex) return;
+
+    const raw = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++)
+      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+    heatTex.needsUpdate = true;
 
     const speed = Math.min(1, dt * 2.5);
     if (cameraState.heatEnabled) {
@@ -180,7 +244,9 @@ export const crystalGem: Pattern = {
     }
 
     mesh.rotation.set(rotX + heatTiltOffset, rotY + heatYawOffset, rotZ);
-    material.uniforms.uFresnel.value = fresnelStr;
+    material.uniforms.uFresnel.value      = fresnelStr;
+    material.uniforms.uHeatMap.value      = heatTex;
+    material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
     const _mc = new THREE.Color(colorC2.main);
     material.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     material.uniforms.uColorsV2.value = colorC2.colorsV2;
@@ -190,7 +256,9 @@ export const crystalGem: Pattern = {
 
   dispose() {
     geometry?.dispose(); material?.dispose();
+    heatTex?.dispose();
     mesh = null; geometry = null; material = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
     rotX = 0; rotY = 0; rotZ = 0;
     heatYawOffset = 0; heatTiltOffset = 0;
   },

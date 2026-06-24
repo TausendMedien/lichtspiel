@@ -27,8 +27,8 @@ let currentAspect = 1;
 let lineCountDisplay = lineCount; // eased toward lineCount so slider drags morph instead of strobing
 
 // Heat state — DataTexture Sobel displaces base position, bending orb flow toward body
-let heatStrength  = 0.5;
-let heatBlurR     = 3;
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
 let heatSmoothed: Float32Array | null = null;
 let heatTmp:      Float32Array | null = null;
 let heatTexData:  Float32Array | null = null;
@@ -213,8 +213,8 @@ export const curlOrbsBody: Pattern = {
     { label: "Orb Size",    type: "range", min: 0.01, max: 0.15,  step: 0.001, default: 0.06, tip: "Radius of each orb's attraction zone.",                                   get: () => orbSize,     set: (v) => { orbSize = v; } },
     { label: "Color Speed", type: "range", min: 0.0,  max: 1.0,   step: 0.05,  default: 0.05, tip: "How fast the palette cycles through hues.",                                get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0,  max: 0.10,  step: 0.005, default: 0,    tip: "Slow rotation of the entire scene.",                                       get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
-    { label: "Heat Strength", type: "range", min: 0, max: 2, step: 0.1, default: 0.5, interactive: 'heat' as const, tip: "How much heat-map motion bends curl lines toward the body (like Particle Field). Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 3,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader attraction zone. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends curl lines toward the body (like Particle Field). Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader attraction zone. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {

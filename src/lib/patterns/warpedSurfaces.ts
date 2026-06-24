@@ -18,8 +18,8 @@ let palette       = 0;   // select: Iridescent / Fire / Ocean / Void
 let accTime = 0;
 
 // Heat state — DataTexture drives Sobel UV distortion in fragment shader
-let heatStrength  = 0.5;
-let heatBlurR     = 3;
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
 let heatSmoothed: Float32Array | null = null;
 let heatTmp:      Float32Array | null = null;
 let heatTexData:  Float32Array | null = null;
@@ -183,8 +183,8 @@ export const warpedSurfaces: Pattern = {
     { label: "Color Palette", type: "select", options: ["Iridescent", "Fire", "Ocean", "Void"],
       tip: "Which colour palette the surface uses.",
       get: () => palette, set: (v) => { palette = v; } },
-    { label: "Heat Strength", type: "range", min: 0, max: 2, step: 0.1, default: 0.5, interactive: 'heat' as const, tip: "How much heat-map motion distorts the surface around the body. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 3,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion distorts the surface around the body. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {

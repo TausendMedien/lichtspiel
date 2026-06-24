@@ -21,21 +21,37 @@ let rotAngle   = 0;
 let accTime    = 0;
 let warpDisplay = warpAmount; // eased toward warpAmount so slider drags morph instead of flash-jumping
 
-// Heat state
-let heatWarpBoost = 1.0;
-let heatRotOffset = 0;
+// Heat state — DataTexture Sobel bends stripe phase locally (not base coord)
+let heatStrength  = 1.8;
+let heatBlurR     = 1;
+let heatSmoothed: Float32Array | null = null;
+let heatTmp:      Float32Array | null = null;
+let heatTexData:  Float32Array | null = null;
+let heatTex:      THREE.DataTexture | null = null;
 
-function computeHeatCentroid() {
-  const map = cameraState.heatMap;
-  let wx = 0, wy = 0, total = 0;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const v = map[y * W + x];
-      wx += v * x; wy += v * y; total += v;
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < H; y++) {
+    const yo = y * W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < W; x++) {
+      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
     }
-  return total > 0.01
-    ? { cx: wx / total / W, cy: wy / total / H, total }
-    : { cx: 0.5, cy: 0.5, total: 0 };
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < H; y++) {
+      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
+      dst[y * W + x] = sum / cnt;
+    }
+  }
 }
 
 const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
@@ -59,6 +75,8 @@ const fragmentShader = /* glsl */ `
   uniform float uColorRange;
   uniform float uColorPhase;
   uniform float uRotAngle;
+  uniform sampler2D uHeatMap;
+  uniform float uHeatStrength;
 
   vec3 hsl2rgb(float h, float s, float l) {
     vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -104,6 +122,17 @@ const fragmentShader = /* glsl */ `
     float psi = atan(wp.y, wp.x) / 3.14159;          // -1..1 (angle)
     psi += (fbm(p * 1.8 + q + t * 0.35) - 0.5) * uWarpAmount;
 
+    // Heat Sobel: shifts stripe phase locally — lines bend at body edges, not globally
+    if (uHeatStrength > 0.001) {
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      psi += ((hR - hL) * 0.7 + (hU - hD) * 0.3) * uHeatStrength * 0.5;
+    }
+
     // Stripe lines along contours of psi
     float stripe = fract(psi * uLineCount * 0.5);
     float aa = fwidth(stripe) * 1.5;
@@ -140,10 +169,17 @@ export const flowLines: Pattern = {
     { label: "Line Width",  type: "range", min: 0.1, max: 0.9,  step: 0.01, default: 0.45, tip: "Thickness of each line.",                                            get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Color Speed", type: "range", min: 0.0, max: 1.0,  step: 0.05, default: 0,    tip: "How fast the palette cycles along the lines.",                       get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",      type: "range", min: 0.0, max: 0.5,  step: 0.01, default: 0.01, audioWeight: 0.3, tip: "Slow rotation of the entire scene.",               get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
-    { label: "Warp Boost",  type: "range", min: 0, max: 3, step: 0.1, default: 1.0, interactive: 'heat' as const, tip: "How much heat-map motion boosts warp and rotates lines toward the person. Requires Heat.", get: () => heatWarpBoost, set: v => { heatWarpBoost = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends flow lines locally. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
   init(ctx: PatternContext) {
+    heatSmoothed = new Float32Array(W * H);
+    heatTmp      = new Float32Array(W * H);
+    heatTexData  = new Float32Array(W * H);
+    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
+    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+    heatTex.needsUpdate = true;
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -155,6 +191,8 @@ export const flowLines: Pattern = {
         uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
         uRotAngle:    { value: rotAngle },
+        uHeatMap:     { value: heatTex },
+        uHeatStrength:{ value: 0 },
       },
       vertexShader,
       fragmentShader,
@@ -168,30 +206,27 @@ export const flowLines: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material) return;
+    if (!material || !heatSmoothed || !heatTmp || !heatTex) return;
     accTime    += dt * flowSpeed;
     colorPhase += dt * colorSpeed * 0.5;
     rotAngle   += dt * rotateSpeed * 1.5;
-    // Ease the warp toward its target so dragging the slider morphs instead of flashing
     warpDisplay += (warpAmount - warpDisplay) * (1 - Math.exp(-dt * MORPH_RATE));
 
-    let effectiveWarp = warpDisplay;
-    if (cameraState.heatEnabled) {
-      const { cx, total } = computeHeatCentroid();
-      const target = (0.5 - cx) * 1.2 * heatWarpBoost;
-      heatRotOffset += (target - heatRotOffset) * Math.min(1, dt * 2.5);
-      effectiveWarp = Math.min(3.0, warpDisplay * (1 + Math.min(total * 8, 2) * heatWarpBoost));
-    } else {
-      heatRotOffset *= Math.max(0, 1 - dt * 3);
-    }
+    const raw = cameraState.heatMap;
+    for (let i = 0; i < W * H; i++)
+      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
+    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
+    heatTex.needsUpdate = true;
 
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uLineCount.value  = lineCount;
-    material.uniforms.uWarpAmount.value = effectiveWarp;
+    material.uniforms.uWarpAmount.value = warpDisplay;
     material.uniforms.uLineWidth.value  = lineWidth;
     material.uniforms.uColorRange.value = colorC2.colorsV2;
     material.uniforms.uColorPhase.value = colorPhase;
-    material.uniforms.uRotAngle.value   = rotAngle + heatRotOffset;
+    material.uniforms.uRotAngle.value   = rotAngle;
+    material.uniforms.uHeatMap.value     = heatTex;
+    material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
   },
 
   resize(width: number, height: number) {
@@ -199,13 +234,9 @@ export const flowLines: Pattern = {
   },
 
   dispose() {
-    geometry?.dispose();
-    material?.dispose();
-    mesh = null;
-    geometry = null;
-    material = null;
-    accTime = 0;
-    warpDisplay = warpAmount;
-    heatRotOffset = 0;
+    geometry?.dispose(); material?.dispose(); heatTex?.dispose();
+    mesh = null; geometry = null; material = null;
+    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
+    accTime = 0; warpDisplay = warpAmount;
   },
 };
