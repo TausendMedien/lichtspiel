@@ -1207,7 +1207,13 @@
       // Legacy/factory preset without evolving keys — fall back to the factory bands
       // for this slot (light* patterns) and enable drift for the 1/2/3 slots.
       const factory = evoFactory(patterns[index].id, evoFallbackSlot);
-      if (factory) { evoConfig = factory; evolving.active = true; saveEvolving(); }
+      if (factory) {
+        evoConfig = factory;
+        evolving.active = true;
+        evolving.speed = ({ 1: 0.02, 2: 0.05, 3: 0.15 } as Record<number, number>)[evoFallbackSlot] ?? 0.04;
+        evolving.maxConcurrent = ({ 1: 1, 2: 2, 3: 3 } as Record<number, number>)[evoFallbackSlot] ?? 2;
+        saveEvolving();
+      }
       else evoConfig = getEvo(patterns[index].id);
     } else {
       evoConfig = getEvo(patterns[index].id);
@@ -2566,7 +2572,17 @@
                   entries.push(`  '${patternId}': ${val},`);
                 }
               }
-              const ts = `  // paste into src/lib/preset-defaults.ts\n${entries.join('\n')}`;
+              const extraKeys = ['pp:demo-configs', 'lichtspiel-demo', 'pp:favorites', 'pp:evolving'];
+              const consoleCmds = extraKeys
+                .map(k => { const v = localStorage.getItem(k); return v ? `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});` : null; })
+                .filter(Boolean) as string[];
+              const ts = [
+                `  // paste into src/lib/preset-defaults.ts`,
+                ...entries,
+                ``,
+                `  // paste into browser console to restore demo settings:`,
+                ...consoleCmds,
+              ].join('\n');
               navigator.clipboard.writeText(ts);
             }}
             class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
@@ -2983,7 +2999,7 @@
       <!-- Evolving Range — global controls (drift sliders inside their bands) -->
       <div class="mb-2 flex flex-col gap-1.5">
         <div class="flex items-center justify-between text-xs">
-          <span class="flex items-center gap-1.5 text-white/70"><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
+          <span class="flex items-center gap-1.5 text-white/70" title="Sliders drift slowly within their min/max bands, creating autonomous variation."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
@@ -2994,7 +3010,7 @@
         </div>
         {#if evolving.active}
           <div>
-            <div class="flex justify-between text-[10px] text-white/50"><span>Evolving Speed</span><span class="font-mono">{evolving.speed.toFixed(2)}</span></div>
+            <div class="flex justify-between text-[10px] text-white/50"><span title="How fast sliders drift. Low values = very slow, gradual changes.">Evolving Speed</span><span class="font-mono">{evolving.speed.toFixed(2)}</span></div>
             <input
               type="range" min={0} max={1} step={0.01} value={evolving.speed}
               oninput={(e) => { evolving.speed = parseFloat((e.target as HTMLInputElement).value); saveEvolving(); }}

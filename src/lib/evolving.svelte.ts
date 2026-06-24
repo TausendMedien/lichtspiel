@@ -27,7 +27,7 @@ interface EvolvingState {
 }
 
 function loadGlobal(): EvolvingState {
-  const fallback: EvolvingState = { active: false, speed: 0.4, maxConcurrent: 2 };
+  const fallback: EvolvingState = { active: false, speed: 0.04, maxConcurrent: 2 };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
