@@ -22,7 +22,7 @@ under both.
 1. Create/point a subdomain (e.g. `relay.1000lights.de`) at a Node.js app in Plesk.
 2. Upload the contents of this `server/` directory as the application root.
 3. Set the **application startup file** to `app.js` (Passenger convention — do not rename).
-4. Run `npm install` in the app root (Plesk's Node.js panel has a button for this) to pull in `ws`.
+4. Click Plesk's dedicated **"NPM install"** button (in the main Node.js app panel, next to "Restart App") to pull in `ws`. This is a separate button from "Run script" — the "Run script" dialog only runs `npm run <name>` against scripts defined in `package.json` (there is no `install` script defined here on purpose, so typing "install" into that dialog fails with `Missing script: "install"`). If your Plesk plan has no NPM install button, install via SSH instead: `cd <app root> && npm install`.
 5. Passenger sets `PORT` automatically; the app reads it via `process.env.PORT`. No manual port config needed.
 6. **Do not place an `index.html` (or any static file) in this application's root directory.** If one exists, Plesk/nginx will serve it directly for `GET /` requests instead of routing through to the Node app, which breaks the WebSocket upgrade path. Keep the app root to just `app.js`, `package.json`, and `node_modules`.
 7. Verify with `wss://relay.1000lights.de` in the app's Options → Remote Control section (or `curl https://relay.1000lights.de/` → should return `lichtspiel relay`).
