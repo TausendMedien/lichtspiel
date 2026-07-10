@@ -1,0 +1,13 @@
+{
+  "name": "lichtspiel-relay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

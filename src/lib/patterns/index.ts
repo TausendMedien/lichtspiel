@@ -22,6 +22,7 @@ import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
 import { wrapWithPersist } from "../persist";
+import { wrapWithBroadcast } from "../remote/broadcastWrap";
 import { addMotionCamera } from "../motionCameraWrapper";
 import { addAudioReactivity } from "../audioReactivityWrapper";
 
@@ -89,4 +90,5 @@ const rawPatterns: Pattern[] = [
 export const patterns: Pattern[] = rawPatterns
   .map(p => NO_MOTION_CAMERA.has(p.id) ? p : addMotionCamera(p))
   .map(p => NO_AUDIO.has(p.id) ? p : addAudioReactivity(p))
-  .map(wrapWithPersist);
+  .map(wrapWithPersist)
+  .map(wrapWithBroadcast);

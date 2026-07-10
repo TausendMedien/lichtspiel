@@ -31,6 +31,12 @@
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
   import { flickerGuard, saveFlickerGuard } from "./lib/flickerGuard.svelte";
+  import {
+    remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
+    loadRelayUrl, saveRelayUrl, REMOTE_MODE_KEY,
+  } from "./lib/remote/connection.svelte";
+  import { applyParam, buildSnapshot, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, type DisplayAdapter } from "./lib/remote/sync.svelte";
+  import { generateRoomCode, normalizeRoomCode, isValidRoomCode, DEFAULT_RELAY_URL, type RemoteMessage } from "./lib/remote/protocol";
 
   // Camera/image patterns where Apply Colors defaults to OFF
   const NO_COLOR_IDS = new Set([
@@ -257,6 +263,108 @@
   let optionsVisible    = $state(false);
   let demoVisible       = $state(false);
   let flickerGuardConfirmVisible = $state(false); // safety-warning before disabling the guard
+
+  // ── Remote Control (Display / Remote modes) ─────────────────────────────────
+  type RemoteAppMode = 'off' | 'display' | 'remote';
+  let remoteMode = $state<RemoteAppMode>('off');
+  let remoteRoomCode = $state('');       // Display: generated on start; Remote: the joined code
+  let remoteUrl = $state(loadRelayUrl());
+  let displayNeedsTap = $state(false);   // deep-link without a user gesture yet — needs a tap for fullscreen/wakelock
+  let displayOverlayVisible = $state(true);
+  let displayOverlayTimer: ReturnType<typeof setTimeout> | null = null;
+  let remoteJoinCode = $state('');       // Remote-mode code entry field
+  let remoteJoinError = $state('');
+
+  function displayAdapter(): DisplayAdapter {
+    return {
+      getPatternIndex: () => index,
+      switchToPatternId: (id) => {
+        const i = patterns.findIndex(p => p.id === id);
+        if (i < 0) return;
+        index = switchTo(i);
+        focusedIndex = index;
+        if (appState === 'overview') { appState = 'active'; handle?.activateCurrentPattern(); }
+      },
+      restorePresetSlot: (slot) => {
+        const slots = getSlots(patterns[index].id);
+        const snap = slots[slot];
+        if (snap) applySnapshot(snap, slot + 1, false);
+      },
+      onCtrlChanged: (label, value) => {
+        ctrlVals[label] = value as number | string;
+        saveSettings(patterns);
+      },
+    };
+  }
+
+  function onRemoteMessage(msg: RemoteMessage) {
+    if (msg.type === 'param-update') {
+      applyParam(displayAdapter(), msg.param, msg.value);
+    } else if (msg.type === 'snapshot-request') {
+      remoteSend({ type: 'state-snapshot', reqId: msg.reqId, params: buildSnapshot(index) });
+    } else if (msg.type === 'state-snapshot') {
+      applySnapshotToLocalState(displayAdapter(), msg.params);
+    }
+  }
+
+  function pokeDisplayOverlay() {
+    displayOverlayVisible = true;
+    if (displayOverlayTimer) clearTimeout(displayOverlayTimer);
+    // Keep it up while no remote has joined yet — the code needs to stay readable.
+    if (remoteConn.remoteCount > 0) {
+      displayOverlayTimer = setTimeout(() => { displayOverlayVisible = false; }, 4000);
+    }
+  }
+
+  function startDisplayMode(existingRoom?: string) {
+    remoteRoomCode = existingRoom ? normalizeRoomCode(existingRoom) : generateRoomCode();
+    remoteMode = 'display';
+    optionsVisible = false;
+    try { localStorage.setItem(REMOTE_MODE_KEY, 'display'); } catch {}
+    remoteConnect(remoteUrl, remoteRoomCode, 'display', onRemoteMessage);
+    if (appState === 'overview') { index = switchTo(index); focusedIndex = index; appState = 'active'; handle?.activateCurrentPattern(); }
+    displayOverlayVisible = true;
+    pokeDisplayOverlay();
+  }
+
+  function armDisplayGesture() {
+    displayNeedsTap = false;
+    fs.enter(document.documentElement).catch(() => {});
+    wl.acquire();
+  }
+
+  function exitDisplayMode() {
+    remoteDisconnect();
+    wl.release();
+    fs.exit().catch(() => {});
+    try { localStorage.removeItem(REMOTE_MODE_KEY); } catch {}
+    const url = new URL(location.href);
+    url.searchParams.delete('mode');
+    url.searchParams.delete('room');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    remoteMode = 'off';
+    displayNeedsTap = false;
+    appState = 'overview';
+  }
+
+  function startRemoteMode() {
+    const code = normalizeRoomCode(remoteJoinCode);
+    if (!isValidRoomCode(code)) { remoteJoinError = 'Enter the 4-character code shown on the Display.'; return; }
+    remoteJoinError = '';
+    remoteRoomCode = code;
+    remoteMode = 'remote';
+    try { localStorage.setItem(REMOTE_MODE_KEY, 'remote'); } catch {}
+    saveRelayUrl(remoteUrl);
+    remoteConnect(remoteUrl, code, 'remote', onRemoteMessage);
+  }
+
+  function exitRemoteMode() {
+    remoteDisconnect();
+    try { localStorage.removeItem(REMOTE_MODE_KEY); } catch {}
+    remoteMode = 'off';
+    remoteJoinCode = '';
+  }
+
   let demoStartBehavior = $state<DemoStartBehavior>('default');
   let demoRandomizeOrder = $state(false);
   let demoFavoritesOnly = $state(false);
@@ -291,9 +399,12 @@
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
   let isFullscreenState = $state(false);
 
-  // Wake lock — held while demo mode or fullscreen is active
+  // Wake lock — held while demo mode, fullscreen, or Display mode is active
   const wl = createWakeLock();
-  $effect(() => { if (demoActive || isFullscreenState) { wl.acquire(); } else { wl.release(); } });
+  $effect(() => { if (demoActive || isFullscreenState || remoteMode === 'display') { wl.acquire(); } else { wl.release(); } });
+
+  // Broadcast every whitelisted global param change while in Remote mode.
+  initGlobalBroadcastEffects();
 
   // Push the photosensitivity-guard on/off state into the renderer (single source of truth)
   $effect(() => { handle?.setFlickerGuard(flickerGuard.enabled); });
@@ -634,6 +745,7 @@
       colorShuffle.saturation = s.saturation;
       colorShuffle.brightness = s.brightness;
       colorShuffle.assign     = s.assign;
+      broadcastPatternChange(id);
     }
   });
 
@@ -1530,6 +1642,26 @@
       }
     }
 
+    // ── Remote Control: resolve mode from ?mode= (kiosk deep-link) or the last
+    // remembered choice, then join. Display always generates a fresh room code
+    // unless ?room= names one to join (e.g. a second projector); Remote always
+    // asks for the code again (room codes are ephemeral, per-Display-session). ──
+    {
+      const qs = new URLSearchParams(location.search);
+      const qsMode = qs.get('mode');
+      const savedMode = (() => { try { return localStorage.getItem(REMOTE_MODE_KEY); } catch { return null; } })();
+      const mode = qsMode === 'display' || qsMode === 'remote' ? qsMode : (savedMode === 'display' || savedMode === 'remote' ? savedMode : null);
+      if (mode === 'display') {
+        const roomParam = qs.get('room');
+        startDisplayMode(roomParam ?? undefined);
+        // Fullscreen/Wake Lock need a user gesture; a deep-link boot has none yet
+        // (unlike clicking "Start as Display" in Options, which is itself a gesture).
+        displayNeedsTap = true;
+      } else if (mode === 'remote') {
+        remoteMode = 'remote';
+      }
+    }
+
     loadFavorites();
 
     // Pre-enumerate camera/mic devices (labels only available after permission grant,
@@ -1710,7 +1842,7 @@
     // Keep the blob fresh so it never lags behind pp: keys
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") { saveSettings(patterns); }
-      else if (demoActive || isFullscreenState) { wl.acquire(); } // re-acquire after OS released it
+      else if (demoActive || isFullscreenState || remoteMode === 'display') { wl.acquire(); } // re-acquire after OS released it
     });
     // Re-hydrate controls when Arc (or any browser) restores the page from bfcache
     window.addEventListener("pageshow", (e) => {
@@ -1723,6 +1855,11 @@
     function onMouseMove() { pokeCursor(); (demoActive && demoHideHud) ? demoPoke() : poke(); }
     if (!isTouch) window.addEventListener("mousemove", onMouseMove);
 
+    // Display mode: show the room-code/status overlay on any touch or pointer move.
+    function onDisplayActivity() { if (remoteMode === 'display') pokeDisplayOverlay(); }
+    window.addEventListener("pointermove", onDisplayActivity);
+    window.addEventListener("touchstart", onDisplayActivity);
+
     return () => {
       cancelAnimationFrame(liveRaf);
       gpController.dispose();
@@ -1733,13 +1870,17 @@
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       document.removeEventListener('pointerdown', onPointerDownFocus, { capture: true });
       if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("pointermove", onDisplayActivity);
+      window.removeEventListener("touchstart", onDisplayActivity);
       if (hudTimer) clearTimeout(hudTimer);
       if (demoTimer) clearTimeout(demoTimer);
       if (demoPointerTimer) clearTimeout(demoPointerTimer);
       if (autoRestartTimer) clearTimeout(autoRestartTimer);
+      if (displayOverlayTimer) clearTimeout(displayOverlayTimer);
       recorder?.dispose();
       recorder = null;
       wl.release();
+      remoteDisconnect();
       handle?.dispose();
       handle = null;
     };
@@ -1811,7 +1952,7 @@
 {/if}
 
 <!-- ─── Demo pointer dismiss button ──────────────────────────────────── -->
-{#if demoActive && demoPointerVisible}
+{#if demoActive && demoPointerVisible && remoteMode !== 'display'}
   <button
     class="fixed top-4 right-4 z-[70] rounded-full bg-black/60 px-3 py-1.5 text-sm text-white/80 hover:bg-black/80 transition-colors cursor-pointer"
     onclick={() => { stopDemo(); demoPointerVisible = false; poke(); }}
@@ -1819,7 +1960,7 @@
 {/if}
 
 <!-- ─── Overview overlay ──────────────────────────────────────────────── -->
-{#if appState === "overview"}
+{#if appState === "overview" && remoteMode !== 'display'}
   <div
     role="presentation"
     class="fixed inset-0 z-20 flex flex-col items-center overflow-y-auto bg-black/70 backdrop-blur-sm"
@@ -2023,7 +2164,7 @@
 {/if}
 
 <!-- ─── Cheatsheet modal ──────────────────────────────────────────────── -->
-{#if cheatsheetVisible}
+{#if cheatsheetVisible && remoteMode !== 'display'}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     data-no-swipe
@@ -2071,7 +2212,7 @@
 {/if}
 
 <!-- ─── Flicker-guard disable confirmation ───────────────────────────────── -->
-{#if flickerGuardConfirmVisible}
+{#if flickerGuardConfirmVisible && remoteMode !== 'display'}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     data-no-swipe
@@ -2107,7 +2248,7 @@
 {/if}
 
 <!-- ─── Options modal ────────────────────────────────────────────────────── -->
-{#if optionsVisible}
+{#if optionsVisible && remoteMode !== 'display'}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     data-no-swipe
@@ -2298,6 +2439,48 @@
         {#if midiEnabled}
           <div class="mt-2 text-[11px] text-white/40">{midiConnected ? '♪ Device connected' : 'No device detected'}</div>
         {/if}
+      </div>
+
+      <!-- Remote Control section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-[10px] uppercase tracking-widest text-white/40">Remote Control</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <p class="text-[11px] text-white/40">Show the projection on this device (Display) or control it from another device (Remote).</p>
+          <label class="flex flex-col gap-1">
+            <span class="text-xs text-white/70">Relay server URL</span>
+            <input
+              type="text"
+              value={remoteUrl}
+              oninput={(e) => { remoteUrl = (e.currentTarget as HTMLInputElement).value; saveRelayUrl(remoteUrl); }}
+              placeholder={DEFAULT_RELAY_URL}
+              class="rounded-md border border-white/15 bg-white/[0.07] px-2 py-1.5 text-xs text-white/80 outline-none focus:border-white/40"
+            />
+          </label>
+          {#if remoteMode === 'off'}
+            <div class="flex gap-2">
+              <button
+                class="flex-1 rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+                onclick={() => { startDisplayMode(); armDisplayGesture(); }}
+              >Start as Display</button>
+              <button
+                class="flex-1 rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+                onclick={() => { remoteMode = 'remote'; try { localStorage.setItem(REMOTE_MODE_KEY, 'remote'); } catch {} }}
+              >Start as Remote</button>
+            </div>
+          {:else}
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-white/70 inline-flex items-center gap-1.5">
+                <span class="inline-block h-2 w-2 rounded-full {remoteConn.status === 'connected' ? 'bg-emerald-400' : remoteConn.status === 'error' ? 'bg-red-400' : 'bg-white/30'}"></span>
+                {remoteMode === 'remote' ? (remoteConn.status === 'connected' ? `Connected — ${remoteConn.displayCount} display(s)` : 'Not connected yet') : 'Display mode active'}
+              </span>
+              <button class="text-xs text-white/50 hover:text-white/80 cursor-pointer" onclick={() => { if (remoteMode === 'display') exitDisplayMode(); else exitRemoteMode(); }}>Leave</button>
+            </div>
+          {/if}
+        </div>
       </div>
 
       <!-- Capture section -->
@@ -2635,7 +2818,7 @@
 {/if}
 
 <!-- ─── Demo modal ────────────────────────────────────────────────────────── -->
-{#if demoVisible}
+{#if demoVisible && remoteMode !== 'display'}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     data-no-swipe
@@ -2985,7 +3168,7 @@
 {/if}
 
 <!-- ─── Controls panel (active + preview) ─────────────────────────────── -->
-{#if appState !== "overview"}
+{#if appState !== "overview" && remoteMode !== 'display'}
   <div
     data-no-swipe
     inert={!hudVisible || overlayHidden}
@@ -3820,7 +4003,7 @@
 {/if}
 
 <!-- ─── HUD (active + preview) ────────────────────────────────────────── -->
-{#if appState !== "overview"}
+{#if appState !== "overview" && remoteMode !== 'display'}
   <div
     data-no-swipe
     inert={!hudVisible || overlayHidden}
@@ -4005,5 +4188,90 @@
         {/if}
       </div>
     </div>
+  </div>
+{/if}
+
+<!-- ─── Display mode: tap-to-start splash (fullscreen/wake lock need a gesture) ─── -->
+{#if remoteMode === 'display' && displayNeedsTap}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <div
+    role="button"
+    tabindex="0"
+    class="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-black text-center"
+    onclick={armDisplayGesture}
+  >
+    <p class="text-xs uppercase tracking-[0.35em] text-white/40">Display Mode</p>
+    <p class="font-mono text-4xl tracking-[0.3em] text-white">{remoteRoomCode}</p>
+    <p class="text-sm text-white/60">Tap to start</p>
+  </div>
+{/if}
+
+<!-- ─── Display mode: room-code / connection overlay (shown on touch/pointer activity) ─── -->
+{#if remoteMode === 'display' && !displayNeedsTap}
+  <div
+    class="pointer-events-none fixed top-4 left-4 z-[70] transition-opacity duration-500"
+    class:opacity-0={!displayOverlayVisible}
+    class:opacity-100={displayOverlayVisible}
+  >
+    <div class="pointer-events-auto flex items-center gap-3 rounded-lg border border-white/15 bg-black/70 px-4 py-2.5 backdrop-blur-sm">
+      <span
+        class="inline-block h-2.5 w-2.5 rounded-full {remoteConn.status === 'connected' && remoteConn.remoteCount > 0 ? 'bg-emerald-400' : remoteConn.status === 'error' ? 'bg-red-400' : 'bg-white/30'}"
+      ></span>
+      <div class="flex flex-col leading-tight">
+        <span class="font-mono text-lg tracking-[0.3em] text-white">{remoteRoomCode}</span>
+        <span class="text-[10px] text-white/50">{remoteConn.remoteCount} remote(s) · {remoteConn.displayCount} display(s)</span>
+      </div>
+      <button
+        class="ml-2 rounded-md border border-white/15 bg-white/[0.07] px-2.5 py-1 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+        onclick={exitDisplayMode}
+      >Exit</button>
+    </div>
+  </div>
+{/if}
+
+<!-- ─── Remote mode: join splash (shown until connected) ─── -->
+{#if remoteMode === 'remote' && remoteConn.status !== 'connected'}
+  <div class="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-black/90 px-6 text-center backdrop-blur-sm">
+    <p class="text-xs uppercase tracking-[0.35em] text-white/40">Remote Control</p>
+    <p class="text-sm text-white/60">Enter the code shown on the Display</p>
+    <input
+      type="text"
+      maxlength="4"
+      value={remoteJoinCode}
+      oninput={(e) => { remoteJoinCode = (e.currentTarget as HTMLInputElement).value.toUpperCase(); }}
+      onkeydown={(e) => { if (e.key === 'Enter') startRemoteMode(); }}
+      placeholder="CODE"
+      class="w-32 rounded-md border border-white/20 bg-white/[0.07] px-3 py-2 text-center font-mono text-2xl uppercase tracking-[0.3em] text-white outline-none focus:border-white/50"
+    />
+    {#if remoteJoinError}
+      <p class="text-xs text-red-400">{remoteJoinError}</p>
+    {:else if remoteConn.status === 'error'}
+      <p class="max-w-xs text-xs text-red-400">{remoteConn.errorMessage}</p>
+    {:else if remoteConn.status === 'connecting' || remoteConn.status === 'reconnecting'}
+      <p class="text-xs text-white/40">Connecting…</p>
+    {/if}
+    <div class="flex gap-2">
+      <button
+        class="rounded-md border border-white/20 bg-white/[0.07] px-4 py-1.5 text-xs text-white/70 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+        onclick={startRemoteMode}
+      >Join</button>
+      <button
+        class="rounded-md border border-white/10 bg-transparent px-4 py-1.5 text-xs text-white/40 transition-colors cursor-pointer hover:text-white/70"
+        onclick={exitRemoteMode}
+      >Cancel</button>
+    </div>
+  </div>
+{/if}
+
+<!-- ─── Remote mode: persistent connection badge (never auto-hides) ─── -->
+{#if remoteMode === 'remote' && remoteConn.status === 'connected'}
+  <div class="pointer-events-auto fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-1.5 backdrop-blur-sm">
+    <span class="inline-block h-2 w-2 rounded-full bg-emerald-400"></span>
+    <span class="font-mono text-[11px] tracking-widest text-white/70">{remoteRoomCode}</span>
+    <span class="text-[10px] text-white/40">{remoteConn.displayCount} display(s)</span>
+    <button
+      class="ml-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-white/50 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+      onclick={exitRemoteMode}
+    >Leave</button>
   </div>
 {/if}
