@@ -651,7 +651,11 @@
     hudVisible = true;
     overlayHidden = false;
     if (hudTimer) clearTimeout(hudTimer);
-    hudTimer = setTimeout(() => (hudVisible = false), 5000);
+    // Remote mode: controls stay visible until explicitly toggled (toggleOverlay) —
+    // never auto-hide on a timer, since the whole app IS the remote control surface.
+    if (remoteMode !== 'remote') {
+      hudTimer = setTimeout(() => (hudVisible = false), 5000);
+    }
     scheduleAutoRestart(); // reset idle timer on any user interaction
   }
 
