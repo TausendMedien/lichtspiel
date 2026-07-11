@@ -1,5 +1,6 @@
 import type { Pattern } from './patterns/types';
 import { pushUndo } from './undo';
+import { notifyActivity } from './activity';
 
 // Re-read pp: keys and push values into controls.
 // Call this AFTER loadSettings so individual keys (updated more
@@ -29,6 +30,7 @@ export function wrapWithPersist(pattern: Pattern): Pattern {
           pushUndo({ patternId: pattern.id, label: ctrl.label, value: ctrl.get() });
           ctrl.set(v);
           localStorage.setItem(key, v ? '1' : '0');
+          notifyActivity();
         },
       };
     }
@@ -39,6 +41,7 @@ export function wrapWithPersist(pattern: Pattern): Pattern {
           pushUndo({ patternId: pattern.id, label: ctrl.label, value: ctrl.get() });
           ctrl.set(v);
           localStorage.setItem(key, v);
+          notifyActivity();
         },
       };
     }
@@ -48,6 +51,7 @@ export function wrapWithPersist(pattern: Pattern): Pattern {
         pushUndo({ patternId: pattern.id, label: ctrl.label, value: ctrl.get() });
         ctrl.set(v);
         localStorage.setItem(key, String(v));
+        notifyActivity();
       },
       // Transient set for Evolving Range drift: update the live value only, no
       // localStorage churn and no undo entries (runs every frame, indefinitely).

@@ -14,6 +14,7 @@
   import type { DemoStartBehavior } from "./lib/settings";
   import type { PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
+  import { onActivity } from "./lib/activity";
   import { createMIDIController } from "./lib/midi";
   import type { MIDIAction } from "./lib/midi";
   import { popUndo, setUndoing } from "./lib/undo";
@@ -35,7 +36,11 @@
     remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
     loadRelayUrl, saveRelayUrl, REMOTE_MODE_KEY,
   } from "./lib/remote/connection.svelte";
-  import { applyParam, buildSnapshot, buildDeviceLists, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, broadcastCtrlValue, type DisplayAdapter, type RemoteDeviceOption } from "./lib/remote/sync.svelte";
+  import {
+    applyParam, buildSnapshot, buildDeviceLists, applySnapshotToLocalState, initGlobalBroadcastEffects,
+    broadcastPatternChange, broadcastCtrlValue, broadcastTimeScale, broadcastDemoDwell, broadcastStartDemo, broadcastStopDemo,
+    type DisplayAdapter, type RemoteDeviceOption, type DemoStartConfig,
+  } from "./lib/remote/sync.svelte";
   import { generateRoomCode, normalizeRoomCode, isValidRoomCode, DEFAULT_RELAY_URL, type RemoteMessage } from "./lib/remote/protocol";
 
   // Camera/image patterns where Apply Colors defaults to OFF
@@ -280,6 +285,9 @@
   let remoteMicDevices = $state<RemoteDeviceOption[]>([]);
   let remoteActiveCameraLabel = $state('');
   let remoteActiveMicLabel = $state('');
+  // Optimistic — Remote's own demoActive must stay false; this just tracks whether
+  // WE told the Display to start/stop, for the button label.
+  let remoteDemoRunning = $state(false);
 
   function displayAdapter(): DisplayAdapter {
     return {
@@ -303,7 +311,55 @@
       onColorShuffleChanged: () => {
         savePatternColor(patterns[index].id);
       },
+      onCameraActivationChanged: () => {
+        enumerateCameras();
+        triggerMotionCameraStart(patterns[index].id);
+      },
+      getTimeScale: () => handle?.getTimeScale() ?? 1,
+      setTimeScale: (v) => {
+        freezeAnim = null;
+        handle?.setTimeScale(v);
+        timeScaleMirror = v;
+        if (v > 0) frozenPrevScale = v;
+      },
+      getDemoDwell: () => demoDwell,
+      setDemoDwell: (v) => {
+        demoDwell = v;
+        saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+        if (demoActive) resetDemoTimer();
+      },
+      startDemoRemote: (config) => {
+        applyDemoPatternIds(new Set(config.patternIds));
+        demoDwell = config.dwell;
+        pedalDwell = config.pedalDwell;
+        demoStartBehavior = config.startBehavior as DemoStartBehavior;
+        demoRandomizeOrder = config.randomizeOrder;
+        demoFavoritesOnly = config.favoritesOnly;
+        startDemo();
+      },
+      stopDemoRemote: () => {
+        if (demoActive) stopDemo();
+      },
     };
+  }
+
+  function remoteToggleDemo() {
+    if (remoteDemoRunning) {
+      broadcastStopDemo();
+      remoteDemoRunning = false;
+    } else {
+      const config: DemoStartConfig = {
+        patternIds: [...demoPatternIds],
+        dwell: demoDwell,
+        pedalDwell,
+        startBehavior: demoStartBehavior,
+        randomizeOrder: demoRandomizeOrder,
+        favoritesOnly: demoFavoritesOnly,
+      };
+      broadcastStartDemo(config);
+      remoteDemoRunning = true;
+    }
+    demoVisible = false;
   }
 
   function onRemoteMessage(msg: RemoteMessage) {
@@ -312,7 +368,7 @@
     } else if (msg.type === 'snapshot-request') {
       const devices = buildDeviceLists();
       const params = {
-        ...buildSnapshot(index),
+        ...buildSnapshot(displayAdapter()),
         'app:cameraDevices': JSON.stringify(devices.cameras),
         'app:micDevices': JSON.stringify(devices.mics),
         'app:activeCameraLabel': devices.activeCameraLabel,
@@ -397,6 +453,11 @@
     try { localStorage.removeItem(REMOTE_MODE_KEY); } catch {}
     remoteMode = 'off';
     remoteJoinCode = '';
+    remoteDemoRunning = false;
+    remoteCameraDevices = [];
+    remoteMicDevices = [];
+    remoteActiveCameraLabel = '';
+    remoteActiveMicLabel = '';
   }
 
   let demoStartBehavior = $state<DemoStartBehavior>('default');
@@ -692,6 +753,10 @@
     }
     scheduleAutoRestart(); // reset idle timer on any user interaction
   }
+
+  // Any control write (local drag, keyboard, MIDI, or an incoming remote param-update)
+  // counts as activity — not just pattern switches, which already called poke() directly.
+  onActivity(() => poke());
 
   // Show the cursor on any mouse movement; hide it again after a short idle.
   function pokeCursor() {
@@ -1164,9 +1229,11 @@
     if (currentTarget === 0) {
       const restore = frozenPrevScale > 0 ? frozenPrevScale : 1.0;
       freezeAnim = { from: curActual, to: restore, startMs: performance.now() };
+      broadcastTimeScale(restore); // animates locally via setLive-style RAF loop — broadcast the final target directly
     } else {
       frozenPrevScale = currentTarget;
       freezeAnim = { from: curActual, to: 0, startMs: performance.now() };
+      broadcastTimeScale(0);
     }
   }
 
@@ -1177,6 +1244,7 @@
     handle?.setTimeScale(next);
     timeScaleMirror = next;
     if (next > 0) frozenPrevScale = next;
+    broadcastTimeScale(next);
   }
 
   function applySpeedDown() {
@@ -1186,6 +1254,7 @@
     handle?.setTimeScale(next);
     timeScaleMirror = next;
     if (next > 0) frozenPrevScale = next;
+    broadcastTimeScale(next);
   }
 
   function applyScreenshot() {
@@ -2158,7 +2227,6 @@
             >{favorites.has(p.id) ? '★' : '☆'}</span>
           </button>
         {/each}
-        <div class="col-span-3 pt-3 pb-1 text-center font-mono text-[12px] text-white/50">{__VERSION__}</div>
       {/if}
     </div>
 
@@ -2223,11 +2291,12 @@
           onclick={() => { cheatsheetVisible = false; }}
         >✕  any key</button>
       </div>
-      <p class="mb-4 text-sm text-white/70 leading-relaxed">
+      <p class="mb-1 text-sm text-white/70 leading-relaxed">
         Lichtspiel is being created by light artist Ulrich Tausend
         <a href="https://1000lights.de" target="_blank" rel="noopener noreferrer"
            class="text-white/90 underline hover:text-white transition-colors">1000lights.de</a>
       </p>
+      <p class="mb-4 font-mono text-[11px] text-white/40">{__VERSION__}</p>
       <div class="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-white/50">Controls</div>
       <table class="w-full border-collapse">
         <thead>
@@ -2874,9 +2943,9 @@
         <span class="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">Demo</span>
         <div class="flex gap-2 items-center">
           <button
-            class="rounded-md border px-3 py-1 text-xs transition-colors cursor-pointer {demoActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/60 hover:border-white/40'}"
-            onclick={() => { demoActive ? stopDemo() : startDemo(); }}
-          >{demoActive ? "● Stop Demo" : "▶ Start Demo"}</button>
+            class="rounded-md border px-3 py-1 text-xs transition-colors cursor-pointer {(remoteMode === 'remote' ? remoteDemoRunning : demoActive) ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/60 hover:border-white/40'}"
+            onclick={() => { remoteMode === 'remote' ? remoteToggleDemo() : (demoActive ? stopDemo() : startDemo()); }}
+          >{(remoteMode === 'remote' ? remoteDemoRunning : demoActive) ? "● Stop Demo" : "▶ Start Demo"}</button>
           <button
             class="cursor-pointer rounded px-2 py-0.5 text-xs text-white/50 hover:text-white/80 transition-colors"
             onclick={() => { demoVisible = false; }}
@@ -2892,7 +2961,12 @@
         </div>
         <input
           type="range" min={5} max={240} step={5} value={demoDwell}
-          oninput={(e) => { demoDwell = parseInt((e.target as HTMLInputElement).value); saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly); if (demoActive) resetDemoTimer(); }}
+          oninput={(e) => {
+            demoDwell = parseInt((e.target as HTMLInputElement).value);
+            saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+            if (demoActive) resetDemoTimer();
+            if (remoteMode === 'remote') broadcastDemoDwell(demoDwell); // live-overrides an already-running Display demo too
+          }}
           class="w-full accent-white cursor-pointer"
         />
       </div>
@@ -4303,9 +4377,19 @@
   </div>
 {/if}
 
-<!-- ─── Remote mode: persistent connection badge (never auto-hides) ─── -->
+<!-- ─── Remote mode: connection badge + device pickers ───────────────────────
+     Bottom-left (not top-right — that's the demo-dismiss X's corner). Never
+     auto-hides on a timer, but DOES hide together with the rest of the controls
+     when manually toggled (same inert/opacity gate as the controls panel). ─── -->
 {#if remoteMode === 'remote' && remoteConn.status === 'connected'}
-  <div class="pointer-events-auto fixed top-4 right-4 z-[70] flex flex-col items-end gap-1.5">
+  <div
+    data-no-swipe
+    inert={!hudVisible || overlayHidden}
+    onpointerdown={() => poke()}
+    class="pointer-events-auto fixed bottom-4 left-4 z-[70] flex flex-col items-start gap-1.5 transition-opacity duration-500"
+    class:opacity-0={!hudVisible || overlayHidden}
+    class:opacity-100={hudVisible && !overlayHidden}
+  >
     <div class="flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-1.5 backdrop-blur-sm">
       <span class="inline-block h-2 w-2 rounded-full bg-emerald-400"></span>
       <span class="font-mono text-[11px] tracking-widest text-white/70">{remoteRoomCode}</span>

@@ -17,12 +17,28 @@ export type { ParamValue };
 
 export interface RemoteDeviceOption { id: string; label: string }
 
+export interface DemoStartConfig {
+  patternIds: string[];
+  dwell: number;
+  pedalDwell: number;
+  startBehavior: string;
+  randomizeOrder: boolean;
+  favoritesOnly: boolean;
+}
+
 export interface DisplayAdapter {
   getPatternIndex(): number;
   switchToPatternId(id: string): void;
   restorePresetSlot(slot: number): void; // 0..2
   onCtrlChanged(label: string, value: ParamValue): void; // mirror ctrlVals + saveSettings
   onColorShuffleChanged(): void; // persist colorShuffle.* for the current pattern (savePatternColor)
+  onCameraActivationChanged(): void; // enumerateCameras() + triggerMotionCameraStart() (gesture-context kick)
+  getTimeScale(): number;
+  setTimeScale(v: number): void; // freeze/speed — mirrors applyFreeze/applySpeedUp/Down's bookkeeping
+  getDemoDwell(): number;
+  setDemoDwell(v: number): void; // live-overrides an already-running demo's dwell time too
+  startDemoRemote(config: DemoStartConfig): void;
+  stopDemoRemote(): void;
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -39,10 +55,29 @@ const GLOBAL_REGISTRY: Record<string, RegistryEntry> = {
   'audio.beatMode':        { get: () => audioState.beatMode,        set: v => { audioState.beatMode = !!v; } },
   'audio.beatSensitivity': { get: () => audioState.beatSensitivity, set: v => { audioState.beatSensitivity = Number(v); } },
 
-  'camera.enabled':       { get: () => cameraState.enabled,       set: v => { cameraState.enabled = !!v; } },
-  'camera.motionEnabled': { get: () => cameraState.motionEnabled, set: v => { cameraState.motionEnabled = !!v; } },
-  'camera.heatEnabled':   { get: () => cameraState.heatEnabled,   set: v => { cameraState.heatEnabled = !!v; } },
-  'camera.sensitivity':   { get: () => cameraState.sensitivity,   set: v => { cameraState.sensitivity = Number(v); } },
+  'camera.enabled': { get: () => cameraState.enabled, set: v => { cameraState.enabled = !!v; } },
+  // Mirror the exact on/off side effects of the local Heat/Motion toggle handlers
+  // (App.svelte) — a plain boolean flip left the camera stream never actually
+  // starting until the user re-toggled it locally.
+  'camera.motionEnabled': {
+    get: () => cameraState.motionEnabled,
+    set: v => {
+      const next = !!v;
+      cameraState.motionEnabled = next;
+      if (next && !cameraState.enabled) cameraState.enabled = true;
+      if (!next && !cameraState.heatEnabled) cameraState.enabled = false;
+    },
+  },
+  'camera.heatEnabled': {
+    get: () => cameraState.heatEnabled,
+    set: v => {
+      const next = !!v;
+      cameraState.heatEnabled = next;
+      if (next) cameraState.enabled = true;
+      else if (!cameraState.motionEnabled) cameraState.enabled = false;
+    },
+  },
+  'camera.sensitivity': { get: () => cameraState.sensitivity, set: v => { cameraState.sensitivity = Number(v); } },
 
   'interaction.strength': {
     get: () => interactionState.strength,
@@ -120,6 +155,9 @@ export function applyParam(adapter: DisplayAdapter, param: string, value: ParamV
   if (ns === 'global') {
     GLOBAL_REGISTRY[key]?.set(value);
     if (key.startsWith(COLOR_SHUFFLE_PREFIX)) adapter.onColorShuffleChanged();
+    if ((key === 'camera.heatEnabled' || key === 'camera.motionEnabled') && value === true) {
+      adapter.onCameraActivationChanged();
+    }
     return;
   }
 
@@ -132,6 +170,14 @@ export function applyParam(adapter: DisplayAdapter, param: string, value: ParamV
     } else if (key === 'selectMic' && typeof value === 'string') {
       const match = audioState.devices.find(d => d.label === value);
       if (match) audioState.deviceId = match.deviceId; // no dedicated save fn — matches the existing local picker's behavior
+    } else if (key === 'timeScale' && typeof value === 'number') {
+      adapter.setTimeScale(value);
+    } else if (key === 'demoDwell' && typeof value === 'number') {
+      adapter.setDemoDwell(value);
+    } else if (key === 'startDemo' && typeof value === 'string') {
+      try { adapter.startDemoRemote(JSON.parse(value)); } catch {}
+    } else if (key === 'stopDemo') {
+      adapter.stopDemoRemote();
     }
   }
 }
@@ -153,11 +199,13 @@ export function buildDeviceLists(): {
   };
 }
 
-export function buildSnapshot(patternIndex: number): Record<string, ParamValue> {
+export function buildSnapshot(adapter: DisplayAdapter): Record<string, ParamValue> {
   const snap: Record<string, ParamValue> = {};
-  const pattern = patterns[patternIndex];
+  const pattern = patterns[adapter.getPatternIndex()];
   if (!pattern) return snap;
   snap['app:pattern'] = pattern.id;
+  snap['app:timeScale'] = adapter.getTimeScale();
+  snap['app:demoDwell'] = adapter.getDemoDwell();
   for (const ctrl of pattern.controls ?? []) {
     if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
     if ((ctrl as { interactive?: string }).interactive) continue; // never share camera/mic device selection
@@ -196,6 +244,28 @@ export function broadcastPatternChange(patternId: string): void {
  *  via setLive() instead of set(), which the normal wrapWithBroadcast hook never sees. */
 export function broadcastCtrlValue(label: string, value: ParamValue): void {
   sendThrottled(`ctrl:${label}`, value);
+}
+
+/** Freeze (Space) / Speed up-down — not a pattern control or a shared-module global,
+ *  just App.svelte-local renderer state, so it's addressed as its own app: verb. */
+export function broadcastTimeScale(value: number): void {
+  sendThrottled('app:timeScale', value);
+}
+
+/** Live dwell-time override — also applies immediately if a demo is already running
+ *  on the Display (see DisplayAdapter.setDemoDwell). */
+export function broadcastDemoDwell(value: number): void {
+  sendThrottled('app:demoDwell', value);
+}
+
+/** Remote picks the demo config; the DISPLAY is the one that actually enters demo
+ *  mode. Remote's own local demoActive must never become true. */
+export function broadcastStartDemo(config: DemoStartConfig): void {
+  sendThrottled('app:startDemo', JSON.stringify(config));
+}
+
+export function broadcastStopDemo(): void {
+  sendThrottled('app:stopDemo', true);
 }
 
 /** Registers one $effect per whitelisted global field that broadcasts on change while
