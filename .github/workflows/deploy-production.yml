@@ -11,13 +11,13 @@ on:
         description: 'Type "deploy" to confirm — this overwrites the live production site.'
         required: true
       protocol:
-        description: 'FTP protocol — switch here to test without editing the workflow. If ftps fails with an ECONNRESET on the data socket, try ftp.'
+        description: 'FTP protocol — switch here to test without editing the workflow.'
         required: true
-        default: 'ftp'
+        default: 'ftps'
         type: choice
         options:
-          - ftp
           - ftps
+          - ftp
           - ftps-legacy
 
 permissions:
