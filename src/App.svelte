@@ -35,7 +35,7 @@
     remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
     loadRelayUrl, saveRelayUrl, REMOTE_MODE_KEY,
   } from "./lib/remote/connection.svelte";
-  import { applyParam, buildSnapshot, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, type DisplayAdapter } from "./lib/remote/sync.svelte";
+  import { applyParam, buildSnapshot, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, broadcastCtrlValue, type DisplayAdapter } from "./lib/remote/sync.svelte";
   import { generateRoomCode, normalizeRoomCode, isValidRoomCode, DEFAULT_RELAY_URL, type RemoteMessage } from "./lib/remote/protocol";
 
   // Camera/image patterns where Apply Colors defaults to OFF
@@ -293,6 +293,9 @@
       onCtrlChanged: (label, value) => {
         ctrlVals[label] = value as number | string;
         saveSettings(patterns);
+      },
+      onColorShuffleChanged: () => {
+        savePatternColor(patterns[index].id);
       },
     };
   }
@@ -1096,6 +1099,7 @@
         const r = Math.floor(Math.random() * (steps + 1));
         const to = parseFloat(Math.min(ctrl.max, ctrl.min + r * ctrl.step).toFixed(10));
         anims[ctrl.label] = { from: ctrl.get(), to, startMs: now };
+        broadcastCtrlValue(ctrl.label, to); // animates via setLive locally — broadcast the final target directly
       } else if (ctrl.type === 'select' && !ctrl.disabled?.()) {
         const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options;
         const idx = Math.floor(Math.random() * opts.length);
@@ -1265,6 +1269,7 @@
       const target = snap[ctrl.label];
       if (typeof target === 'number') {
         anims[ctrl.label] = { from: ctrl.get(), to: target, startMs: now };
+        broadcastCtrlValue(ctrl.label, target); // animates via setLive locally — broadcast the final target directly
       }
     }
     for (const ctrl of patterns[index].controls ?? []) {

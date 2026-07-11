@@ -9,7 +9,7 @@ import { patterns } from '../patterns';
 import { audioState } from '../globalAudioSettings.svelte';
 import { cameraState } from '../globalCameraSettings.svelte';
 import { interactionState, saveInteractionSettings } from '../interactionState.svelte';
-import { colorC2, saveColorC2 } from '../colorC2.svelte';
+import { colorC2, colorShuffle, saveColorC2 } from '../colorC2.svelte';
 import { evolving, saveEvolving } from '../evolving.svelte';
 import { sendThrottled, setSuppressed, type ParamValue } from './broadcast';
 
@@ -20,6 +20,7 @@ export interface DisplayAdapter {
   switchToPatternId(id: string): void;
   restorePresetSlot(slot: number): void; // 0..2
   onCtrlChanged(label: string, value: ParamValue): void; // mirror ctrlVals + saveSettings
+  onColorShuffleChanged(): void; // persist colorShuffle.* for the current pattern (savePatternColor)
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -57,7 +58,27 @@ const GLOBAL_REGISTRY: Record<string, RegistryEntry> = {
   'color.main':     { get: () => colorC2.main,     set: v => { if (typeof v === 'string' && HEX_RE.test(v)) { colorC2.main = v; saveColorC2(); } } },
   'color.contrast': { get: () => colorC2.contrast, set: v => { if (typeof v === 'string' && HEX_RE.test(v)) { colorC2.contrast = v; saveColorC2(); } } },
   'color.glow':     { get: () => colorC2.glow,     set: v => { if (typeof v === 'string' && HEX_RE.test(v)) { colorC2.glow = v; saveColorC2(); } } },
+
+  // Per-pattern colour-shuffle state ("Apply Colors" toggle, "Color Shuffle" button's
+  // result, Brightness slider). Persistence (savePatternColor) needs the CURRENT
+  // pattern id, which this module doesn't track — applyParam calls
+  // adapter.onColorShuffleChanged() right after any colorShuffle.* set below.
+  'colorShuffle.enabled':    { get: () => colorShuffle.enabled,    set: v => { colorShuffle.enabled = !!v; } },
+  'colorShuffle.saturation': { get: () => colorShuffle.saturation, set: v => { colorShuffle.saturation = Number(v); } },
+  'colorShuffle.brightness': { get: () => colorShuffle.brightness, set: v => { colorShuffle.brightness = Number(v); } },
+  'colorShuffle.assign': {
+    get: () => colorShuffle.assign.join(','),
+    set: v => {
+      if (typeof v !== 'string') return;
+      const parts = v.split(',').map(Number);
+      if (parts.length === 3 && parts.every(n => Number.isInteger(n) && n >= 0 && n <= 5)) {
+        colorShuffle.assign = parts as [number, number, number];
+      }
+    },
+  },
 };
+
+const COLOR_SHUFFLE_PREFIX = 'colorShuffle.';
 
 // ── Display side: apply incoming param-updates / snapshots to local state ──────
 
@@ -96,6 +117,7 @@ export function applyParam(adapter: DisplayAdapter, param: string, value: ParamV
 
   if (ns === 'global') {
     GLOBAL_REGISTRY[key]?.set(value);
+    if (key.startsWith(COLOR_SHUFFLE_PREFIX)) adapter.onColorShuffleChanged();
     return;
   }
 
@@ -141,6 +163,13 @@ export async function applySnapshotToLocalState(adapter: DisplayAdapter, params:
 
 export function broadcastPatternChange(patternId: string): void {
   sendThrottled('app:pattern', patternId);
+}
+
+/** Broadcast a range control's value directly — for the two spots (Randomize,
+ *  preset restore) that animate the CURRENT pattern's range sliders toward a target
+ *  via setLive() instead of set(), which the normal wrapWithBroadcast hook never sees. */
+export function broadcastCtrlValue(label: string, value: ParamValue): void {
+  sendThrottled(`ctrl:${label}`, value);
 }
 
 /** Registers one $effect per whitelisted global field that broadcasts on change while
