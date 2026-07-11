@@ -1,0 +1,39 @@
+name: Deploy to Production (1000lights.de/lichtspiel)
+
+# Manual only — never runs on push. GitHub Pages (pages.yml) stays the
+# auto-deployed dev system; this pushes the same build to the production
+# host via FTP, only when explicitly triggered from the Actions tab (or
+# `gh workflow run deploy-production.yml -f confirm=deploy`).
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm — this overwrites the live production site.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        if: inputs.confirm != 'deploy'
+        run: |
+          echo "::error::Confirmation input must be exactly 'deploy' — got '${{ inputs.confirm }}'."
+          exit 1
+
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - name: Deploy dist/ via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.PROD_FTP_HOST }}
+          username: ${{ secrets.PROD_FTP_USERNAME }}
+          password: ${{ secrets.PROD_FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: ${{ secrets.PROD_FTP_REMOTE_DIR }}
