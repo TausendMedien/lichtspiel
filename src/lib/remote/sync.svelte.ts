@@ -7,13 +7,15 @@
 import { tick } from 'svelte';
 import { patterns } from '../patterns';
 import { audioState } from '../globalAudioSettings.svelte';
-import { cameraState } from '../globalCameraSettings.svelte';
+import { cameraState, getVisibleDevices, saveCameraDevice } from '../globalCameraSettings.svelte';
 import { interactionState, saveInteractionSettings } from '../interactionState.svelte';
 import { colorC2, colorShuffle, saveColorC2 } from '../colorC2.svelte';
 import { evolving, saveEvolving } from '../evolving.svelte';
 import { sendThrottled, setSuppressed, type ParamValue } from './broadcast';
 
 export type { ParamValue };
+
+export interface RemoteDeviceOption { id: string; label: string }
 
 export interface DisplayAdapter {
   getPatternIndex(): number;
@@ -124,7 +126,31 @@ export function applyParam(adapter: DisplayAdapter, param: string, value: ParamV
   if (ns === 'app') {
     if (key === 'pattern' && typeof value === 'string') adapter.switchToPatternId(value);
     else if (key === 'preset' && typeof value === 'number') adapter.restorePresetSlot(clamp(Math.round(value), 0, 2));
+    else if (key === 'selectCamera' && typeof value === 'string') {
+      const match = cameraState.devices.find(d => d.label === value);
+      if (match) { cameraState.deviceId = match.deviceId; saveCameraDevice(); }
+    } else if (key === 'selectMic' && typeof value === 'string') {
+      const match = audioState.devices.find(d => d.label === value);
+      if (match) audioState.deviceId = match.deviceId; // no dedicated save fn — matches the existing local picker's behavior
+    }
   }
+}
+
+/** The Display's own camera/mic device options, addressed by label (device ids are
+ *  meaningless across devices) — sent as part of the snapshot so a Remote can render
+ *  a picker for "which of the DISPLAY's devices" rather than its own. */
+export function buildDeviceLists(): {
+  cameras: RemoteDeviceOption[]; mics: RemoteDeviceOption[];
+  activeCameraLabel: string; activeMicLabel: string;
+} {
+  const cameras = getVisibleDevices().map(d => ({ id: d.deviceId, label: d.label }));
+  const mics = audioState.devices.map(d => ({ id: d.deviceId, label: d.label }));
+  return {
+    cameras,
+    mics,
+    activeCameraLabel: cameras.find(d => d.id === cameraState.deviceId)?.label ?? '',
+    activeMicLabel: mics.find(d => d.id === audioState.deviceId)?.label ?? '',
+  };
 }
 
 export function buildSnapshot(patternIndex: number): Record<string, ParamValue> {

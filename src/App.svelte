@@ -35,7 +35,7 @@
     remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
     loadRelayUrl, saveRelayUrl, REMOTE_MODE_KEY,
   } from "./lib/remote/connection.svelte";
-  import { applyParam, buildSnapshot, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, broadcastCtrlValue, type DisplayAdapter } from "./lib/remote/sync.svelte";
+  import { applyParam, buildSnapshot, buildDeviceLists, applySnapshotToLocalState, initGlobalBroadcastEffects, broadcastPatternChange, broadcastCtrlValue, type DisplayAdapter, type RemoteDeviceOption } from "./lib/remote/sync.svelte";
   import { generateRoomCode, normalizeRoomCode, isValidRoomCode, DEFAULT_RELAY_URL, type RemoteMessage } from "./lib/remote/protocol";
 
   // Camera/image patterns where Apply Colors defaults to OFF
@@ -274,6 +274,12 @@
   let displayOverlayTimer: ReturnType<typeof setTimeout> | null = null;
   let remoteJoinCode = $state('');       // Remote-mode code entry field
   let remoteJoinError = $state('');
+  // Populated from the Display's snapshot — the DISPLAY's own devices, addressed by
+  // label (a device id from one machine is meaningless on another).
+  let remoteCameraDevices = $state<RemoteDeviceOption[]>([]);
+  let remoteMicDevices = $state<RemoteDeviceOption[]>([]);
+  let remoteActiveCameraLabel = $state('');
+  let remoteActiveMicLabel = $state('');
 
   function displayAdapter(): DisplayAdapter {
     return {
@@ -304,10 +310,35 @@
     if (msg.type === 'param-update') {
       applyParam(displayAdapter(), msg.param, msg.value);
     } else if (msg.type === 'snapshot-request') {
-      remoteSend({ type: 'state-snapshot', reqId: msg.reqId, params: buildSnapshot(index) });
+      const devices = buildDeviceLists();
+      const params = {
+        ...buildSnapshot(index),
+        'app:cameraDevices': JSON.stringify(devices.cameras),
+        'app:micDevices': JSON.stringify(devices.mics),
+        'app:activeCameraLabel': devices.activeCameraLabel,
+        'app:activeMicLabel': devices.activeMicLabel,
+      };
+      remoteSend({ type: 'state-snapshot', reqId: msg.reqId, params });
     } else if (msg.type === 'state-snapshot') {
+      const camJson = msg.params['app:cameraDevices'];
+      const micJson = msg.params['app:micDevices'];
+      if (typeof camJson === 'string') { try { remoteCameraDevices = JSON.parse(camJson); } catch {} }
+      if (typeof micJson === 'string') { try { remoteMicDevices = JSON.parse(micJson); } catch {} }
+      if (typeof msg.params['app:activeCameraLabel'] === 'string') remoteActiveCameraLabel = msg.params['app:activeCameraLabel'];
+      if (typeof msg.params['app:activeMicLabel'] === 'string') remoteActiveMicLabel = msg.params['app:activeMicLabel'];
       applySnapshotToLocalState(displayAdapter(), msg.params);
     }
+  }
+
+  function selectRemoteCamera(label: string) {
+    if (!label) return;
+    remoteActiveCameraLabel = label;
+    remoteSend({ type: 'param-update', param: 'app:selectCamera', value: label });
+  }
+  function selectRemoteMic(label: string) {
+    if (!label) return;
+    remoteActiveMicLabel = label;
+    remoteSend({ type: 'param-update', param: 'app:selectMic', value: label });
   }
 
   function pokeDisplayOverlay() {
@@ -4274,13 +4305,47 @@
 
 <!-- ─── Remote mode: persistent connection badge (never auto-hides) ─── -->
 {#if remoteMode === 'remote' && remoteConn.status === 'connected'}
-  <div class="pointer-events-auto fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-1.5 backdrop-blur-sm">
-    <span class="inline-block h-2 w-2 rounded-full bg-emerald-400"></span>
-    <span class="font-mono text-[11px] tracking-widest text-white/70">{remoteRoomCode}</span>
-    <span class="text-[10px] text-white/40">{remoteConn.displayCount} display(s)</span>
-    <button
-      class="ml-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-white/50 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
-      onclick={exitRemoteMode}
-    >Leave</button>
+  <div class="pointer-events-auto fixed top-4 right-4 z-[70] flex flex-col items-end gap-1.5">
+    <div class="flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-1.5 backdrop-blur-sm">
+      <span class="inline-block h-2 w-2 rounded-full bg-emerald-400"></span>
+      <span class="font-mono text-[11px] tracking-widest text-white/70">{remoteRoomCode}</span>
+      <span class="text-[10px] text-white/40">{remoteConn.displayCount} display(s)</span>
+      <button
+        class="ml-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-white/50 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
+        onclick={exitRemoteMode}
+      >Leave</button>
+    </div>
+    {#if remoteCameraDevices.length > 0 || remoteMicDevices.length > 0}
+      <div class="flex flex-col gap-1 rounded-lg border border-white/15 bg-black/70 px-3 py-2 text-[11px] backdrop-blur-sm min-w-48">
+        {#if remoteCameraDevices.length > 0}
+          <label class="flex flex-col gap-0.5">
+            <span class="text-white/40">Display's Camera</span>
+            <select
+              class="rounded border border-white/15 bg-white/[0.07] px-1.5 py-1 text-white/80"
+              value={remoteActiveCameraLabel}
+              onchange={(e) => selectRemoteCamera((e.currentTarget as HTMLSelectElement).value)}
+            >
+              {#each remoteCameraDevices as d}
+                <option value={d.label}>{d.label}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+        {#if remoteMicDevices.length > 0}
+          <label class="flex flex-col gap-0.5">
+            <span class="text-white/40">Display's Microphone</span>
+            <select
+              class="rounded border border-white/15 bg-white/[0.07] px-1.5 py-1 text-white/80"
+              value={remoteActiveMicLabel}
+              onchange={(e) => selectRemoteMic((e.currentTarget as HTMLSelectElement).value)}
+            >
+              {#each remoteMicDevices as d}
+                <option value={d.label}>{d.label}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}
