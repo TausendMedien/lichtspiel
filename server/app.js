@@ -18,6 +18,14 @@ const GRACE_MS = 60_000;
 const HEARTBEAT_MS = 30_000;
 const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
 
+// Room state lives in this process's memory only. If the host runs more than one
+// Node.js instance of this app (common default on load-balanced/scaling hosting),
+// each instance has its OWN rooms map, and a Display + Remote landing on different
+// instances will wrongly see "room not found". This ID is logged on every line so
+// you can tell from the Plesk log whether requests are hitting more than one
+// process (look for more than one distinct id) — if so, pin the instance count to 1.
+const INSTANCE_ID = Math.random().toString(36).slice(2, 8);
+
 /** @typedef {{ ws: import('ws').WebSocket, role: 'display'|'remote', joinedAt: number, isAlive: boolean }} Peer */
 /** @typedef {{ displays: Peer[], remotes: Peer[], pendingSnapshots: Map<string, import('ws').WebSocket>, emptyTimer: ReturnType<typeof setTimeout>|null }} Room */
 
@@ -25,7 +33,7 @@ const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
 const rooms = new Map();
 
 function log(...args) {
-  console.log(new Date().toISOString(), ...args);
+  console.log(new Date().toISOString(), `[${INSTANCE_ID}]`, ...args);
 }
 
 function getOrCreateRoom(code) {
@@ -86,7 +94,10 @@ function removePeer(room, code, ws) {
 
 const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end('lichtspiel relay');
+  // Instance ID in the health check body: curl this a few times in a row — if the
+  // id changes between requests, the host is load-balancing across more than one
+  // process, which breaks this relay's in-memory room state (see INSTANCE_ID above).
+  res.end(`lichtspiel relay [${INSTANCE_ID}]`);
 });
 
 const wss = new WebSocketServer({ server });

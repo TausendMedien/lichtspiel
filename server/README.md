@@ -32,6 +32,31 @@ verified stable (multi-minute connection, keepalive pings arrive) — no
 additional nginx/proxy configuration should be required beyond the app being
 correctly registered as a Node.js app.
 
+## Single-instance requirement (important)
+
+Room state lives only in this process's memory — there is no shared/external
+store. **If Plesk runs more than one Node.js instance of this app** (a common
+default on load-balanced/scaling hosting plans), each instance has its own
+separate rooms, and a Display + Remote that land on different instances will
+see "room not found" even though the room genuinely exists on the other one —
+this can look exactly like random, intermittent connection flakiness.
+
+Check your Plesk Node.js app panel for an "instances" / "process count"
+setting and make sure it's fixed at **1**. If there's no such setting visible,
+your plan likely only ever runs one instance already.
+
+To verify directly without digging through Plesk's UI: every log line and the
+health-check response now include a short random instance id, generated fresh
+each time the process (re)starts:
+
+```sh
+curl https://relay.1000lights.de/   # → "lichtspiel relay [a1b2c3]"
+```
+
+Run that a handful of times in a row. If the id is always the same, you're on
+one instance. If it changes between requests, traffic is being spread across
+multiple processes and the instance count needs to be pinned to 1.
+
 The exact same `app.js` runs unchanged locally via Bun (`bun run remote-server`)
 for offline/LAN setups — only the `DEFAULT_RELAY_URL` the app points at (configurable
 in Options) differs.
