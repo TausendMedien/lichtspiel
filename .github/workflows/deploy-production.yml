@@ -10,6 +10,15 @@ on:
       confirm:
         description: 'Type "deploy" to confirm — this overwrites the live production site.'
         required: true
+      protocol:
+        description: 'FTP protocol — switch here to test without editing the workflow. If ftps fails with an ECONNRESET on the data socket, try ftp.'
+        required: true
+        default: 'ftp'
+        type: choice
+        options:
+          - ftp
+          - ftps
+          - ftps-legacy
 
 permissions:
   contents: read
@@ -37,3 +46,5 @@ jobs:
           password: ${{ secrets.PROD_FTP_PASSWORD }}
           local-dir: ./dist/
           server-dir: ${{ secrets.PROD_FTP_REMOTE_DIR }}
+          protocol: ${{ inputs.protocol }}
+          log-level: verbose
