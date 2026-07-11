@@ -15,6 +15,7 @@
   import type { PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
   import { onActivity } from "./lib/activity";
+  import { CHANGELOG, inlineMarkdownToHtml } from "./lib/changelog";
   import { createMIDIController } from "./lib/midi";
   import type { MIDIAction } from "./lib/midi";
   import { popUndo, setUndoing } from "./lib/undo";
@@ -265,6 +266,7 @@
   let blackout = $state(false);
   let overlayHidden = $state(false);
   let cheatsheetVisible = $state(false);
+  let changelogExpanded = $state(false);
   let optionsVisible    = $state(false);
   let demoVisible       = $state(false);
   let flickerGuardConfirmVisible = $state(false); // safety-warning before disabling the guard
@@ -2296,7 +2298,28 @@
         <a href="https://1000lights.de" target="_blank" rel="noopener noreferrer"
            class="text-white/90 underline hover:text-white transition-colors">1000lights.de</a>
       </p>
-      <p class="mb-4 font-mono text-[11px] text-white/40">{__VERSION__}</p>
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div
+        class="mb-4 flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-white/40 hover:text-white/70 transition-colors select-none"
+        onclick={() => { changelogExpanded = !changelogExpanded; }}
+      >
+        <span class="text-[9px] transition-transform duration-200 {changelogExpanded ? 'rotate-90' : ''}" style="display:inline-block">▶</span>
+        <span>{__VERSION__} &ndash; {changelogExpanded ? 'Hide changelog' : 'Show changelog'}</span>
+      </div>
+      {#if changelogExpanded}
+        <div class="mb-4 max-h-64 overflow-y-auto rounded-md border border-white/10 bg-white/[0.03] p-3">
+          <ul class="flex flex-col gap-3">
+            {#each CHANGELOG as entry}
+              <li class="text-xs leading-relaxed text-white/60">
+                <span class="font-mono text-white/80">{entry.version}</span>{#if entry.title}<span class="text-white/50">: {entry.title}</span>{/if}
+                {#each entry.paragraphs as para}
+                  <span class="block mt-0.5">{@html inlineMarkdownToHtml(para)}</span>
+                {/each}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
       <div class="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-white/50">Controls</div>
       <table class="w-full border-collapse">
         <thead>

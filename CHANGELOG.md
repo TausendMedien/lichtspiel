@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.260711-0515 — Remote Control
+
+**Display / Remote modes** — one device can now show the projection (**Display**) while another controls it live (**Remote**), paired over a WebSocket relay with a 4-character room code. Remote runs the full app — you see your own local preview and every change you make broadcasts to the Display in real time. New "Remote Control" section in Options to start either mode, plus `?mode=display` / `?mode=remote` URL parameters for kiosk setups.
+
+**What syncs** — every per-pattern slider/toggle/color, pattern selection, presets, palette and custom colours, Apply Colors / Color Shuffle / Brightness, Interaction strength, Camera and Audio reactivity (Motion, Heat, Beat, sensitivities), Evolving Range, Freeze and Speed, and Demo (Remote configures and starts/stops Demo — it runs on the Display only, so the two devices never fight over which pattern is next). Camera and microphone selection is by device *name* rather than raw device ID, since a Mac's camera list means nothing on an iPhone — Remote shows the Display's own device list and picks from that.
+
+**Display mode** — fullscreen, no menus; the room code and a live connection indicator appear on touch/pointer activity and fade again. Wake Lock keeps the screen from sleeping.
+
+**Relay server** (`server/app.js`) — a minimal, stateless Node/Bun WebSocket relay (`bun run remote-server` locally, or deployed standalone) with no server-side state beyond who's currently in a room.
+
 ## v0.6.0942-260623 — Heat Reactivity · Control Tooltips
 
 **Heat system** — a global motion-detection layer that turns the camera feed into a real-time heat map. A low-res motion buffer (320×180) tracks inter-frame pixel change and feeds an organic, blur-smoothed heat texture that influences particle attraction, shader warping, and camera shake across patterns.

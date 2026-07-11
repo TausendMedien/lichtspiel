@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // Bump this when releasing a significant new version
-const BASE_VERSION = "0.6";
+const BASE_VERSION = "0.7";
 
 const buildVersion = (() => {
   // Use the git commit timestamp so the version is fixed at commit time,
