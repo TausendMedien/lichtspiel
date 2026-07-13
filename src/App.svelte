@@ -265,6 +265,10 @@
   let sliderFocusIndex = $state(0);
   let blackout = $state(false);
   let overlayHidden = $state(false);
+  // Watchdog flag: the render loop's heartbeat (RendererHandle.getLastFrameAt) hasn't
+  // advanced in a while — an uncaught frame error or an unrecovered WebGL context loss
+  // silently killed rendering. Always shown regardless of HUD/demo/Display suppression.
+  let rendererStuck = $state(false);
   let cheatsheetVisible = $state(false);
   let changelogExpanded = $state(false);
   let optionsVisible    = $state(false);
@@ -882,8 +886,17 @@
   }
 
   async function crossFadeTo(n: number) {
-    // Capture current frame BEFORE switching so snapshot covers the transition
-    snapshotUrl = canvas.toDataURL();
+    // Capture current frame BEFORE switching so snapshot covers the transition.
+    // toDataURL() throws SecurityError if the canvas were ever tainted by a
+    // cross-origin texture without CORS — guarded so that failure degrades to a
+    // visible (but harmless) pop instead of aborting the transition entirely and
+    // silently breaking the demo's scheduleNext() chain.
+    try {
+      snapshotUrl = canvas.toDataURL();
+    } catch (err) {
+      console.error('[crossFadeTo] toDataURL failed — skipping snapshot cover', err);
+      snapshotUrl = null;
+    }
     snapshotFading = false;
     // Freeze the renderer immediately so the canvas stays on the captured frame
     // while decode() runs. On iPad/Safari, toDataURL() is slow (~30–80 ms) and
@@ -942,7 +955,7 @@
     hudVisible = false;
     if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
     demoVisible = false; // close the demo modal
-    fs.enter(document.documentElement); // go fullscreen when demo starts
+    fs.enter(document.documentElement).catch(() => {}); // go fullscreen when demo starts
     saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) clearTimeout(demoTimer);
 
@@ -1785,6 +1798,13 @@
     // Keep ctrlVals in sync every frame so motion-reactive sliders move live.
     let liveRaf: number;
     const liveSync = (now: number) => {
+      // Watchdog: the renderer's own RAF loop stopped ticking (uncaught frame error,
+      // or WebGL context loss that never fired webglcontextrestored). This loop is
+      // independent of that one, so it can still detect and surface the failure.
+      if (!rendererStuck && handle && now - handle.getLastFrameAt() > 4000) {
+        rendererStuck = true;
+      }
+
       gpController.poll(now);
 
       // Animate freeze / unfreeze (ease-in-out over 0.5 s)
@@ -4340,6 +4360,10 @@
     <p class="text-xs uppercase tracking-[0.35em] text-white/40">Display Mode</p>
     <p class="font-mono text-4xl tracking-[0.3em] text-white">{remoteRoomCode}</p>
     <p class="text-sm text-white/60">Tap to start</p>
+    <button
+      class="mt-4 cursor-pointer rounded-md border border-white/15 px-3 py-1 text-[11px] text-white/40 transition-colors hover:border-white/40 hover:text-white/70"
+      onclick={(e) => { e.stopPropagation(); exitDisplayMode(); }}
+    >Exit Display Mode</button>
   </div>
 {/if}
 
@@ -4454,5 +4478,18 @@
         {/if}
       </div>
     {/if}
+  </div>
+{/if}
+
+<!-- ─── Renderer watchdog: shown if the render loop stops ticking (uncaught frame
+     error, or WebGL context loss that never restores) — always visible, ignores
+     every other visibility/suppression state since this IS the error state. ─── -->
+{#if rendererStuck}
+  <div class="pointer-events-auto fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-black/90 px-6 text-center backdrop-blur-sm">
+    <p class="text-sm text-white/70">Rendering stopped unexpectedly.</p>
+    <button
+      class="cursor-pointer rounded-md border border-white/20 bg-white/[0.07] px-4 py-1.5 text-xs text-white/80 transition-colors hover:border-white/40 hover:bg-white/15"
+      onclick={() => location.reload()}
+    >Reload</button>
   </div>
 {/if}

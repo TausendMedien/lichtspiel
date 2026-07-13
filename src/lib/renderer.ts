@@ -16,6 +16,10 @@ export interface RendererHandle {
   getTimeScale: () => number;
   setFlickerGuard: (enabled: boolean) => void;
   getCanvas: () => HTMLCanvasElement;
+  /** Timestamp (performance.now()) of the last loop() invocation, whether or not that
+   *  frame's render succeeded — a watchdog can use staleness here to detect a dead
+   *  RAF loop (uncaught frame error, or WebGL context loss that never restores). */
+  getLastFrameAt: () => number;
   dispose: () => void;
 }
 
@@ -304,6 +308,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   let raf = 0;
   let last = performance.now();
   const start = last;
+  let lastFrameAt = last;
 
   // ── WebGL context loss/restore ────────────────────────────────────────────
   // Mobile GPUs (notably low/mid-end Android) drop the GL context under memory
@@ -351,6 +356,16 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
   function loop(now: number) {
+    lastFrameAt = now; // heartbeat — the loop is alive even if this frame's render throws below
+    try {
+      renderFrame(now);
+    } catch (err) {
+      console.error('[renderer] frame error — skipping this frame', err);
+    }
+    raf = requestAnimationFrame(loop);
+  }
+
+  function renderFrame(now: number) {
     const dt = (now - last) / 1000;
     const elapsed = (now - start) / 1000;
     last = now;
@@ -422,8 +437,6 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCamera);
     }
-
-    raf = requestAnimationFrame(loop);
   }
   raf = requestAnimationFrame(loop);
 
@@ -439,6 +452,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     getTimeScale() { return timeScale; },
     setFlickerGuard(enabled: boolean) { guardEnabled = enabled; },
     getCanvas() { return canvas; },
+    getLastFrameAt() { return lastFrameAt; },
     dispose() {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("webglcontextlost", onContextLost as EventListener);
