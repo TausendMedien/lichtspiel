@@ -30,6 +30,16 @@ export function triggerMotionCameraStart(patternId: string): void {
 let _motionCamera: MotionCamera | null = null;
 let _startId = 0;
 
+// Called on visibilitychange → visible (tab foregrounded, device woken from sleep).
+// Some browsers pause background video elements without ever firing the track's
+// 'ended' event, so a plain 'ended' listener misses this case — flag it here and let
+// each pattern's own update() tick (which already handles `.ended`) stop + restart it.
+export function recheckMotionCameraHealth(): void {
+  if (_motionCamera && (_motionCamera.video.paused || _motionCamera.video.readyState < 2)) {
+    _motionCamera.ended = true;
+  }
+}
+
 // Set true by the renderer around a pattern switch so dispose() doesn't tear
 // down the camera, and init() reuses the running stream instead of restarting.
 let _keepCameraAlive = false;
@@ -42,6 +52,10 @@ export function addMotionCamera(pattern: Pattern): Pattern {
   const detector = new SpatialPatchinessDetector();
   let canvasRef: HTMLCanvasElement | null = null;
   let overlay: HTMLDivElement | null = null;
+  // Tracks whether THIS wrapper actually overwrote colorC2.colorsV2 on the last tick,
+  // so stopCamera() only undoes what it drove — not a value the user set manually
+  // (directly, or via a preset) while colorsV2Enabled was off or the camera was idle.
+  let wasDrivingColors = false;
 
   let prevEnabled        = false;
   let prevDeviceId       = '';
@@ -172,10 +186,16 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     MotionCamera.createWithConstraints(canvasRef, constraints).then(async (cam) => {
       clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== _startId) { cam?.dispose(); return; }
-      overlay?.remove();
-      overlay = null;
-      _motionCamera = cam ?? null;
-      if (cam) await enumerateCameras();
+      if (cam) {
+        overlay?.remove();
+        overlay = null;
+        _motionCamera = cam;
+        await enumerateCameras();
+      } else if (canvasRef) {
+        // createWithConstraints already showed a plain denied message — replace it with
+        // one offering a retry, so a permission grant doesn't require a full page reload.
+        overlay = showMotionOverlay(canvasRef, "Camera access denied.\nAllow camera in browser settings, then retry.", () => startCamera());
+      }
     });
   }
 
@@ -198,8 +218,11 @@ export function addMotionCamera(pattern: Pattern): Pattern {
       effectiveVals[i] = baseVals[i];
       boostTargets[i].set(baseVals[i]);
     }
-    // Restore colorsV2 and speedMult to defaults when camera stops
-    colorC2.colorsV2 = 3.0;
+    // Only undo colorsV2 if THIS wrapper was the one driving it — otherwise a value
+    // the user set manually (or restored from a preset) while colorsV2Enabled was off
+    // gets silently clobbered back to 3.0 on every pattern switch / camera stop.
+    if (wasDrivingColors) colorC2.colorsV2 = 3.0;
+    wasDrivingColors = false;
     interactionState.speedMult = 1.0;
   }
 
@@ -224,8 +247,15 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         if (cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active && !_motionCamera) startCamera();
       });
       pattern.init(ctx);
-      // Only start a new camera if one isn't already running (kept alive from the previous pattern).
-      if (cameraState.enabled && prevPatternEnabled && !privacyMode.active && !_motionCamera) startCamera();
+      const shouldRunNow = cameraState.enabled && prevPatternEnabled && !privacyMode.active;
+      if (shouldRunNow && !_motionCamera) {
+        // Only start a new camera if one isn't already running (kept alive from the previous pattern).
+        startCamera();
+      } else if (!shouldRunNow && _motionCamera) {
+        // Inherited a running camera from the previous pattern (keepCameraAlive), but this
+        // pattern's own motion toggle is off — stop it instead of leaving a zombie stream.
+        stopCamera();
+      }
     },
 
     activate() {
@@ -237,6 +267,16 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     update(dt: number, elapsed: number) {
       // Hard kill: if Sensor Block is active, stop any live camera immediately
       if (privacyMode.active && _motionCamera) { stopCamera(); }
+
+      // Recovery: the track ended unexpectedly (device unplugged, OS revoked permission,
+      // sleep/wake). Stop the dead stream and restart immediately if this pattern still
+      // wants the camera — the enable-flag diffing below wouldn't catch this since none
+      // of cameraState's flags actually changed.
+      if (_motionCamera?.ended) {
+        stopCamera();
+        const wantsCamera = cameraState.enabled && (cameraState.patternMotionEnabled[pattern.id] ?? true) && !privacyMode.active;
+        if (wantsCamera) startCamera();
+      }
 
       // React to global enable/device changes and per-pattern toggle
       const nowEnabled        = cameraState.enabled;
@@ -317,6 +357,9 @@ export function addMotionCamera(pattern: Pattern): Pattern {
         const motionNorm = Math.pow(smoothedMotion, 0.4);
         const target     = 3 * (1 - motionNorm * gain * str);
         colorC2.colorsV2 = parseFloat(Math.max(0, Math.min(3, target)).toFixed(2));
+        wasDrivingColors = true;
+      } else {
+        wasDrivingColors = false;
       }
 
       // ── Tier 1: Publish direction and burst for patterns to use ──────────

@@ -24,41 +24,92 @@ let landmarker: PoseLandmarker | null = null;
 let video: HTMLVideoElement | null = null;
 let rafId = 0;
 let frameCounter = 0;
+// Bumped on every start/stop — an in-flight startPoseTracking() checks this after each
+// await and bails out (cleaning up its own resources) if a stop superseded it, so a slow
+// asset load or a rapid pattern switch can't resurrect tracking after stopPoseTracking().
+let startToken = 0;
+
+// Notified when tracking stops because the underlying stream died unexpectedly (device
+// unplugged, OS revoked permission, sleep/wake) rather than a normal stopPoseTracking()
+// call — lets the UI (poseActive/poseError) stay honest instead of showing "on" forever
+// with no frames arriving. The app decides whether/how to retry.
+let onInterrupted: (() => void) | null = null;
+export function setPoseInterruptedHandler(cb: (() => void) | null): void { onInterrupted = cb; }
+
+const LOAD_TIMEOUT_MS = 15000;
+
+// Races a load step against a timeout so a stalled asset fetch shows an error instead of
+// leaving poseLoading spinning forever. If the real promise resolves after the timeout
+// already rejected, `cleanup` disposes it so it doesn't leak a GPU-backed resource.
+function withTimeout<T>(p: Promise<T>, label: string, cleanup?: (v: T) => void): Promise<T> {
+  let timedOut = false;
+  const timeout = new Promise<T>((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`${label} timed out — check your connection and reload.`));
+    }, LOAD_TIMEOUT_MS);
+  });
+  if (cleanup) p.then((v) => { if (timedOut) cleanup(v); }).catch(() => {});
+  return Promise.race([p, timeout]);
+}
 
 export async function startPoseTracking(deviceId?: string): Promise<void> {
   if (poseState.active) return;
+  const myToken = ++startToken;
 
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
+  // Served from our own origin (public/mediapipe/) rather than jsdelivr.net /
+  // storage.googleapis.com — a live show shouldn't depend on a third-party CDN
+  // being reachable (venue wifi/firewalls, CDN outages) on top of our own.
+  const base = import.meta.env.BASE_URL;
+  const vision = await withTimeout(
+    FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`),
+    "Loading pose engine",
   );
-  landmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-      delegate: "GPU",
-    },
-    runningMode: "VIDEO",
-    numPoses: 5,
-    minPoseDetectionConfidence: 0.5,
-    minPosePresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5,
-  });
+  if (myToken !== startToken) return; // superseded while loading vision tasks
+
+  const lm = await withTimeout(
+    PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: `${base}mediapipe/pose_landmarker_lite.task`,
+        delegate: "GPU",
+      },
+      runningMode: "VIDEO",
+      numPoses: 5,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    }),
+    "Loading pose model",
+    (v) => v.close(),
+  );
+  if (myToken !== startToken) { lm.close(); return; } // superseded while loading the model
+  landmarker = lm;
 
   const vw = poseSettings.lowRes ? 320 : 640;
   const vh = poseSettings.lowRes ? 240 : 480;
 
-  video = document.createElement("video");
-  video.width = vw;
-  video.height = vh;
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = true;
+  const v = document.createElement("video");
+  v.width = vw;
+  v.height = vh;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.muted = true;
 
   const stream = await guardedGetUserMedia({
     video: deviceId
       ? { deviceId: { exact: deviceId }, width: vw, height: vh }
       : { width: vw, height: vh, facingMode: "user" },
   });
+  if (myToken !== startToken) { stream.getTracks().forEach(t => t.stop()); lm.close(); landmarker = null; return; }
+  // Recovery: device unplugged, OS revoked permission, or the track otherwise dies
+  // mid-session (sleep/wake). Without this, poseState.active/UI stays stuck showing
+  // "on" while no frames ever arrive again.
+  stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => {
+    if (myToken !== startToken || !poseState.active) return; // already superseded/stopped normally
+    stopPoseTracking();
+    onInterrupted?.();
+  }));
+  video = v;
   video.srcObject = stream;
   // autoplay is unreliable on iOS Safari for off-DOM video elements — call
   // play() explicitly so the video actually starts before we wait for frames.
@@ -67,6 +118,16 @@ export async function startPoseTracking(deviceId?: string): Promise<void> {
     if (video!.readyState >= 2) { resolve(); return; }
     video!.onloadeddata = () => resolve();
   });
+  if (myToken !== startToken) {
+    // Stopped while waiting for the first video frame — tear down what we opened
+    // instead of flipping active/starting the detect loop.
+    stream.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+    video = null;
+    lm.close();
+    landmarker = null;
+    return;
+  }
 
   poseState.active = true;
 
@@ -144,6 +205,7 @@ export async function startPoseTracking(deviceId?: string): Promise<void> {
 }
 
 export function stopPoseTracking(): void {
+  ++startToken; // invalidate any in-flight startPoseTracking()
   poseState.active = false;
   cancelAnimationFrame(rafId);
   frameCounter = 0;
@@ -155,4 +217,14 @@ export function stopPoseTracking(): void {
   video = null;
   landmarker?.close();
   landmarker = null;
+}
+
+// Called on visibilitychange → visible (tab foregrounded, device woken from sleep).
+// Some browsers pause background video elements without ever firing the track's 'ended'
+// event, so the plain 'ended' listener in startPoseTracking() misses this case.
+export function recheckPoseHealth(): void {
+  if (poseState.active && video && (video.paused || video.readyState < 2)) {
+    stopPoseTracking();
+    onInterrupted?.();
+  }
 }

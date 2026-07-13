@@ -7,15 +7,34 @@ const H = 90;
 const GRID_COLS = 8;
 const GRID_ROWS = 5;
 
-export function showMotionOverlay(canvas: HTMLCanvasElement, message: string): HTMLDivElement {
+const MOTION_OVERLAY_CLASS = "motion-camera-overlay";
+
+// Some call sites (notably MotionCamera.createWithConstraints' catch below) don't hold
+// onto the returned element to remove it later — always clearing prior overlays here,
+// scoped by class, prevents them stacking up (e.g. repeated "Camera access denied").
+// An optional onRetry makes the overlay interactive (e.g. after a permission denial,
+// so the operator doesn't have to reload the whole app to try again).
+export function showMotionOverlay(canvas: HTMLCanvasElement, message: string, onRetry?: () => void): HTMLDivElement {
+  const parent = canvas.parentElement;
+  parent?.querySelectorAll(`.${MOTION_OVERLAY_CLASS}`).forEach((el) => el.remove());
   const div = document.createElement("div");
+  div.className = MOTION_OVERLAY_CLASS;
   div.style.cssText = [
-    "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;",
+    "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;",
     "color:#fff;font-family:sans-serif;font-size:16px;text-align:center;",
-    "pointer-events:none;white-space:pre-line;padding:24px;background:rgba(0,0,0,0.55);",
+    `pointer-events:${onRetry ? "auto" : "none"};white-space:pre-line;padding:24px;background:rgba(0,0,0,0.55);`,
   ].join("");
-  div.textContent = message;
-  canvas.parentElement?.appendChild(div);
+  const msg = document.createElement("div");
+  msg.textContent = message;
+  div.appendChild(msg);
+  if (onRetry) {
+    const btn = document.createElement("button");
+    btn.textContent = "↻ Retry";
+    btn.style.cssText = "pointer-events:auto;cursor:pointer;padding:6px 16px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.08);color:#fff;font-size:13px;font-family:sans-serif;";
+    btn.onclick = onRetry;
+    div.appendChild(btn);
+  }
+  parent?.appendChild(div);
   return div;
 }
 
@@ -29,6 +48,10 @@ export class MotionCamera {
   private prevLuma: Float32Array | null = null;
   private lastVideoTime = -1;
   private warmupFrames = 2;
+  /** Set when the underlying track ends unexpectedly (device unplugged, OS revoked
+   *  permission, sleep/wake) — as opposed to a normal, caller-initiated dispose(). Callers
+   *  should poll this and treat it like a dead stream (stop + restart if still wanted). */
+  ended = false;
 
   private constructor(video: HTMLVideoElement, stream: MediaStream) {
     this.video = video;
@@ -37,6 +60,7 @@ export class MotionCamera {
     this.offCanvas.width = W;
     this.offCanvas.height = H;
     this.offCtx = this.offCanvas.getContext("2d", { willReadFrequently: true })!;
+    stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => { this.ended = true; }));
   }
 
   static async create(

@@ -43,6 +43,10 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm}"],
+        // Pose's MediaPipe runtime (WASM + model, ~28 MB) is bundled locally for offline/CDN-
+        // outage reliability (see pose.ts), but Pose is an opt-in experimental feature — don't
+        // force every PWA install to download it upfront. It's fetched on demand instead.
+        globIgnores: ["mediapipe/**"],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
       manifest: false,

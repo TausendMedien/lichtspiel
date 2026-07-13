@@ -284,17 +284,26 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   }
 
   function setPattern(next: Pattern) {
-    keepCameraAlive(true);
+    // Only skip the motion camera's teardown if the incoming pattern will actually
+    // reuse it (avoids a black-screen restart between two camera-reactive patterns).
+    // If the incoming pattern doesn't use the motion wrapper (e.g. Light Painting,
+    // ASCII Swirls), let dispose() stop the outgoing pattern's camera normally —
+    // otherwise it leaks as an unmanaged stream nobody ticks or stops.
+    const reuseCamera = !!next.motionReactive;
+    if (reuseCamera) keepCameraAlive(true);
     current.dispose();
     clearScene();
     current = next;
     current.init(ctx);
-    keepCameraAlive(false);
+    if (reuseCamera) keepCameraAlive(false);
     current.resize(size.width, size.height);
   }
 
   current.init(ctx);
-  current.activate?.();
+  // Do NOT call current.activate?.() here — the initial pattern loads into the
+  // overview grid (preview only). Real activation happens explicitly via
+  // activateCurrentPattern() when the user picks a pattern, so a camera-driven
+  // pattern (e.g. Hyper Mix Heat, patterns[0]) doesn't grab the camera on app load.
 
   const ro = new ResizeObserver((entries) => {
     const rect = entries[0].contentRect;

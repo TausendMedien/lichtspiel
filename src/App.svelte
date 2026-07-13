@@ -7,12 +7,12 @@
   import { takeScreenshot } from "./lib/screenshot";
   import { createRecorder, type RecorderHandle } from "./lib/recording";
   import { attachTouch } from "./lib/touch";
-  import { patterns } from "./lib/patterns";
+  import { patterns, LIGHT_IDS } from "./lib/patterns";
   import * as fs from "./lib/fullscreen";
   import { createWakeLock } from "./lib/wakelock";
   import { loadSettings, saveSettings, loadDemoSettings, saveDemoSettings } from "./lib/settings";
   import type { DemoStartBehavior } from "./lib/settings";
-  import type { PatternControl } from "./lib/patterns/types";
+  import type { Pattern, PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
   import { onActivity } from "./lib/activity";
   import { CHANGELOG, inlineMarkdownToHtml } from "./lib/changelog";
@@ -24,9 +24,9 @@
   import type { Snapshot } from "./lib/presets";
   import { evolving, saveEvolving, evoDurationMs, getEvo, saveEvo, evoFactory, type EvoConfig, type EvoCtrl } from "./lib/evolving.svelte";
   import { listDemoConfigs, saveDemoConfig, deleteDemoConfig, type DemoConfig } from "./lib/demo-configs";
-  import { poseState, poseSettings, startPoseTracking, stopPoseTracking } from "./lib/pose";
+  import { poseState, poseSettings, startPoseTracking, stopPoseTracking, setPoseInterruptedHandler, recheckPoseHealth } from "./lib/pose";
   import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
-  import { triggerMotionCameraStart } from "./lib/motionCameraWrapper";
+  import { triggerMotionCameraStart, recheckMotionCameraHealth } from "./lib/motionCameraWrapper";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
   import { killAllStreams } from "./lib/sensorGuard";
@@ -50,10 +50,55 @@
     'img-twoFeather', 'img-rootWave', 'img-purpleOrnate', 'img-flowingDots',
   ]);
 
+  // One-time welcome hint on the pattern grid — the very first thing a first-time
+  // visitor sees, before they've picked anything (U4).
+  const FIRST_RUN_KEY = 'pp:firstRunSeen';
+  let showFirstRunHint = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(FIRST_RUN_KEY) !== 'true' : false);
+  function dismissFirstRunHint() {
+    if (!showFirstRunHint) return;
+    showFirstRunHint = false;
+    try { localStorage.setItem(FIRST_RUN_KEY, 'true'); } catch {}
+  }
+
+  // One-time context banner shown just before the FIRST camera/mic-driven pattern of the
+  // session is activated — a bare permission prompt with no explanation reads as
+  // suspicious to a first-time visitor (U1).
+  const CAMERA_CONTEXT_KEY = 'pp:cameraContextSeen';
+  let cameraContextSeen = typeof localStorage !== 'undefined' ? localStorage.getItem(CAMERA_CONTEXT_KEY) === 'true' : false;
+  let cameraContextToast = $state(false);
+  let cameraContextTimer: ReturnType<typeof setTimeout> | null = null;
+  function patternUsesSensor(p: Pattern): boolean {
+    return !!(p.motionReactive || p.heatReactive || p.audioReactive || p.usesPose || p.usesCameraBlend || p.requiresCamera);
+  }
+  function maybeShowCameraContext(p: Pattern) {
+    if (cameraContextSeen || !patternUsesSensor(p)) return;
+    cameraContextSeen = true;
+    try { localStorage.setItem(CAMERA_CONTEXT_KEY, 'true'); } catch {}
+    cameraContextToast = true;
+    if (cameraContextTimer) clearTimeout(cameraContextTimer);
+    cameraContextTimer = setTimeout(() => { cameraContextToast = false; }, 6000);
+  }
+
   // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
   const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette']);
   const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
   let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
+
+  // Pattern-grid category dividers — computed per visible item so the label survives
+  // filtering (a category's first pattern may be filtered out while later ones remain).
+  const LIGHT_ID_SET = new Set(LIGHT_IDS);
+  type PatternCategory = 'live' | 'static' | 'experimental' | null;
+  function categoryOf(id: string): PatternCategory {
+    if (LIGHT_ID_SET.has(id)) return 'live';
+    if (id.startsWith('img-')) return 'static';
+    if (EXPERIMENTAL_IDS.has(id)) return 'experimental';
+    return null;
+  }
+  const CATEGORY_LABELS: Record<Exclude<PatternCategory, null>, string> = {
+    live: 'Live Light Painting',
+    static: 'Static Images',
+    experimental: 'Experimental',
+  };
 
   // Pose tracking is experimental — all pose UI (filter, badges, controls, T key)
   // stays hidden unless enabled via Options → Developer → "Show Pose features".
@@ -253,6 +298,20 @@
     { id: 'audio',     label: '♪ Audio',     tip: 'Reacts to microphone audio' },
     { id: 'pose',      label: '⬡ Pose',      tip: 'Reacts to body pose tracking (experimental)' },
   ];
+  // Filter tooltips (title=) only work on hover — on touch, show the same explanation
+  // as a dismissable caption the first few times a filter is picked (U3).
+  let filterCaption = $state<string | null>(null);
+  let filterCaptionTimer: ReturnType<typeof setTimeout> | null = null;
+  function selectPatternFilter(f: { id: PatternFilter; tip: string }) {
+    patternFilter = f.id;
+    if (filterCaptionTimer) { clearTimeout(filterCaptionTimer); filterCaptionTimer = null; }
+    if (isTouch && f.id !== 'all') {
+      filterCaption = f.tip;
+      filterCaptionTimer = setTimeout(() => { filterCaption = null; }, 4000);
+    } else {
+      filterCaption = null;
+    }
+  }
   let presetSlots = $state<(Snapshot | null)[]>([null, null, null]);
   let copiedLink = $state(false);
   let slotPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -660,6 +719,7 @@
     syncCtrlVals();
     const pat = patterns[index];
     if (pat) {
+      if (appState === 'active') maybeShowCameraContext(pat);
       collapsedSections = _perPatternCollapsed.has(pat.id)
         ? new Set(_perPatternCollapsed.get(pat.id))
         : new Set(pat.defaultCollapsedSections ?? []);
@@ -855,6 +915,7 @@
   }
 
   function activatePattern(n: number) {
+    dismissFirstRunHint();
     index = switchTo(n);
     focusedIndex = index;
     handle?.activateCurrentPattern();
@@ -1816,6 +1877,15 @@
     enumerateCameras();
     enumerateMicrophones();
 
+    // Recovery: pose.ts notifies us if tracking stopped because the stream died
+    // unexpectedly (device unplugged, OS revoked permission, sleep/wake) rather than
+    // via our own stopPoseTracking() call — keep the UI honest instead of showing
+    // "on" forever with no frames arriving.
+    setPoseInterruptedHandler(() => {
+      poseActive = false;
+      poseError = 'Camera disconnected — toggle Pose to retry';
+    });
+
 
 
     // Keep ctrlVals in sync every frame so motion-reactive sliders move live.
@@ -1996,7 +2066,14 @@
     // Keep the blob fresh so it never lags behind pp: keys
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") { saveSettings(patterns); }
-      else if (demoActive || isFullscreenState || remoteMode === 'display') { wl.acquire(); } // re-acquire after OS released it
+      else {
+        if (demoActive || isFullscreenState || remoteMode === 'display') { wl.acquire(); } // re-acquire after OS released it
+        // Coming back from background/sleep — some browsers pause camera video elements
+        // without ever firing the track's 'ended' event, leaving the UI stuck showing
+        // sensors as "on" with no frames arriving. Recheck and recover if needed.
+        recheckMotionCameraHealth();
+        recheckPoseHealth();
+      }
     });
     // Re-hydrate controls when Arc (or any browser) restores the page from bfcache
     window.addEventListener("pageshow", (e) => {
@@ -2020,6 +2097,7 @@
       stopMidi();
       detach();
       detachTouch();
+      setPoseInterruptedHandler(null);
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       document.removeEventListener('pointerdown', onPointerDownFocus, { capture: true });
@@ -2040,6 +2118,17 @@
     };
   });
 </script>
+
+<!-- Shared HUD button style — used by both the pattern-menu header and the main-screen
+     HUD so their action buttons share one visual system (icon + word, optional shortcut
+     suffix on non-touch, consistent active/toggle styling). -->
+{#snippet hudButton(label, tip, active, onclick)}
+  <button
+    class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors active:bg-white/20 {active ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'}"
+    {onclick}
+    title={tip}
+  >{label}</button>
+{/snippet}
 
 <canvas bind:this={debugCanvas} class="pointer-events-none fixed inset-0 z-30 w-full h-full"></canvas>
 
@@ -2126,22 +2215,34 @@
       <p class="text-[10px] tracking-widest text-white/30">by <a href="https://1000lights.de" target="_blank" rel="noopener noreferrer" class="hover:text-white/60 transition-colors">1000lights</a></p>
       <div class="mt-3 flex justify-center gap-2 flex-wrap">
         {#if !isIosBrowser && !isIosStandalone}
-          <button
-            class="rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
-            onclick={() => { fs.enter(document.documentElement); }}
-          >{isFullscreenState ? "Exit ⛶" : "⛶ Fullscreen"}</button>
+          {@render hudButton(
+            isFullscreenState ? "Exit ⛶" : (isTouch ? "⛶ Fullscreen" : "⛶ Fullscreen (F)"),
+            "Toggle fullscreen (F)",
+            false,
+            () => { fs.enter(document.documentElement); },
+          )}
         {/if}
-        <button
-          class="rounded-md border px-3 py-1.5 text-xs transition-colors cursor-pointer {demoActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/60 hover:border-white/40 hover:bg-white/15'}"
-          onclick={() => { demoVisible = true; }}
-        >{demoActive ? "● Demo" : "Demo"}</button>
-        <button
-          class="rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
-          onclick={() => { optionsVisible = true; }}
-        >⚙ Options</button>
+        {@render hudButton(
+          demoActive ? "● Demo" + (isTouch ? "" : " (D)") : "Demo" + (isTouch ? "" : " (D)"),
+          "Demo / kiosk mode (D)",
+          demoActive,
+          () => { demoVisible = true; },
+        )}
+        {@render hudButton(
+          "⚙ Options" + (isTouch ? "" : " (O)"),
+          "Options (O)",
+          false,
+          () => { optionsVisible = true; },
+        )}
+        {@render hudButton(
+          "? About" + (isTouch ? "" : " (M)"),
+          "About / Controls (M)",
+          false,
+          () => { cheatsheetVisible = true; },
+        )}
         <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
         <div
-          class="rounded-md border px-3 py-1.5 text-xs cursor-pointer select-none transition-all duration-200
+          class="rounded-full border px-3 py-1.5 text-xs cursor-pointer select-none transition-all duration-200
                  {privacyMode.active ? 'border-purple-500/50 bg-purple-900/50 text-purple-300' : 'border-white/15 bg-white/[0.07] text-white/60 hover:border-white/40 hover:bg-white/15'}"
           title="Sensor Block — overrides all camera and audio inputs globally."
           onclick={() => {
@@ -2177,24 +2278,46 @@
             }
           }}
         >⊘ Sensor Block</div>
-        <button
-          class="rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/60 transition-colors cursor-pointer hover:border-white/40 hover:bg-white/15"
-          onclick={() => { cheatsheetVisible = true; }}
-        >?</button>
       </div>
     </div>
 
+    {#if showFirstRunHint}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div
+        class="mb-3 flex max-w-md items-start gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2.5 text-xs leading-relaxed text-white/70"
+        onclick={(e) => e.stopPropagation()}
+        transition:fade={{ duration: 200 }}
+      >
+        <span class="flex-1">
+          {#if isTouch}
+            Tap a pattern to start. Patterns can react to camera motion, sound or light — see <span class="text-white/90">? About</span> for details.
+          {:else}
+            Click a pattern to start, or press <kbd class="rounded bg-white/10 px-1 font-mono">1</kbd>–<kbd class="rounded bg-white/10 px-1 font-mono">9</kbd>. Patterns can react to camera motion, sound or light — press <kbd class="rounded bg-white/10 px-1 font-mono">M</kbd> for details.
+          {/if}
+        </span>
+        <button
+          class="shrink-0 cursor-pointer text-white/40 transition-colors hover:text-white/80"
+          onclick={dismissFirstRunHint}
+        >✕</button>
+      </div>
+    {/if}
+
     <!-- Filter bar -->
-    <div class="flex gap-1.5 px-3 pb-3 flex-wrap justify-center">
+    <div class="flex gap-1.5 px-3 pb-1.5 flex-wrap justify-center">
       {#each PATTERN_FILTERS.filter(f => f.id !== 'pose' || showPoseFeatures) as f}
         <button
           title={f.tip}
           class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
             {patternFilter === f.id ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-          onclick={() => { patternFilter = f.id; }}
+          onclick={() => selectPatternFilter(f)}
         >{f.label}{#if f.id === 'pose'}&nbsp;<span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>{/if}</button>
       {/each}
     </div>
+    {#if filterCaption}
+      <div class="px-3 pb-3 text-center text-[11px] text-white/40" transition:fade={{ duration: 150 }}>{filterCaption}</div>
+    {:else}
+      <div class="pb-3"></div>
+    {/if}
 
     <div class="grid grid-cols-3 gap-2 px-3 w-full max-w-lg pb-4">
       {#if displayPatterns.length === 0}
@@ -2202,43 +2325,33 @@
           {#if patternFilter === 'favorites'}No favorites yet — star a pattern to add it here{:else}No patterns match this filter{/if}
         </div>
       {:else}
-        {#each displayPatterns as { p, i }}
-          {#if p.id === 'lightPaint' && patternFilter === 'all'}
+        {#each displayPatterns as { p, i }, idx}
+          {@const cat = categoryOf(p.id)}
+          {@const prevCat = idx > 0 ? categoryOf(displayPatterns[idx - 1].p.id) : null}
+          {#if cat && cat !== prevCat}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
-              <div class="h-px flex-1 bg-white/20"></div>
-            </div>
-          {/if}
-          {#if p.id === 'img-tealLines' && patternFilter === 'all'}
-            <div class="col-span-3 mt-2 flex items-center gap-2">
-              <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Static Images</span>
-              <div class="h-px flex-1 bg-white/20"></div>
-            </div>
-          {/if}
-          {#if p.id === 'particlesPalette' && patternFilter === 'all'}
-            <div class="col-span-3 mt-2 flex items-center gap-2">
-              <div class="h-px flex-1 bg-white/20"></div>
-              <span class="text-[10px] uppercase tracking-widest text-white/40">Experimental</span>
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div
-                class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {experimentalEnabled ? 'bg-white/60' : 'bg-white/20'}"
-                onclick={() => {
-                  experimentalEnabled = !experimentalEnabled;
-                  localStorage.setItem(EXPERIMENTAL_KEY, String(experimentalEnabled));
-                  if (!experimentalEnabled) {
-                    const next = new Set(demoPatternIds);
-                    EXPERIMENTAL_IDS.forEach(id => next.delete(id));
-                    applyDemoPatternIds(next);
-                  }
-                }}
-                role="switch"
-                aria-checked={experimentalEnabled}
-                tabindex="0"
-              >
-                <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {experimentalEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-              </div>
+              <span class="text-[10px] uppercase tracking-widest text-white/40">{CATEGORY_LABELS[cat]}</span>
+              {#if cat === 'experimental'}
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <div
+                  class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {experimentalEnabled ? 'bg-white/60' : 'bg-white/20'}"
+                  onclick={() => {
+                    experimentalEnabled = !experimentalEnabled;
+                    localStorage.setItem(EXPERIMENTAL_KEY, String(experimentalEnabled));
+                    if (!experimentalEnabled) {
+                      const next = new Set(demoPatternIds);
+                      EXPERIMENTAL_IDS.forEach(id => next.delete(id));
+                      applyDemoPatternIds(next);
+                    }
+                  }}
+                  role="switch"
+                  aria-checked={experimentalEnabled}
+                  tabindex="0"
+                >
+                  <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {experimentalEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+                </div>
+              {/if}
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
@@ -2290,6 +2403,19 @@
   <div class="pointer-events-none fixed inset-0 z-50 bg-white/25 transition-opacity duration-500"></div>
 {/if}
 
+<!-- ─── Camera/mic context banner (first sensor use of the session, U1) ────── -->
+{#if cameraContextToast && remoteMode !== 'display'}
+  <div class="pointer-events-none fixed top-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4" transition:fade={{ duration: 200 }}>
+    <div class="pointer-events-auto flex items-start gap-2 rounded-lg border border-white/15 bg-black/85 px-3.5 py-2.5 text-xs leading-relaxed text-white/80 shadow-lg backdrop-blur-sm">
+      <span class="flex-1">This pattern reacts to your camera/mic — processed locally on this device only, nothing is uploaded.</span>
+      <button
+        class="shrink-0 cursor-pointer text-white/40 transition-colors hover:text-white/80"
+        onclick={() => { cameraContextToast = false; if (cameraContextTimer) clearTimeout(cameraContextTimer); }}
+      >✕</button>
+    </div>
+  </div>
+{/if}
+
 
 <!-- ─── Pose loading overlay ────────────────────────────────────────────── -->
 {#if poseLoading}
@@ -2334,11 +2460,31 @@
         <a href="https://1000lights.de" target="_blank" rel="noopener noreferrer"
            class="text-white/90 underline hover:text-white transition-colors">1000lights.de</a>
       </p>
-      <p class="mb-1 text-sm text-white/70 leading-relaxed">
+      <p class="mb-4 text-sm text-white/70 leading-relaxed">
         Software architecture of the initial version by
         <a href="https://github.com/olgen" target="_blank" rel="noopener noreferrer"
            class="text-white/90 underline hover:text-white transition-colors">@olgen</a>
       </p>
+
+      <div class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/50">Interaction types</div>
+      <div class="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs leading-relaxed text-white/60">
+        <div><span class="text-white/85">≋ Move</span> — reacts to camera motion in front of the lens.</div>
+        <div><span class="text-white/85">♨ Heat</span> — driven by a slower, blurred map of recent motion.</div>
+        <div><span class="text-white/85">♪ Audio</span> — reacts to microphone volume and beat.</div>
+        <div><span class="text-white/85">⬡ Pose</span> — full-body tracking (experimental, opt-in in Options → Developer).</div>
+      </div>
+      <p class="mb-4 text-xs leading-relaxed text-white/45">
+        Camera and microphone are processed entirely on this device — nothing is uploaded or leaves the browser. A camera permission prompt only appears when you open a pattern that uses it; use the <span class="text-white/70">⊘ Sensor Block</span> button (top left, once a pattern is active) to instantly cut all camera/mic access.
+      </p>
+
+      <div class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/50">Symbols</div>
+      <div class="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs leading-relaxed text-white/60">
+        <div><span class="text-white/85">★ / ☆</span> — favorite a pattern, for the Favorites filter and Demo mode.</div>
+        <div><span class="text-white/85">⊘ Sensor Block</span> — global camera + microphone kill switch.</div>
+        <div><span class="text-cyan-300">~</span> <span class="text-white/85">Evolving Ranges</span> — sliders drift slowly on their own.</div>
+        <div><span class="text-white/85">exp.</span> — experimental: may be unreliable or change.</div>
+      </div>
+
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
         class="mb-4 flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-white/40 hover:text-white/70 transition-colors select-none"
@@ -3115,7 +3261,7 @@
           >Heat</button>
         </div>
         {#if poseError}
-          <div class="mt-1.5 text-[11px] text-red-400/80">{poseError}</div>
+          <div class="mt-1.5 text-[11px] text-red-400/80">{poseError} — tap Pose to retry</div>
         {/if}
 
         <!-- Device pickers — camera is always available (Light Painting/ASCII patterns
@@ -4036,7 +4182,7 @@
                 {#if poseLoading}
                   <div class="text-xs text-white/40">⟳ Loading pose model…</div>
                 {:else if poseError}
-                  <div class="text-xs text-red-400/80">{poseError}</div>
+                  <div class="text-xs text-red-400/80">{poseError} — toggle Pose to retry</div>
                 {:else if poseActive && posePersonCount > 0}
                   <div class="text-xs text-green-400/70">◉ {posePersonCount} person{posePersonCount > 1 ? 's' : ''} detected</div>
                 {/if}
@@ -4318,31 +4464,31 @@
               Tap <span class="text-white/60">Share ↑</span> → Add to Home Screen for fullscreen
             </div>
           {:else if !isIosStandalone}
-            <button
-              class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
-              onclick={() => { fs.enter(document.documentElement); }}
-              title="Toggle fullscreen (F)"
-            >
-              {isFullscreenState ? "Exit ⛶" : "⛶ Fullscreen (F)"}
-            </button>
+            {@render hudButton(
+              isFullscreenState ? "Exit ⛶" : (isTouch ? "⛶ Fullscreen" : "⛶ Fullscreen (F)"),
+              "Toggle fullscreen (F)",
+              false,
+              () => { fs.enter(document.documentElement); },
+            )}
           {/if}
-          <button
-            class="pointer-events-auto rounded-md border px-3 py-1.5 text-xs transition-colors {demoActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 bg-white/[0.07] text-white/70 hover:border-white/40 hover:bg-white/15'} active:bg-white/20"
-            onclick={() => { demoActive ? stopDemo() : demoVisible = true; }}
-            title="Demo / kiosk mode (D)"
-          >
-            {demoActive ? "● Demo (D)" : "Demo (D)"}
-          </button>
-          <button
-            class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
-            onclick={() => { optionsVisible = true; }}
-            title="Options (O)"
-          >⚙ Options (O)</button>
-          <button
-            class="pointer-events-auto rounded-md border border-white/15 bg-white/[0.07] px-3 py-1.5 text-xs text-white/70 transition-colors hover:border-white/40 hover:bg-white/15 active:bg-white/20"
-            onclick={() => { cheatsheetVisible = true; }}
-            title="About / Controls (M)"
-          >? About (M)</button>
+          {@render hudButton(
+            (demoActive ? "● Demo" : "Demo") + (isTouch ? "" : " (D)"),
+            "Demo / kiosk mode (D)",
+            demoActive,
+            () => { demoActive ? stopDemo() : demoVisible = true; },
+          )}
+          {@render hudButton(
+            "⚙ Options" + (isTouch ? "" : " (O)"),
+            "Options (O)",
+            false,
+            () => { optionsVisible = true; },
+          )}
+          {@render hudButton(
+            "? About" + (isTouch ? "" : " (M)"),
+            "About / Controls (M)",
+            false,
+            () => { cheatsheetVisible = true; },
+          )}
         </div>
       </div>
       <div class="mt-3 flex gap-1.5">
