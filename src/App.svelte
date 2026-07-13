@@ -55,6 +55,11 @@
   const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
   let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
 
+  // Pose tracking is experimental — all pose UI (filter, badges, controls, T key)
+  // stays hidden unless enabled via Options → Developer → "Show Pose features".
+  const POSE_FEATURES_KEY = 'pp:showPoseFeatures';
+  let showPoseFeatures = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(POSE_FEATURES_KEY) === 'true' : false);
+
   // ── Per-pattern colour state ───────────────────────────────────────────────
   const PCOLOR_KEY = 'pp:pcolor:';
 
@@ -236,8 +241,18 @@
   let midiEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(MIDI_ENABLED_KEY) === 'true' : false);
   let midiConnected = $state(false);
   let favorites = $state(new Set<string>());
-  let showFavoritesOnly = $state(false);
-  let showPoseOnly = $state(false);
+  type PatternFilter = 'all' | 'favorites' | 'move' | 'heat' | 'audio' | 'pose';
+  let patternFilter = $state<PatternFilter>('all');
+  // Filter chips for the pattern overview — move/heat/audio/pose map onto the
+  // reactivity metadata set on each Pattern (motionReactive, heatReactive, …).
+  const PATTERN_FILTERS: { id: PatternFilter; label: string; tip: string }[] = [
+    { id: 'all',       label: 'All',         tip: 'All patterns' },
+    { id: 'favorites', label: '★ Favorites', tip: 'Starred patterns' },
+    { id: 'move',      label: '≋ Move',      tip: 'Reacts to camera motion' },
+    { id: 'heat',      label: '♨ Heat',      tip: 'Reacts to the camera heat map' },
+    { id: 'audio',     label: '♪ Audio',     tip: 'Reacts to microphone audio' },
+    { id: 'pose',      label: '⬡ Pose',      tip: 'Reacts to body pose tracking (experimental)' },
+  ];
   let presetSlots = $state<(Snapshot | null)[]>([null, null, null]);
   let copiedLink = $state(false);
   let slotPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -608,8 +623,16 @@
 
   const displayPatterns = $derived(
     patterns.map((p, i) => ({ p, i }))
-      .filter(({ p }) => !showFavoritesOnly || favorites.has(p.id))
-      .filter(({ p }) => !showPoseOnly || p.usesPose)
+      .filter(({ p }) => {
+        switch (patternFilter) {
+          case 'favorites': return favorites.has(p.id);
+          case 'move':      return !!p.motionReactive;
+          case 'heat':      return !!p.heatReactive;
+          case 'audio':     return !!p.audioReactive;
+          case 'pose':      return !!p.usesPose;
+          default:          return true;
+        }
+      })
   );
 
   // Reactive mirror of current pattern's control values so the display
@@ -993,7 +1016,7 @@
     if (demoVisible && action.type !== 'demo') { demoVisible = false; return; }
 
     // Global regardless of state
-    if (action.type === "togglePose") { togglePoseTracking(); return; }
+    if (action.type === "togglePose") { if (showPoseFeatures) togglePoseTracking(); return; }
 
     // Overview: navigation + activate only; all other actions suppressed
     if (appState === "overview") {
@@ -2163,45 +2186,38 @@
 
     <!-- Filter bar -->
     <div class="flex gap-1.5 px-3 pb-3 flex-wrap justify-center">
-      <button
-        class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
-          {!showFavoritesOnly && !showPoseOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-        onclick={() => { showFavoritesOnly = false; showPoseOnly = false; }}
-      >All</button>
-      <button
-        class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
-          {showFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-        onclick={() => { showFavoritesOnly = true; showPoseOnly = false; }}
-      >★ Favorites</button>
-      <button
-        class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
-          {showPoseOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-        onclick={() => { showPoseOnly = true; showFavoritesOnly = false; }}
-      >⬡ Pose</button>
+      {#each PATTERN_FILTERS.filter(f => f.id !== 'pose' || showPoseFeatures) as f}
+        <button
+          title={f.tip}
+          class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
+            {patternFilter === f.id ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
+          onclick={() => { patternFilter = f.id; }}
+        >{f.label}{#if f.id === 'pose'}&nbsp;<span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>{/if}</button>
+      {/each}
     </div>
 
     <div class="grid grid-cols-3 gap-2 px-3 w-full max-w-lg pb-4">
       {#if displayPatterns.length === 0}
         <div class="col-span-3 py-8 text-center text-sm text-white/35">
-          {#if showFavoritesOnly}No favorites yet — star a pattern to add it here{:else}No patterns match this filter{/if}
+          {#if patternFilter === 'favorites'}No favorites yet — star a pattern to add it here{:else}No patterns match this filter{/if}
         </div>
       {:else}
         {#each displayPatterns as { p, i }}
-          {#if p.id === 'lightPaint' && !showFavoritesOnly && !showPoseOnly}
+          {#if p.id === 'lightPaint' && patternFilter === 'all'}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Live Light Painting</span>
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
-          {#if p.id === 'img-tealLines' && !showFavoritesOnly}
+          {#if p.id === 'img-tealLines' && patternFilter === 'all'}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Static Images</span>
               <div class="h-px flex-1 bg-white/20"></div>
             </div>
           {/if}
-          {#if p.id === 'particlesPalette' && !showFavoritesOnly && !showPoseOnly}
+          {#if p.id === 'particlesPalette' && patternFilter === 'all'}
             <div class="col-span-3 mt-2 flex items-center gap-2">
               <div class="h-px flex-1 bg-white/20"></div>
               <span class="text-[10px] uppercase tracking-widest text-white/40">Experimental</span>
@@ -2237,7 +2253,7 @@
           >
             <div class="flex items-center gap-1.5">
               <span class="text-[10px] font-mono text-white/35">{i + 1}</span>
-              {#if p.usesPose}
+              {#if p.usesPose && showPoseFeatures}
                 <span class="text-[9px] font-semibold tracking-widest text-white/40 border border-white/25 rounded px-1 py-0.5 normal-case">pose</span>
               {/if}
             </div>
@@ -2317,6 +2333,11 @@
         Lichtspiel is being created by light artist Ulrich Tausend
         <a href="https://1000lights.de" target="_blank" rel="noopener noreferrer"
            class="text-white/90 underline hover:text-white transition-colors">1000lights.de</a>
+      </p>
+      <p class="mb-1 text-sm text-white/70 leading-relaxed">
+        Software architecture of the initial version by
+        <a href="https://github.com/olgen" target="_blank" rel="noopener noreferrer"
+           class="text-white/90 underline hover:text-white transition-colors">@olgen</a>
       </p>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
@@ -2892,6 +2913,33 @@
           <span class="text-[10px] uppercase tracking-widest text-white/40">Developer</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
+
+        <!-- Show Pose features (experimental) -->
+        <div class="mb-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/70">Show Pose features</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {showPoseFeatures ? 'bg-white/60' : 'bg-white/20'}"
+              onclick={() => {
+                showPoseFeatures = !showPoseFeatures;
+                localStorage.setItem(POSE_FEATURES_KEY, String(showPoseFeatures));
+                if (!showPoseFeatures) {
+                  // Hide pose app-wide: stop a running tracker and leave the pose filter
+                  if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; }
+                  if (patternFilter === 'pose') patternFilter = 'all';
+                }
+              }}
+              role="switch"
+              aria-checked={showPoseFeatures}
+              tabindex="0"
+            >
+              <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {showPoseFeatures ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="mt-1 text-[10px] leading-snug text-white/30">Pose tracking is experimental and may be unreliable. Shows the Pose filter, patterns' pose controls and the T shortcut.</div>
+        </div>
+
         <div class="flex items-center justify-between">
           <span class="text-xs text-white/70">Export preset defaults</span>
           <button
@@ -3034,12 +3082,14 @@
               }
             }}
           >Motion</button>
-          <button
-            title="Enable full-body pose tracking for all Demo patterns at once."
-            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
-            onclick={() => togglePoseTracking()}
-            disabled={poseLoading}
-          >{poseLoading ? '…' : 'Pose'}</button>
+          {#if showPoseFeatures}
+            <button
+              title="Enable full-body pose tracking for all Demo patterns at once. Experimental."
+              class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {poseLoading ? 'border-white/20 text-white/30 cursor-wait' : poseActive ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+              onclick={() => togglePoseTracking()}
+              disabled={poseLoading}
+            >{poseLoading ? '…' : 'Pose'}</button>
+          {/if}
           <button
             title="Enable microphone audio reactivity for all Demo patterns at once."
             class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {audioState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
@@ -3336,6 +3386,34 @@
     class:opacity-100={hudVisible && !overlayHidden}
   >
     <div class="flex flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+      {#if patterns[index].controls?.length}
+        <!-- Pattern controls header -->
+        <div class="mb-2 shrink-0 flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Controls</span>
+          <div class="flex gap-1">
+            <button onclick={applyUndo} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Undo</button>
+            <button onclick={resetAllControls} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Default</button>
+            <button onclick={() => { startRandomize(performance.now()); }} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Randomize</button>
+          </div>
+        </div>
+        <!-- Preset slots: empty=click to save, filled=click to restore / long-press to update -->
+        <div class="mb-2.5 flex gap-1 shrink-0">
+          {#each presetSlots as slot, idx}
+            {@const filled = slot !== null}
+            {@const flashing = slotFlash === idx}
+            <button
+              class="flex-1 rounded border py-1 text-[10px] font-mono transition-all duration-150 cursor-pointer select-none
+                {flashing ? 'border-white bg-white/40 text-white' :
+                 filled   ? 'border-white/30 bg-white/10 text-white/70 hover:bg-white/20' :
+                            'border-dashed border-white/20 text-white/25 hover:border-white/35'}"
+              onpointerdown={() => onSlotPointerDown(idx)}
+              onpointerup={() => onSlotPointerUp(idx)}
+              onpointercancel={() => onSlotPointerCancel()}
+              title={filled ? 'Click to restore · Hold to update' : 'Click to save snapshot'}
+            >{filled ? (idx + 1) : '+'}</button>
+          {/each}
+        </div>
+      {/if}
       <!-- Evolving Range — global controls (drift sliders inside their bands) -->
       <div class="mb-2 flex flex-col gap-1.5">
         <div class="flex items-center justify-between text-xs">
@@ -3393,39 +3471,12 @@
             return { ctrl, groupDisabled, hidden, isInteractive };
           });
         })()}
-        <!-- Pattern controls header -->
-        <div class="mb-2 shrink-0 flex items-center justify-between gap-2">
-          <span class="text-xs uppercase tracking-widest text-white/50">Controls</span>
-          <div class="flex gap-1">
-            <button onclick={applyUndo} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Undo</button>
-            <button onclick={resetAllControls} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Default</button>
-            <button onclick={() => { startRandomize(performance.now()); }} class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer">Randomize</button>
-          </div>
-        </div>
-        <!-- Preset slots: empty=click to save, filled=click to restore / long-press to update -->
-        <div class="mb-2.5 flex gap-1 shrink-0">
-          {#each presetSlots as slot, idx}
-            {@const filled = slot !== null}
-            {@const flashing = slotFlash === idx}
-            <button
-              class="flex-1 rounded border py-1 text-[10px] font-mono transition-all duration-150 cursor-pointer select-none
-                {flashing ? 'border-white bg-white/40 text-white' :
-                 filled   ? 'border-white/30 bg-white/10 text-white/70 hover:bg-white/20' :
-                            'border-dashed border-white/20 text-white/25 hover:border-white/35'}"
-              onpointerdown={() => onSlotPointerDown(idx)}
-              onpointerup={() => onSlotPointerUp(idx)}
-              onpointercancel={() => onSlotPointerCancel()}
-              title={filled ? 'Click to restore · Hold to update' : 'Click to save snapshot'}
-            >{filled ? (idx + 1) : '+'}</button>
-          {/each}
-        </div>
-
         <!-- ── Pattern group (collapsable, no toggle) ────────────────────── -->
         <div class="mt-1 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/20"></div>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <span
-            class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
+            class="text-xs font-semibold uppercase tracking-widest text-white/60 hover:text-white/80 transition-colors cursor-pointer flex items-center gap-1 select-none"
             onclick={() => {
               patternGroupCollapsed = !patternGroupCollapsed;
               _perPatternGroupCollapsed.set(patterns[index].id, patternGroupCollapsed);
@@ -3444,7 +3495,7 @@
               <!-- Plain section divider (no toggle) -->
               <div class="mt-1 flex items-center gap-2">
                 <div class="h-px flex-1 bg-white/20"></div>
-                <span class="text-[10px] uppercase tracking-widest text-white/40">{ctrl.label}</span>
+                <span class="text-xs font-semibold uppercase tracking-widest text-white/60">{ctrl.label}</span>
                 <div class="h-px flex-1 bg-white/20"></div>
               </div>
             {:else if ctrl.type === "section"}
@@ -3455,7 +3506,7 @@
                 <div class="h-px flex-1 bg-white/20"></div>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span
-                  class="text-[10px] uppercase tracking-widest text-white/40 flex items-center gap-1 select-none cursor-pointer hover:text-white/60 transition-colors"
+                  class="text-xs font-semibold uppercase tracking-widest text-white/60 flex items-center gap-1 select-none cursor-pointer hover:text-white/80 transition-colors"
                   onclick={() => {
                     const next = new Set(collapsedSections);
                     if (isCollapsed) next.delete(ctrl.label); else next.add(ctrl.label);
@@ -3654,7 +3705,7 @@
             <div class="h-px flex-1 bg-white/20"></div>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <span
-              class="text-[10px] uppercase tracking-widest text-white/40 cursor-pointer hover:text-white/70 select-none transition-colors"
+              class="text-xs font-semibold uppercase tracking-widest text-white/60 cursor-pointer hover:text-white/80 select-none transition-colors"
               onclick={() => { colourCollapsed = !colourCollapsed; _perPatternColourCollapsed.set(patterns[index].id, colourCollapsed); }}
             >Colour <span class="text-[8px] transition-transform duration-200 {colourCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
             <div class="h-px flex-1 bg-white/20"></div>
@@ -3719,7 +3770,7 @@
             <div class="h-px flex-1 bg-white/20"></div>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <span
-              class="text-[10px] uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors cursor-pointer flex items-center gap-1 select-none"
+              class="text-xs font-semibold uppercase tracking-widest text-white/60 hover:text-white/80 transition-colors cursor-pointer flex items-center gap-1 select-none"
               onclick={() => {
                 interactiveCollapsed = !interactiveCollapsed;
                 _perPatternInteractiveCollapsed.set(patterns[index].id, interactiveCollapsed);
@@ -3964,10 +4015,10 @@
               {/if}
 
               <!-- Pose -->
-              {#if patterns[index].usesPose}
+              {#if patterns[index].usesPose && showPoseFeatures}
                 <div class="flex items-center justify-between text-xs text-white/70">
-                  <span class="flex items-center gap-1.5" title="Full-body pose tracking: maps skeleton joints onto pattern controls.">
-                    Pose
+                  <span class="flex items-center gap-1.5" title="Full-body pose tracking: maps skeleton joints onto pattern controls. Experimental — may be unreliable.">
+                    Pose <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>
                     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                     <span class="cursor-pointer select-none transition-colors {poseDebug ? 'text-white/70' : 'text-white/25 hover:text-white/50'}"
                       onclick={() => { poseDebug = !poseDebug; }}

@@ -36,8 +36,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** `**bold**` -> `<strong>` — everything else HTML-escaped. Safe to use with
- *  {@html}: input is our own checked-in CHANGELOG.md, not user data. */
+/** `**bold**` -> `<strong>`, `[text](url)` -> `<a>` — everything else
+ *  HTML-escaped. Safe to use with {@html}: input is our own checked-in
+ *  CHANGELOG.md, not user data. */
 export function inlineMarkdownToHtml(s: string): string {
-  return escapeHtml(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  return escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline text-white/80 hover:text-white transition-colors">$1</a>',
+    );
 }
