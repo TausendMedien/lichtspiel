@@ -158,13 +158,6 @@ export function attachKeyboard(
         return;
     }
 
-    // 3–9 jump to pattern (1 and 2 reserved for recording / camera)
-    if (e.key >= "3" && e.key <= "9") {
-      handler({ type: "jump", index: Number(e.key) - 1 });
-      e.preventDefault();
-      return;
-    }
-
     // When the kb-trap input has focus, prevent all unhandled keys from
     // inserting characters into it (the input is hidden, but clean is clean).
     if ((document.activeElement as HTMLElement)?.id === 'kb-trap') {

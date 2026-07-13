@@ -1,6 +1,8 @@
 # ANALYSE — Button-Konsistenz · UX für Erstnutzer:innen · Kamera-Zuverlässigkeit
 
-Stand: 2026-07-13 · Basis: `main` nach v0.7 (Filter/Pose/Controls-Umbau). Nur Analyse — keine der hier beschriebenen Änderungen ist umgesetzt.
+Stand: 2026-07-13 · Basis: `main` nach v0.7 (Filter/Pose/Controls-Umbau).
+
+**Update 2026-07-13 (später am selben Tag): alles umgesetzt.** Alle K- und U-Befunde (K1–K9, U1–U6), das Button-System (Abschnitt 5) und die zentrale CameraManager-Abstraktion (`src/lib/cameraManager.ts`, referenzgezählt, migriert: Motion/Heat-Wrapper, Pose, Light-Painting-Familie, ASCII Swirls) sind implementiert und im Browser verifiziert. Dieses Dokument bleibt als Analyse-Historie stehen; der ursprüngliche Umsetzungsplan unten ist vollständig abgearbeitet.
 
 **Priorität:** Kritisch = kann eine Live-Show sichtbar stören · Hoch = führt regelmäßig zu Fehlverhalten oder Verwirrung · Mittel = spürbar, aber mit Workaround · Niedrig = Kosmetik/Politur.
 **Aufwand:** S ≤ 1 h · M = halber Tag · L = mehrere Tage.

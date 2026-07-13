@@ -3,7 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { colorC2, colorShuffle, getColorByIndex } from "../colorC2.svelte";
 import { interactionState } from "../interactionState.svelte";
 import { privacyMode } from "../privacyMode.svelte";
-import { guardedGetUserMedia } from "../sensorGuard";
+import { acquireCamera, type CameraHandle } from "../cameraManager";
 import { cameraState, enumerateCameras, saveCameraDevice, getVisibleDevices, cameraFeedConstraints } from "../globalCameraSettings.svelte";
 
 // ─── Shared camera device state ───────────────────────────────────────────────
@@ -282,7 +282,7 @@ function createLightPainting(
   let _renderer: THREE.WebGLRenderer | null = null;
 
   // Video / texture
-  let stream: MediaStream | null = null;
+  let cameraHandle: CameraHandle | null = null;
   let video: HTMLVideoElement | null = null;
   let videoTexture: THREE.VideoTexture | null = null;
   let blackTexture: THREE.DataTexture | null = null;
@@ -323,14 +323,22 @@ function createLightPainting(
   function stopCamera() {
     ++startId; // invalidate any in-flight startCamera
     if (overlayTimeout) { clearTimeout(overlayTimeout); overlayTimeout = null; }
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = null;
-    if (video) { video.pause(); video.srcObject = null; video = null; }
+    cameraHandle?.release();
+    cameraHandle = null;
+    video = null;
     videoTexture?.dispose();
     videoTexture = null;
     cameraReady = false;
     overlay?.remove();
     overlay = null;
+  }
+
+  // Recovery: device unplugged, OS revoked permission, or the track otherwise dies mid-
+  // session (sleep/wake) — restart immediately if this instance is still the active camera.
+  function onCameraEnded(myId: number, canvas: HTMLCanvasElement) {
+    if (myId !== startId) return;
+    stopCamera();
+    if (!privacyMode.active) startCamera(canvas);
   }
 
   async function startCamera(canvas: HTMLCanvasElement) {
@@ -343,16 +351,11 @@ function createLightPainting(
     // Enumerate cameras so device picker is populated on first use
     if (cameraState.devices.length === 0) await enumerateCameras();
     try {
-      const s = await guardedGetUserMedia(cameraFeedConstraints());
+      const handle = await acquireCamera(id, cameraFeedConstraints(), () => onCameraEnded(myId, canvas));
       clearTimeout(overlayTimeout!); overlayTimeout = null;
-      if (myId !== startId) { s.getTracks().forEach((t) => t.stop()); return; }
-      stream = s;
-      video = document.createElement("video");
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "");
-      video.muted = true;
-      await video.play();
-      if (myId !== startId) { stopCamera(); return; }
+      if (myId !== startId) { handle.release(); return; }
+      cameraHandle = handle;
+      video = handle.video;
       videoTexture = new THREE.VideoTexture(video);
       videoTexture.minFilter = THREE.LinearFilter;
       videoTexture.magFilter = THREE.LinearFilter;
@@ -363,20 +366,29 @@ function createLightPainting(
       clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== startId) return;
       cameraReady = false;
-      showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings and reload.");
+      showOverlay(canvas, "Camera access denied.\nAllow camera in browser settings, then retry.", () => startCamera(canvas));
     }
   }
 
-  function showOverlay(canvas: HTMLCanvasElement, message: string) {
+  function showOverlay(canvas: HTMLCanvasElement, message: string, onRetry?: () => void) {
     overlay?.remove();
     const div = document.createElement("div");
     div.style.cssText = `
-      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
       color:#fff;font-family:sans-serif;font-size:16px;text-align:center;
-      pointer-events:none;white-space:pre-line;padding:24px;
+      pointer-events:${onRetry ? "auto" : "none"};white-space:pre-line;padding:24px;
       background:rgba(0,0,0,0.55);
     `;
-    div.textContent = message;
+    const msg = document.createElement("div");
+    msg.textContent = message;
+    div.appendChild(msg);
+    if (onRetry) {
+      const btn = document.createElement("button");
+      btn.textContent = "↻ Retry";
+      btn.style.cssText = "pointer-events:auto;cursor:pointer;padding:6px 16px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.08);color:#fff;font-size:13px;font-family:sans-serif;";
+      btn.onclick = onRetry;
+      div.appendChild(btn);
+    }
     canvas.parentElement?.appendChild(div);
     overlay = div;
   }
@@ -700,7 +712,7 @@ function createLightPainting(
     update(_dt: number, _elapsed: number) {
       if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
 
-      if (privacyMode.active && stream) { stopCamera(); }
+      if (privacyMode.active && cameraHandle) { stopCamera(); }
 
       const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
       if (cameraReady && videoTexture) videoTexture.needsUpdate = true;

@@ -1,6 +1,6 @@
 // Motion detection from webcam feed.
 // Separates "person motion" from background pattern motion using three algorithms.
-import { guardedGetUserMedia } from './sensorGuard';
+import { acquireCamera, type CameraHandle } from './cameraManager';
 
 const W = 160;
 const H = 90;
@@ -42,7 +42,7 @@ export function showMotionOverlay(canvas: HTMLCanvasElement, message: string, on
 
 export class MotionCamera {
   readonly video: HTMLVideoElement;
-  private stream: MediaStream;
+  private handle: CameraHandle;
   private offCanvas: HTMLCanvasElement;
   private offCtx: CanvasRenderingContext2D;
   private prevLuma: Float32Array | null = null;
@@ -53,38 +53,36 @@ export class MotionCamera {
    *  should poll this and treat it like a dead stream (stop + restart if still wanted). */
   ended = false;
 
-  private constructor(video: HTMLVideoElement, stream: MediaStream) {
-    this.video = video;
-    this.stream = stream;
+  private constructor(handle: CameraHandle) {
+    this.handle = handle;
+    this.video = handle.video;
     this.offCanvas = document.createElement("canvas");
     this.offCanvas.width = W;
     this.offCanvas.height = H;
     this.offCtx = this.offCanvas.getContext("2d", { willReadFrequently: true })!;
-    stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => { this.ended = true; }));
   }
 
   static async create(
+    consumerId: string,
     domCanvas: HTMLCanvasElement,
     facingMode: 'environment' | 'user' = 'environment',
   ): Promise<MotionCamera | null> {
-    return MotionCamera.createWithConstraints(domCanvas, {
+    return MotionCamera.createWithConstraints(consumerId, domCanvas, {
       video: { facingMode: { ideal: facingMode }, width: { ideal: 320 }, height: { ideal: 180 } },
       audio: false,
     });
   }
 
   static async createWithConstraints(
+    consumerId: string,
     domCanvas: HTMLCanvasElement,
     constraints: MediaStreamConstraints,
   ): Promise<MotionCamera | null> {
     try {
-      const stream = await guardedGetUserMedia(constraints);
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "");
-      video.muted = true;
-      await video.play();
-      return new MotionCamera(video, stream);
+      let cam: MotionCamera | null = null;
+      const handle = await acquireCamera(consumerId, constraints, () => { if (cam) cam.ended = true; });
+      cam = new MotionCamera(handle);
+      return cam;
     } catch {
       showMotionOverlay(domCanvas, "Camera access denied.\nAllow camera in browser settings and reload.");
       return null;
@@ -121,9 +119,7 @@ export class MotionCamera {
   }
 
   dispose() {
-    this.stream.getTracks().forEach((t) => t.stop());
-    this.video.pause();
-    this.video.srcObject = null;
+    this.handle.release();
   }
 }
 

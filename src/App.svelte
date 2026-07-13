@@ -542,7 +542,12 @@
 
   let demoStartBehavior = $state<DemoStartBehavior>('default');
   let demoRandomizeOrder = $state(false);
+  // Restricts actual demo ROTATION to favorites (nextDemoIndex) — a playback behavior,
+  // distinct from demoPickerFilter below which only affects what's shown in the picker list.
   let demoFavoritesOnly = $state(false);
+  // Pattern picker display filter — same six filters/semantics as the pattern-menu grid
+  // (patternFilter), but view-only here: it never touches demoPatternIds or favorites.
+  let demoPickerFilter = $state<PatternFilter>('all');
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
     { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
@@ -680,18 +685,22 @@
   $effect(() => { const _ = index; sliderFocusIndex = 0; });
   $effect(() => { if (!sliderModeActive) sliderFocusIndex = 0; });
 
+  // Shared by the pattern-menu grid and the Demo pattern picker — same six filters,
+  // same meaning, in both places (view-only: never changes favorites/selection).
+  function matchesPatternFilter(p: Pattern, f: PatternFilter): boolean {
+    switch (f) {
+      case 'favorites': return favorites.has(p.id);
+      case 'move':      return !!p.motionReactive;
+      case 'heat':      return !!p.heatReactive;
+      case 'audio':     return !!p.audioReactive;
+      case 'pose':      return !!p.usesPose;
+      default:          return true;
+    }
+  }
+
   const displayPatterns = $derived(
     patterns.map((p, i) => ({ p, i }))
-      .filter(({ p }) => {
-        switch (patternFilter) {
-          case 'favorites': return favorites.has(p.id);
-          case 'move':      return !!p.motionReactive;
-          case 'heat':      return !!p.heatReactive;
-          case 'audio':     return !!p.audioReactive;
-          case 'pose':      return !!p.usesPose;
-          default:          return true;
-        }
-      })
+      .filter(({ p }) => matchesPatternFilter(p, patternFilter))
   );
 
   // Reactive mirror of current pattern's control values so the display
@@ -2292,7 +2301,7 @@
           {#if isTouch}
             Tap a pattern to start. Patterns can react to camera motion, sound or light — see <span class="text-white/90">? About</span> for details.
           {:else}
-            Click a pattern to start, or press <kbd class="rounded bg-white/10 px-1 font-mono">1</kbd>–<kbd class="rounded bg-white/10 px-1 font-mono">9</kbd>. Patterns can react to camera motion, sound or light — press <kbd class="rounded bg-white/10 px-1 font-mono">M</kbd> for details.
+            Click a pattern to start, or use <kbd class="rounded bg-white/10 px-1 font-mono">← →</kbd> and <kbd class="rounded bg-white/10 px-1 font-mono">Enter</kbd>. Patterns can react to camera motion, sound or light — press <kbd class="rounded bg-white/10 px-1 font-mono">M</kbd> for details.
           {/if}
         </span>
         <button
@@ -2390,7 +2399,6 @@
         <span><kbd class="rounded bg-white/10 px-1.5 py-0.5 font-mono">← →</kbd> browse</span>
         <span><kbd class="rounded bg-white/10 px-1.5 py-0.5 font-mono">Enter</kbd> select</span>
         <span><kbd class="rounded bg-white/10 px-1.5 py-0.5 font-mono">F</kbd> fullscreen</span>
-        <span><kbd class="rounded bg-white/10 px-1.5 py-0.5 font-mono">1–{patterns.length}</kbd> jump</span>
       {/if}
     </div>
 
@@ -2592,7 +2600,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Demo</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Demo</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-3">
@@ -2673,7 +2681,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Camera</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Camera</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <!-- Capture resolution (camera-feed patterns: Light Painting / ASCII) -->
@@ -2735,7 +2743,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">MIDI</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">MIDI</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex items-center justify-between">
@@ -2764,7 +2772,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Remote Control</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Remote Control</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-2.5">
@@ -2806,7 +2814,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Capture</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Capture</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-2.5">
@@ -2843,7 +2851,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Pedal</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Pedal</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-2.5">
@@ -2904,7 +2912,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Presets</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Presets</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex items-center justify-between gap-2">
@@ -2926,7 +2934,7 @@
       <div class="mb-5">
         <div class="mb-2 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Custom Colours</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Custom Colours</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="mb-2 flex justify-end">
@@ -2959,7 +2967,7 @@
         </div>
         <!-- Extra 3 colours (toggleable) -->
         <div class="mt-3 flex flex-col gap-2">
-          <span class="text-[10px] uppercase tracking-widest text-white/30">Extras</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Extras</span>
           {#each ([
             { key: 'extra1' as const, onKey: 'extra1on' as const, label: 'Extra 1' },
             { key: 'extra2' as const, onKey: 'extra2on' as const, label: 'Extra 2' },
@@ -2992,7 +3000,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Interactions</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Interactions</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
         <div class="flex flex-col gap-3">
@@ -3056,7 +3064,7 @@
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
           <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-[10px] uppercase tracking-widest text-white/40">Developer</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Developer</span>
           <div class="h-px flex-1 bg-white/15"></div>
         </div>
 
@@ -3210,7 +3218,7 @@
 
       <!-- Interactive features -->
       <div class="mb-3">
-        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Interactive features</div>
+        <div class="mb-1.5 text-xs font-semibold uppercase tracking-widest text-white/60">Interactive features</div>
         <div class="flex gap-2">
           <button
             title="Enable camera motion detection for all Demo patterns at once."
@@ -3342,11 +3350,21 @@
             <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoRandomizeOrder ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
           </div>
         </div>
+        <div class="mt-2.5 flex items-center justify-between text-xs text-white/70">
+          <span title="While the demo is running, only cycle through patterns that are also favorited — independent of which ones are checked below.">Rotate favorites only</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {demoFavoritesOnly ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => { demoFavoritesOnly = !demoFavoritesOnly; saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly); }}
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {demoFavoritesOnly ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Pattern start behavior selector -->
       <div class="mb-4">
-        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40" title="Which preset each pattern loads when the Demo starts. Chilled/Balanced/Active use the 1/2/3 preset slots.">Pattern Start</div>
+        <div class="mb-1.5 text-xs font-semibold uppercase tracking-widest text-white/60" title="Which preset each pattern loads when the Demo starts. Chilled/Balanced/Active use the 1/2/3 preset slots.">Pattern Start</div>
         <div class="flex flex-wrap gap-1">
           {#each ([['default','Default'],['slot1','Chilled 1'],['slot2','Balanced 2'],['slot3','Active 3'],['random','Random']] as const) as [val, label]}
             <button
@@ -3366,7 +3384,7 @@
       <!-- Evolving Range (demo) -->
       <div class="mb-4">
         <div class="mb-1.5 flex items-center justify-between">
-          <span class="text-[10px] uppercase tracking-widest text-white/40" title="Sliders drift automatically within their min/max bands so the look evolves gradually over time."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60" title="Sliders drift automatically within their min/max bands so the look evolves gradually over time."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
@@ -3402,7 +3420,7 @@
 
       <!-- Demo Configurations (save / recall a complete demo setup) -->
       <div class="mb-4">
-        <div class="mb-1.5 text-[10px] uppercase tracking-widest text-white/40">Saved Configs</div>
+        <div class="mb-1.5 text-xs font-semibold uppercase tracking-widest text-white/60">Saved Configs</div>
         <div class="flex gap-1.5">
           <input
             type="text" placeholder="Config name…" bind:value={newConfigName}
@@ -3440,20 +3458,17 @@
         {/if}
       </div>
 
-      <!-- Favorites filter -->
-      <div class="mb-3 flex gap-2">
-        <button
-          class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {!demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-          onclick={() => { demoFavoritesOnly = false; saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, false); }}
-        >All</button>
-        <button
-          class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {demoFavoritesOnly ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
-          onclick={() => {
-            demoFavoritesOnly = true;
-            applyDemoPatternIds(new Set([...demoPatternIds].filter(id => favorites.has(id))));
-            saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, true);
-          }}
-        >★ Favorites</button>
+      <!-- Pattern picker filter — same six chips as the pattern-menu grid, view-only:
+           narrows which patterns are listed below without touching the demo selection. -->
+      <div class="mb-3 flex gap-1.5 flex-wrap">
+        {#each PATTERN_FILTERS.filter(f => f.id !== 'pose' || showPoseFeatures) as f}
+          <button
+            title={f.tip}
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer
+              {demoPickerFilter === f.id ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/30'}"
+            onclick={() => { demoPickerFilter = f.id; }}
+          >{f.label}{#if f.id === 'pose'}&nbsp;<span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span>{/if}</button>
+        {/each}
       </div>
 
       <!-- Pattern list — 2-col on sm+, 1-col on mobile.
@@ -3462,7 +3477,7 @@
         {#each DEMO_GROUPS as group}
           {@const visiblePatterns = patterns.filter(p =>
             (group.ids as readonly string[]).includes(p.id) &&
-            (!demoFavoritesOnly || favorites.has(p.id)) &&
+            matchesPatternFilter(p, demoPickerFilter) &&
             (group.label !== 'Experimental' || experimentalEnabled)
           )}
           {#if visiblePatterns.length > 0}

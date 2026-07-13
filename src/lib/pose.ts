@@ -1,5 +1,5 @@
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
-import { guardedGetUserMedia } from './sensorGuard';
+import { acquireCamera, type CameraHandle } from './cameraManager';
 
 export interface PersonPoints {
   x: number; // normalized 0–1, mirrored (left hand = left side)
@@ -22,6 +22,7 @@ export const poseSettings = {
 
 let landmarker: PoseLandmarker | null = null;
 let video: HTMLVideoElement | null = null;
+let cameraHandle: CameraHandle | null = null;
 let rafId = 0;
 let frameCounter = 0;
 // Bumped on every start/stop — an in-flight startPoseTracking() checks this after each
@@ -88,47 +89,31 @@ export async function startPoseTracking(deviceId?: string): Promise<void> {
   const vw = poseSettings.lowRes ? 320 : 640;
   const vh = poseSettings.lowRes ? 240 : 480;
 
-  const v = document.createElement("video");
-  v.width = vw;
-  v.height = vh;
-  v.autoplay = true;
-  v.playsInline = true;
-  v.muted = true;
-
-  const stream = await guardedGetUserMedia({
-    video: deviceId
-      ? { deviceId: { exact: deviceId }, width: vw, height: vh }
-      : { width: vw, height: vh, facingMode: "user" },
-  });
-  if (myToken !== startToken) { stream.getTracks().forEach(t => t.stop()); lm.close(); landmarker = null; return; }
-  // Recovery: device unplugged, OS revoked permission, or the track otherwise dies
-  // mid-session (sleep/wake). Without this, poseState.active/UI stays stuck showing
-  // "on" while no frames ever arrive again.
-  stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => {
-    if (myToken !== startToken || !poseState.active) return; // already superseded/stopped normally
-    stopPoseTracking();
-    onInterrupted?.();
-  }));
-  video = v;
-  video.srcObject = stream;
-  // autoplay is unreliable on iOS Safari for off-DOM video elements — call
-  // play() explicitly so the video actually starts before we wait for frames.
-  try { await video.play(); } catch { /* detect() retries via readyState */ }
-  await new Promise<void>((resolve) => {
-    if (video!.readyState >= 2) { resolve(); return; }
-    video!.onloadeddata = () => resolve();
-  });
-  if (myToken !== startToken) {
-    // Stopped while waiting for the first video frame — tear down what we opened
-    // instead of flipping active/starting the detect loop.
-    stream.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-    video = null;
+  let handle: CameraHandle;
+  try {
+    // Recovery: device unplugged, OS revoked permission, or the track otherwise dies
+    // mid-session (sleep/wake). Without this, poseState.active/UI stays stuck showing
+    // "on" while no frames ever arrive again.
+    handle = await acquireCamera('pose', {
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: vw, height: vh }
+        : { width: vw, height: vh, facingMode: "user" },
+    }, () => {
+      if (myToken !== startToken || !poseState.active) return; // already superseded/stopped normally
+      stopPoseTracking();
+      onInterrupted?.();
+    });
+  } catch (e) {
     lm.close();
     landmarker = null;
-    return;
+    // Re-throw so the caller (togglePoseTracking) sees the failure and sets
+    // poseError/poseActive correctly instead of believing tracking started.
+    throw e;
   }
+  if (myToken !== startToken) { handle.release(); lm.close(); landmarker = null; return; }
 
+  cameraHandle = handle;
+  video = handle.video;
   poseState.active = true;
 
   let lastVideoTime = -1;
@@ -210,10 +195,8 @@ export function stopPoseTracking(): void {
   cancelAnimationFrame(rafId);
   frameCounter = 0;
   poseState.persons = [];
-  if (video?.srcObject) {
-    (video.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
-    video.srcObject = null;
-  }
+  cameraHandle?.release();
+  cameraHandle = null;
   video = null;
   landmarker?.close();
   landmarker = null;

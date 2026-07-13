@@ -183,7 +183,7 @@ export function addMotionCamera(pattern: Pattern): Pattern {
     overlayTimeout = setTimeout(() => {
       if (myId === _startId) overlay = showMotionOverlay(ref, 'Requesting camera…');
     }, 500);
-    MotionCamera.createWithConstraints(canvasRef, constraints).then(async (cam) => {
+    MotionCamera.createWithConstraints(pattern.id, canvasRef, constraints).then(async (cam) => {
       clearTimeout(overlayTimeout!); overlayTimeout = null;
       if (myId !== _startId) { cam?.dispose(); return; }
       if (cam) {

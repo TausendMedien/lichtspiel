@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { privacyMode } from "../privacyMode.svelte";
-import { guardedGetUserMedia } from "../sensorGuard";
+import { acquireCamera, type CameraHandle } from "../cameraManager";
 import { cameraState, enumerateCameras, saveCameraDevice, getVisibleDevices, cameraFeedConstraints } from "../globalCameraSettings.svelte";
 
 // ─── Module state ─────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ let camBlend    = 0.5;
 let _cameraStarting = false;
 let videoEl:    HTMLVideoElement | null = null;
 let videoTex:   THREE.VideoTexture | null = null;
-let camStream:  MediaStream | null = null;
+let camHandle:  CameraHandle | null = null;
 
 // Camera device state — backed by the global cameraState so every pattern shares
 // the user's chosen device (see globalCameraSettings.svelte.ts).
@@ -247,13 +247,19 @@ async function enableAsciiCamera() {
   _cameraStarting = true;
   try {
     if (cameraState.devices.length === 0) await enumerateCameras();
-    camStream?.getTracks().forEach(t => t.stop());
-    camStream = await guardedGetUserMedia(cameraFeedConstraints());
-    videoEl = document.createElement("video");
-    videoEl.srcObject = camStream;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    await videoEl.play();
+    camHandle?.release();
+    camHandle = null;
+    // Recovery: device unplugged, OS revoked permission, or the track otherwise dies
+    // mid-session (sleep/wake). update()'s own health check (below) already retries
+    // on any frame where videoTex is null, so just clear our reference here.
+    camHandle = await acquireCamera('asciiSwirls', cameraFeedConstraints(), () => {
+      videoTex?.dispose();
+      videoTex = null;
+      videoEl = null;
+      camHandle = null;
+      if (asciiMat && blackTex) asciiMat.uniforms.uCamera.value = blackTex;
+    });
+    videoEl = camHandle.video;
     videoTex?.dispose();
     videoTex = new THREE.VideoTexture(videoEl);
     videoTex.minFilter = THREE.LinearFilter;
@@ -264,11 +270,11 @@ async function enableAsciiCamera() {
 }
 
 function disableAsciiCamera() {
-  camStream?.getTracks().forEach((t) => t.stop());
-  camStream = null;
+  camHandle?.release();
+  camHandle = null;
   videoTex?.dispose();
   videoTex = null;
-  if (videoEl) { videoEl.srcObject = null; videoEl = null; }
+  videoEl = null;
   if (asciiMat && blackTex) asciiMat.uniforms.uCamera.value = blackTex;
 }
 
