@@ -386,7 +386,16 @@ export const asciiSwirls: Pattern = {
     ctx.camera.far  = 10;
     ctx.camera.updateProjectionMatrix();
 
+    // ASCII IS the camera blend — auto-enable so the user doesn't have to turn it on
+    // manually, matching Heat Map / Hyper Mix Heat. This also makes the "Interactive"
+    // toggle able to stop it later (its off-handler sets cameraState.enabled = false).
+    cameraState.enabled = true;
     enableAsciiCamera();
+  },
+
+  activate() {
+    cameraState.enabled = true;
+    if (!privacyMode.active) enableAsciiCamera();
   },
 
   update(dt: number, _elapsed: number) {
@@ -400,9 +409,9 @@ export const asciiSwirls: Pattern = {
     swirlMat.uniforms.uMainColor.value.set(_mc.r, _mc.g, _mc.b);
     swirlMat.uniforms.uColorsV2.value = colorC2.colorsV2;
     asciiMat.uniforms.uColorMode.value  = colorMode;
-    if (privacyMode.active && videoTex) {
+    if ((privacyMode.active || !cameraState.enabled) && videoTex) {
       disableAsciiCamera();
-    } else if (!privacyMode.active && !videoTex) {
+    } else if (!privacyMode.active && cameraState.enabled && !videoTex) {
       enableAsciiCamera(); // guarded by _cameraStarting — safe to call every frame
     }
     asciiMat.uniforms.uCamBlend.value   = videoTex ? camBlend : 0.0;

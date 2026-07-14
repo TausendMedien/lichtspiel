@@ -28,12 +28,19 @@ interface Entry {
   constraints: MediaStreamConstraints;
   stream: MediaStream | null;
   video: HTMLVideoElement | null;
-  consumers: Map<string, () => void>; // consumerId -> onEnded callback
+  // Keyed by a unique per-acquire token, NOT the caller-supplied consumerId string.
+  // A single consumerId (e.g. a pattern that restarts its camera) can legitimately hold
+  // an old, not-yet-released handle at the same time as a new one; if both shared the
+  // same map key, the stale handle's release() would delete the fresh registration too
+  // and tear down a stream the new handle still needs. Unique tokens make every acquire
+  // independently releasable regardless of how many came from the same consumerId.
+  consumers: Map<number, () => void>;
   opening: Promise<void> | null;
   openToken: number; // bumped when this entry is torn down mid-open, invalidating it
 }
 
 const entries = new Map<string, Entry>();
+let _consumerToken = 0;
 
 function pick(c: unknown): unknown {
   if (c && typeof c === 'object') return (c as { exact?: unknown; ideal?: unknown }).exact ?? (c as { ideal?: unknown }).ideal ?? null;
@@ -119,7 +126,8 @@ export async function acquireCamera(
     entry = { constraints, stream: null, video: null, consumers: new Map(), opening: null, openToken: 0 };
     entries.set(key, entry);
   }
-  entry.consumers.set(consumerId, onEnded ?? (() => {}));
+  const token = ++_consumerToken;
+  entry.consumers.set(token, onEnded ?? (() => {}));
 
   if (!entry.stream) {
     const e = entry;
@@ -131,17 +139,17 @@ export async function acquireCamera(
     try {
       await e.opening;
     } catch (err) {
-      e.consumers.delete(consumerId);
+      e.consumers.delete(token);
       if (e.consumers.size === 0) entries.delete(key);
       throw err;
     }
-    if (!e.consumers.has(consumerId)) {
+    if (!e.consumers.has(token)) {
       // Released while awaiting the open (rapid pattern switch) — nothing to hand back.
       throw new DOMException('Acquire cancelled', 'AbortError');
     }
   }
   if (!entry.stream || !entry.video) {
-    entry.consumers.delete(consumerId);
+    entry.consumers.delete(token);
     throw new DOMException('Camera stream unavailable', 'NotFoundError');
   }
 
@@ -155,7 +163,7 @@ export async function acquireCamera(
     release() {
       if (released) return;
       released = true;
-      finalEntry.consumers.delete(consumerId);
+      finalEntry.consumers.delete(token);
       if (finalEntry.consumers.size === 0) {
         if (finalEntry.opening) finalEntry.openToken++; // invalidate any in-flight open
         teardown(key, finalEntry);

@@ -232,14 +232,22 @@ export const particlesHeat: Pattern = {
     if (!material) return;
     accTime += dt * flowSpeed;
 
-    updateHeatTexture();
-
     material.uniforms.uTime.value         = accTime;
     material.uniforms.uSize.value         = pointSize;
     material.uniforms.uColorRange2.value  = colorC2.colorsV2;
-    material.uniforms.uHeatStrength.value = heatStrength;
-    material.uniforms.uHeatGain.value     = heatGain;
     material.uniforms.uMirrorX.value      = mirrorX ? 1.0 : 0.0;
+
+    // Heat reactivity must respect the "Heat" toggle — without this gate the pattern
+    // keeps responding to heatMap data as long as the camera is running at all (e.g.
+    // via Motion being on), even while Heat is explicitly switched off.
+    if (cameraState.heatEnabled) {
+      material.uniforms.uHeatStrength.value = heatStrength;
+      material.uniforms.uHeatGain.value     = heatGain;
+      updateHeatTexture();
+    } else {
+      material.uniforms.uHeatStrength.value = 0;
+      material.uniforms.uHeatGain.value     = 0;
+    }
   },
 
   resize(w: number, h: number) {

@@ -418,11 +418,19 @@ export const hyperMixHeat: Pattern = {
     accTime += dt * params.speed;
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uCountScale.value = Math.min(1.0, BASE_COUNT / params.pointCount);
-    material.uniforms.uHeatStrength.value = params.heatStrength;
-    material.uniforms.uHeatGain.value     = params.heatGain;
     material.uniforms.uMirrorX.value      = mirrorX ? 1.0 : 0.0;
 
-    updateHeatTexture();
+    // Heat reactivity must respect the "Heat" toggle — without this gate the pattern
+    // keeps responding to heatMap data as long as the camera is running at all (e.g.
+    // via Motion being on), even while Heat is explicitly switched off.
+    if (cameraState.heatEnabled) {
+      material.uniforms.uHeatStrength.value = params.heatStrength;
+      material.uniforms.uHeatGain.value     = params.heatGain;
+      updateHeatTexture();
+    } else {
+      material.uniforms.uHeatStrength.value = 0;
+      material.uniforms.uHeatGain.value     = 0;
+    }
 
     _c1.set(colorC2.main);
     _c2.set(colorC2.contrast);
