@@ -15,6 +15,10 @@ export interface RendererHandle {
   setTimeScale: (v: number) => void;
   getTimeScale: () => number;
   setFlickerGuard: (enabled: boolean) => void;
+  /** Current flicker-guard blend factor: 1 = passthrough, <1 = actively damping.
+   *  Lets the HUD show WHY the image is dimming (guard engaged) instead of it
+   *  reading as a rendering bug. */
+  getGuardBlendK: () => number;
   getCanvas: () => HTMLCanvasElement;
   /** Timestamp (performance.now()) of the last loop() invocation, whether or not that
    *  frame's render succeeded — a watchdog can use staleness here to detect a dead
@@ -460,6 +464,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     setTimeScale(v: number) { timeScale = Math.max(0, v); },
     getTimeScale() { return timeScale; },
     setFlickerGuard(enabled: boolean) { guardEnabled = enabled; },
+    getGuardBlendK() { return blendK; },
     getCanvas() { return canvas; },
     getLastFrameAt() { return lastFrameAt; },
     dispose() {

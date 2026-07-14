@@ -4,6 +4,7 @@ import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { audioState } from "../globalAudioSettings.svelte";
 
 const W = 160, H = 90;
 
@@ -36,6 +37,10 @@ let heatTexData:  Float32Array | null = null;
 let heatXPush     = 0;
 let camera: THREE.PerspectiveCamera | null = null;
 const _tProjVec   = new THREE.Vector3();
+
+// Motion→size / audio→depth as smoothed scale multipliers (no geometry rebuild)
+let motionSizeAmt = 0;   // 0..~1: extra uniform scale from camera motion
+let audioDepthAmt = 0;   // 0..~1: extra z-scale (extrusion depth) from audio level
 
 function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
   if (r < 1) { dst.set(src); return; }
@@ -192,8 +197,13 @@ export const typography3d: Pattern = {
   id: "typography3d",
   name: "3D Typography",
   heatReactive: true,
-  motionControlLabels: ["Size"],
-  audioControlLabels:  ["Depth"],
+  // Size/Depth must NOT be generic boost targets: their set() rebuilds the
+  // TextGeometry behind a 300ms debounce, and per-frame boost writes keep
+  // resetting that timer so the rebuild never fires (sliders appear dead).
+  // Motion→size and audio→depth are instead applied as cheap per-frame
+  // scale transforms in update() below.
+  motionControlLabels: [],
+  audioControlLabels:  [],
   controls: [
     { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
       set: v => { textStr = v; scheduleRebuild(); } },
@@ -278,6 +288,20 @@ export const typography3d: Pattern = {
 
     animTime += dt;
 
+    // Motion→size / audio→depth as scale transforms — cheap per-frame, never
+    // touches the debounced TextGeometry rebuild path the sliders use.
+    // Sensitivity scales the motion response linearly around its default (50).
+    const motionTarget = cameraState.motionEnabled && cameraState.enabled
+      ? Math.min(1, (cameraState.level / 100) * (cameraState.sensitivity / 50))
+      : 0;
+    const audioTarget = audioState.enabled ? audioState.level / 100 : 0;
+    const lerp = Math.min(1, dt * 4);
+    motionSizeAmt += (motionTarget - motionSizeAmt) * lerp;
+    audioDepthAmt += (audioTarget - audioDepthAmt) * lerp;
+    const sizeScale = 1 + motionSizeAmt * 0.5;   // up to +50% size at full motion
+    const depthScale = 1 + audioDepthAmt * 1.5;  // up to 2.5× extrusion depth at full level
+    textGroup.scale.set(sizeScale, sizeScale, sizeScale * depthScale);
+
     // Accumulate idle spin separately so heat offset is additive, not compounding
     baseYaw += dt * rotSpeed * 0.8;
 
@@ -354,6 +378,8 @@ export const typography3d: Pattern = {
     heatYawOffset  = 0;
     heatTiltOffset = 0;
     heatXPush      = 0;
+    motionSizeAmt  = 0;
+    audioDepthAmt  = 0;
     heatSmoothed = null; heatTmp = null; heatTexData = null;
     _lastPrimary  = "";
     _lastGlow     = "";

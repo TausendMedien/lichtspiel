@@ -343,6 +343,9 @@
   // advanced in a while — an uncaught frame error or an unrecovered WebGL context loss
   // silently killed rendering. Always shown regardless of HUD/demo/Display suppression.
   let rendererStuck = $state(false);
+  // True while the epilepsy guard is actively damping the image (blendK < 0.9) —
+  // shows a small badge so the resulting dimming isn't mistaken for a render bug.
+  let guardDampingActive = $state(false);
   let cheatsheetVisible = $state(false);
   let changelogExpanded = $state(false);
   let optionsVisible    = $state(false);
@@ -382,7 +385,10 @@
       restorePresetSlot: (slot) => {
         const slots = getSlots(patterns[index].id);
         const snap = slots[slot];
-        if (snap) applySnapshot(snap, slot + 1, false);
+        if (snap) {
+          cameraState.sensitivity = PRESET_SENSITIVITY[slot] ?? 50;
+          applySnapshot(snap, slot + 1, false);
+        }
       },
       onCtrlChanged: (label, value) => {
         ctrlVals[label] = value as number | string;
@@ -798,6 +804,7 @@
         ctrlVals[c.label] = c.default;
       }
     }
+    cameraState.sensitivity = 50;
     resetAllColorState();
     saveSettings(patterns);
   }
@@ -1455,9 +1462,14 @@
     return snap;
   }
 
+  // Preset slots double as motion-sensitivity levels: 1 = calm (15), 2 = medium (35),
+  // 3 = wild (65). The Default button resets to 50 (see resetAllControls).
+  const PRESET_SENSITIVITY = [15, 35, 65];
+
   function restorePreset(idx: number) {
     const snap = presetSlots[idx];
     if (!snap) return;
+    cameraState.sensitivity = PRESET_SENSITIVITY[idx] ?? 50;
     applySnapshot(snap, idx + 1, false);
   }
 
@@ -1906,6 +1918,12 @@
       if (!rendererStuck && handle && now - handle.getLastFrameAt() > 4000) {
         rendererStuck = true;
       }
+
+      // Surface active flicker-guard damping in the HUD — heavy damping dims
+      // thin-feature patterns to near-black, which otherwise reads as a bug.
+      const _guardK = handle?.getGuardBlendK() ?? 1;
+      const _damping = flickerGuard.enabled && _guardK < 0.9;
+      if (_damping !== guardDampingActive) guardDampingActive = _damping;
 
       gpController.poll(now);
 
@@ -4162,14 +4180,6 @@
                       </div>
                       <input type="range" min={0} max={100} step={1} bind:value={cameraState.sensitivity}
                         class="w-full accent-white cursor-pointer" />
-                      <div class="mt-1 flex gap-1">
-                        {#each [{ n: 1, v: 15 }, { n: 2, v: 35 }, { n: 3, v: 65 }] as p}
-                          <button
-                            class="rounded px-2 py-0.5 text-[11px] font-mono transition-colors {cameraState.sensitivity === p.v ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50 hover:text-white/80'}"
-                            onclick={() => { cameraState.sensitivity = p.v; }}
-                          >{p.n}</button>
-                        {/each}
-                      </div>
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">
@@ -4711,5 +4721,16 @@
       class="cursor-pointer rounded-md border border-white/20 bg-white/[0.07] px-4 py-1.5 text-xs text-white/80 transition-colors hover:border-white/40 hover:bg-white/15"
       onclick={() => location.reload()}
     >Reload</button>
+  </div>
+{/if}
+
+<!-- Flicker-guard activity badge — shown whenever the epilepsy guard is actively
+     damping the image (which dims thin-feature patterns toward black), independent
+     of HUD visibility, so the dimming is attributable instead of looking like a
+     rendering bug. -->
+{#if guardDampingActive}
+  <div class="pointer-events-none fixed bottom-3 right-3 z-[90] rounded-full border border-white/20 bg-black/60 px-2.5 py-1 text-[10px] tracking-wide text-white/60 backdrop-blur-sm"
+    title="The epilepsy guard detected flashing and is damping the image.">
+    ⛨ Epilepsy guard active
   </div>
 {/if}
