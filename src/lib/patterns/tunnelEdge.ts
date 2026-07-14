@@ -20,6 +20,10 @@ let colorDrift = 0.2;
 
 let colorPhase = 0;
 let accTime    = 0;
+// Rotation runs on its own dt-driven phase, independent of accTime — accTime is
+// speed * dt and speed gets boosted by motion, which was making the rotation spin
+// disproportionately faster than intended whenever motion boosted Speed.
+let rotPhase   = 0;
 
 // Heat state — centroid shifts tunnel center toward person
 let heatCenterStr = 1.0;
@@ -57,7 +61,7 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
   uniform float uTime;
   uniform vec2  uResolution;
-  uniform float uRotSpeed;
+  uniform float uRotPhase;
   uniform float uRingCount;
   uniform float uEdges;
   uniform float uRingOffset;
@@ -86,7 +90,7 @@ const fragmentShader = /* glsl */ `
     float aspect = uResolution.x / max(uResolution.y, 1.0);
     vec2 uv = (vUv - 0.5 - uHeatOffset) * vec2(aspect, 1.0);
 
-    float globalAngle = PI / uEdges + uTime * uRotSpeed;
+    float globalAngle = PI / uEdges + uRotPhase;
     vec2 ruv = rot2d(uv, globalAngle);
 
     float d0    = ngonDist(ruv, uEdges);
@@ -142,7 +146,7 @@ export const tunnelEdge: Pattern = {
   id: "tunnelEdge",
   name: "Tunnel — Edge",
   heatReactive: true,
-  motionControlLabels: ["Speed", "Wobble"],  // speed + wobble respond to motion; Tier 1 handles Color v2
+  motionControlLabels: ["Speed"],  // only speed responds to motion; Tier 1 handles Color v2
   audioControlLabels:  ["Shadow Width"],
   controls: [
     { label: "Speed",        type: "range", min: -30,   max: 30,   step: 0.5,  default: 4,    tip: "Fly-through speed. Positive = forwards, negative = backwards.",                          get: () => speed,       set: (v) => { speed = v; } },
@@ -165,7 +169,7 @@ export const tunnelEdge: Pattern = {
       uniforms: {
         uTime:        { value: 0 },
         uResolution:  { value: new THREE.Vector2(ctx.size.width, ctx.size.height) },
-        uRotSpeed:    { value: rotSpeed },
+        uRotPhase:    { value: rotPhase },
         uRingCount:   { value: ringCount },
         uEdges:       { value: edges },
         uRingOffset:  { value: ringOffset },
@@ -189,6 +193,7 @@ export const tunnelEdge: Pattern = {
   update(dt: number, _elapsed: number) {
     if (!material) return;
     accTime    += dt * speed;
+    rotPhase   += dt * rotSpeed;
     colorPhase += dt * colorDrift * 0.1;
 
     if (cameraState.heatEnabled) {
@@ -212,7 +217,7 @@ export const tunnelEdge: Pattern = {
     _colorB.lerpColors(_cFade, _cTemp, _ph2);
     // Color v2 is now driven universally by the motionCameraWrapper.
     material.uniforms.uTime.value        = accTime;
-    material.uniforms.uRotSpeed.value    = rotSpeed;
+    material.uniforms.uRotPhase.value    = rotPhase;
     material.uniforms.uRingCount.value   = ringCount;
     material.uniforms.uEdges.value       = edges;
     material.uniforms.uRingOffset.value  = ringOffset;
@@ -235,6 +240,7 @@ export const tunnelEdge: Pattern = {
     geometry = null;
     material = null;
     accTime = 0;
+    rotPhase = 0;
     colorPhase = 0;
     heatOffset.set(0, 0);
   },

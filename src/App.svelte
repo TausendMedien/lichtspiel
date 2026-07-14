@@ -4162,6 +4162,14 @@
                       </div>
                       <input type="range" min={0} max={100} step={1} bind:value={cameraState.sensitivity}
                         class="w-full accent-white cursor-pointer" />
+                      <div class="mt-1 flex gap-1">
+                        {#each [{ n: 1, v: 15 }, { n: 2, v: 35 }, { n: 3, v: 65 }] as p}
+                          <button
+                            class="rounded px-2 py-0.5 text-[11px] font-mono transition-colors {cameraState.sensitivity === p.v ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50 hover:text-white/80'}"
+                            onclick={() => { cameraState.sensitivity = p.v; }}
+                          >{p.n}</button>
+                        {/each}
+                      </div>
                     </div>
                     <div>
                       <div class="flex justify-between mb-1 text-xs text-white/70">

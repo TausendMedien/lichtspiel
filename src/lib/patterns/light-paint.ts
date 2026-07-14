@@ -20,6 +20,39 @@ import { cameraState, enumerateCameras, saveCameraDevice, getVisibleDevices, cam
 // GL objects) so several preset tiles can coexist. Brush Size = 0 gives a sharp
 // "Light Trail" look; raise it for a soft brush.
 
+// ─── Heat map (shared helper) ──────────────────────────────────────────────────
+// Light-painting patterns already have their own live camera feed — Heat reuses
+// that same video element (no second getUserMedia stream) and derives a motion
+// field from simple frame-to-frame luma differencing, at the same 160x90
+// resolution the static heat-reactive patterns (tunnel.ts et al) use.
+
+const HEAT_W = 160, HEAT_H = 90;
+
+function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
+  if (r < 1) { dst.set(src); return; }
+  for (let y = 0; y < HEAT_H; y++) {
+    const yo = y * HEAT_W;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HEAT_W - 1); k++) { sum += src[yo + k]; cnt++; }
+    tmp[yo] = sum / cnt;
+    for (let x = 1; x < HEAT_W; x++) {
+      if (x + r < HEAT_W)      { sum += src[yo + x + r];     cnt++; }
+      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
+      tmp[yo + x] = sum / cnt;
+    }
+  }
+  for (let x = 0; x < HEAT_W; x++) {
+    let sum = 0, cnt = 0;
+    for (let k = 0; k <= Math.min(r, HEAT_H - 1); k++) { sum += tmp[k * HEAT_W + x]; cnt++; }
+    dst[x] = sum / cnt;
+    for (let y = 1; y < HEAT_H; y++) {
+      if (y + r < HEAT_H)      { sum += tmp[(y + r) * HEAT_W + x];     cnt++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * HEAT_W + x]; cnt--; }
+      dst[y * HEAT_W + x] = sum / cnt;
+    }
+  }
+}
+
 // ─── Shaders (shared, immutable) ──────────────────────────────────────────────
 
 const vertexShader = /* glsl */ `
@@ -158,6 +191,9 @@ const compositeFragmentShader = /* glsl */ `
   uniform float uMirror;       // >0.5 = mirror live feed horizontally
   uniform float uKaleido;      // >0.5 = on
   uniform float uKaleidoSeg;
+  uniform vec2  uHeatOffset;   // Center Shift: pans the whole image toward the person
+  uniform sampler2D uHeatMap;  // 160x90 smoothed motion field (same layout as static patterns)
+  uniform float uHeatStrength; // Sobel edge warp magnitude, 0 = off
 
   // Reinhard-toned trail + bloom at a given uv.
   vec3 tonedAt(vec2 uv) {
@@ -178,6 +214,21 @@ const compositeFragmentShader = /* glsl */ `
 
   void main() {
     vec2 suv = uKaleido > 0.5 ? kaleido(vUv) : vUv;
+    suv -= uHeatOffset;
+
+    // Heat Sobel: locally warps the image at body-motion edges, same technique as
+    // the static heat-reactive patterns (tunnel.ts et al). The heat texture comes
+    // from a 2D canvas readback (row 0 = top), so flip both axes to align it with
+    // vUv (0 = bottom) the way tunnel.ts does.
+    if (uHeatStrength > 0.001) {
+      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      vec2 hUv = vec2(1.0 - suv.x, 1.0 - suv.y);
+      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+      suv += vec2(hR - hL, hU - hD) * uHeatStrength * 0.3;
+    }
 
     // Chromatic split across channels.
     vec3 toned;
@@ -277,6 +328,52 @@ function createLightPainting(
   let mirror = D.mirror;
   let clearRequested = false;
   const halfResBlur = true;  // always on — saves ~75% of GPU blur work
+
+  // Heat state — reuses this instance's own camera feed (see HEAT_W/HEAT_H helpers above)
+  let heatCenterStr = 1.0;
+  let heatStrength  = 1.8;
+  let heatBlurR     = 1;
+  const heatOffset  = new THREE.Vector2();
+  let heatDiffCanvas: HTMLCanvasElement | null = null;
+  let heatDiffCtx: CanvasRenderingContext2D | null = null;
+  let heatPrevLuma: Float32Array | null = null;
+  let heatLastVideoTime = -1;
+  let heatRaw: Float32Array | null = null;
+  let heatSmoothed: Float32Array | null = null;
+  let heatTmp: Float32Array | null = null;
+  let heatTexData: Float32Array | null = null;
+  let heatTex: THREE.DataTexture | null = null;
+
+  function computeHeatCentroid(): { cx: number; cy: number } {
+    const map = heatSmoothed!;
+    let wx = 0, wy = 0, total = 0;
+    for (let y = 0; y < HEAT_H; y++)
+      for (let x = 0; x < HEAT_W; x++) {
+        const v = map[y * HEAT_W + x];
+        wx += v * x; wy += v * y; total += v;
+      }
+    return total > 0.01
+      ? { cx: wx / total / HEAT_W, cy: wy / total / HEAT_H }
+      : { cx: 0.5, cy: 0.5 };
+  }
+
+  // Frame-to-frame luma diff on this instance's own video element — no extra
+  // getUserMedia stream. Only runs while Heat is on (extra CPU cost otherwise).
+  function tickHeatDiff() {
+    if (!video || !heatDiffCtx || !heatRaw) return;
+    if (video.readyState < 2 || video.currentTime === heatLastVideoTime) return;
+    heatLastVideoTime = video.currentTime;
+    heatDiffCtx.drawImage(video, 0, 0, HEAT_W, HEAT_H);
+    const { data } = heatDiffCtx.getImageData(0, 0, HEAT_W, HEAT_H);
+    const luma = new Float32Array(HEAT_W * HEAT_H);
+    for (let i = 0; i < HEAT_W * HEAT_H; i++) {
+      luma[i] = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255;
+    }
+    if (heatPrevLuma) {
+      for (let i = 0; i < HEAT_W * HEAT_H; i++) heatRaw[i] = Math.abs(luma[i] - heatPrevLuma[i]);
+    }
+    heatPrevLuma = luma;
+  }
 
   // THREE objects
   let _renderer: THREE.WebGLRenderer | null = null;
@@ -573,6 +670,24 @@ function createLightPainting(
           tip: "Erase all accumulated trails now.",
           action: () => { clearRequested = true; },
         },
+        {
+          label: "Center Shift", type: "range" as const, min: 0, max: 2, step: 0.1, default: 1.0,
+          interactive: 'heat' as const,
+          tip: "How much heat-map position shifts the image center toward the person. Requires Heat.",
+          get: () => heatCenterStr, set: v => { heatCenterStr = v; },
+        },
+        {
+          label: "Heat Strength", type: "range" as const, min: 0, max: 2.5, step: 0.1, default: 1.8,
+          interactive: 'heat' as const,
+          tip: "How much heat-map edges locally warp the image. Requires Heat.",
+          get: () => heatStrength, set: v => { heatStrength = v; },
+        },
+        {
+          label: "Blur Radius", type: "range" as const, min: 0, max: 8, step: 1, default: 1,
+          interactive: 'heat' as const,
+          tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",
+          get: () => heatBlurR, set: v => { heatBlurR = v; },
+        },
       ];
 
   // Move priority controls to position 1 (after the 1 camera control that is in Interactive).
@@ -590,6 +705,7 @@ function createLightPainting(
     id,
     name,
     usesCameraBlend: true,
+    heatReactive: true,
     audioControlLabels: ['RGB Split'],
     defaultCollapsedSections: ['Additional'],
     controls: builtControls,
@@ -607,6 +723,18 @@ function createLightPainting(
         new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat
       );
       blackTexture.needsUpdate = true;
+
+      heatDiffCanvas = document.createElement("canvas");
+      heatDiffCanvas.width = HEAT_W;
+      heatDiffCanvas.height = HEAT_H;
+      heatDiffCtx = heatDiffCanvas.getContext("2d", { willReadFrequently: true });
+      heatRaw      = new Float32Array(HEAT_W * HEAT_H);
+      heatSmoothed = new Float32Array(HEAT_W * HEAT_H);
+      heatTmp      = new Float32Array(HEAT_W * HEAT_H);
+      heatTexData  = new Float32Array(HEAT_W * HEAT_H);
+      heatTex = new THREE.DataTexture(heatTexData, HEAT_W, HEAT_H, THREE.RedFormat, THREE.FloatType);
+      heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
+      heatTex.needsUpdate = true;
 
       const rtType = _renderer.capabilities.isWebGL2
         ? THREE.HalfFloatType
@@ -691,6 +819,9 @@ function createLightPainting(
           uMirror:     { value: mirror ? 1.0 : 0.0 },
           uKaleido:    { value: 0.0 },
           uKaleidoSeg: { value: kaleidoSeg },
+          uHeatOffset:   { value: new THREE.Vector2(0, 0) },
+          uHeatMap:      { value: heatTex },
+          uHeatStrength: { value: 0 },
         },
         vertexShader,
         fragmentShader: compositeFragmentShader,
@@ -709,13 +840,36 @@ function createLightPainting(
       }
     },
 
-    update(_dt: number, _elapsed: number) {
+    update(dt: number, _elapsed: number) {
       if (!_renderer || !accumMaterial || !compositeMaterial || !blurMaterial) return;
 
       if (privacyMode.active && cameraHandle) { stopCamera(); }
 
       const liveTex = cameraReady && videoTexture ? videoTexture : blackTexture!;
       if (cameraReady && videoTexture) videoTexture.needsUpdate = true;
+
+      // Heat: reuse this instance's own live feed — only run the diff while the
+      // toggle is on (the extra offscreen draw + readback isn't free).
+      if (cameraState.heatEnabled && cameraReady && video && heatSmoothed && heatTmp && heatTexData && heatTex) {
+        tickHeatDiff();
+        for (let i = 0; i < HEAT_W * HEAT_H; i++)
+          heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, heatRaw![i] - 0.008) * 0.18;
+        heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
+        heatTex.needsUpdate = true;
+        const { cx, cy } = computeHeatCentroid();
+        const tx = (0.5 - cx) * 0.35 * heatCenterStr;
+        const ty = (0.5 - cy) * 0.35 * heatCenterStr;
+        const spd = Math.min(1, dt * 2.5);
+        heatOffset.x += (tx - heatOffset.x) * spd;
+        heatOffset.y += (ty - heatOffset.y) * spd;
+      } else {
+        const decay = Math.max(0, 1 - dt * 3);
+        heatOffset.x *= decay;
+        heatOffset.y *= decay;
+        heatPrevLuma = null; // re-warm the diff so a stale first frame isn't compared once re-enabled
+      }
+      compositeMaterial.uniforms.uHeatOffset.value.copy(heatOffset);
+      compositeMaterial.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
 
       const doClear = clearRequested ? 1.0 : 0.0;
       clearRequested = false;
@@ -818,6 +972,12 @@ function createLightPainting(
       compositeGeometry?.dispose(); compositeGeometry = null;
       compositeMaterial?.dispose(); compositeMaterial = null;
       compositeMesh = null;
+
+      heatTex?.dispose(); heatTex = null;
+      heatDiffCanvas = null; heatDiffCtx = null;
+      heatPrevLuma = null; heatLastVideoTime = -1;
+      heatRaw = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
+      heatOffset.set(0, 0);
 
       overlay?.remove(); overlay = null;
       _renderer = null;

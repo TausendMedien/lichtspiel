@@ -44,9 +44,6 @@ const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',  
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightKaleido', 'lightGlitch'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
-// Light patterns get audio reactivity (Brightness via mic) but not motion camera
-const NO_AUDIO = new Set(['typography3d']);
-
 const rawPatterns: Pattern[] = [
   hyperMixHeat,
   particlesHeat,
@@ -89,6 +86,6 @@ const rawPatterns: Pattern[] = [
 
 export const patterns: Pattern[] = rawPatterns
   .map(p => NO_MOTION_CAMERA.has(p.id) ? p : addMotionCamera(p))
-  .map(p => NO_AUDIO.has(p.id) ? p : addAudioReactivity(p))
+  .map(addAudioReactivity)
   .map(wrapWithPersist)
   .map(wrapWithBroadcast);

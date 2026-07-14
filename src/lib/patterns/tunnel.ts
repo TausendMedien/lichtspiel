@@ -151,7 +151,7 @@ export const tunnel: Pattern = {
   id: "tunnel",
   name: "Tunnel",
   heatReactive: true,
-  motionControlLabels: ["Speed", "Wobble"],
+  motionControlLabels: ["Speed"],
   audioControlLabels:  ["Thickness"],
   controls: [
     { label: "Speed",         type: "range", min: -40,  max: 40,  step: 1,    default: 10,  tip: "Fly-through speed. Positive = forwards, negative = backwards.", get: () => speed,         set: (v) => { speed = v; } },

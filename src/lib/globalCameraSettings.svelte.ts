@@ -62,7 +62,7 @@ export const cameraState = $state({
   devices:        [] as DeviceInfo[],
   resWidth:       loadCameraResWidth(),
   showVirtual:    loadShowVirtual(),
-  sensitivity:    50,
+  sensitivity:    55,
   level:          0,      // 0–100 smoothed motion level
   /** Motion direction: -1 = left/top, +1 = right/bottom. Updated by motionCameraWrapper. */
   dirX:           0,
