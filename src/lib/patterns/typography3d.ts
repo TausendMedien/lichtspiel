@@ -109,9 +109,17 @@ function buildText() {
   const _cGlow    = new THREE.Color().lerpColors(_cPrimary, new THREE.Color(colorC2.contrast), _ph2);
   const primaryColor = '#' + _cPrimary.getHexString();
   const glowColor    = '#' + _cGlow.getHexString();
-  _lastPrimary  = colorC2.main;
-  _lastGlow     = colorC2.contrast;
-  _lastColorsV2 = colorC2.colorsV2;
+
+  // Build the replacement group FIRST and only swap it in on success — a failed
+  // or degenerate TextGeometry (e.g. Depth 0 with bevel) must never leave the
+  // scene empty, since update() has no other way to bring the text back.
+  let group: THREE.Group;
+  try {
+    group = buildTextGroup(primaryColor, glowColor);
+  } catch (err) {
+    console.error('[typo] buildText failed — keeping previous text', err);
+    return;
+  }
 
   if (textGroup) {
     textGroup.traverse(obj => {
@@ -125,10 +133,20 @@ function buildText() {
     textGroup = null;
   }
 
+  scene.add(group);
+  textGroup = group;
+  _lastPrimary  = colorC2.main;
+  _lastGlow     = colorC2.contrast;
+  _lastColorsV2 = colorC2.colorsV2;
+}
+
+function buildTextGroup(primaryColor: string, glowColor: string): THREE.Group {
   const geo = new TextGeometry(textStr || "Burn", {
-    font: fontCache,
+    font: fontCache!,
     size: textSize,
-    depth: textDepth,
+    // Depth 0 with bevel produces degenerate/NaN extrusion; stored settings and
+    // presets may still carry 0, so clamp here rather than at the control.
+    depth: Math.max(0.01, textDepth),
     curveSegments: 6,
     bevelEnabled: true,
     bevelThickness: 0.02,
@@ -136,7 +154,11 @@ function buildText() {
     bevelSegments: 3,
   });
   geo.computeBoundingBox();
-  const bb = geo.boundingBox!;
+  const bb = geo.boundingBox;
+  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x) || !isFinite(bb.min.y) || !isFinite(bb.max.y)) {
+    geo.dispose();
+    throw new Error('degenerate text geometry (non-finite bounding box)');
+  }
   const cx = (bb.max.x - bb.min.x) / 2;
   const cy = (bb.max.y - bb.min.y) / 2;
   geo.translate(-cx, -cy, 0);
@@ -183,8 +205,7 @@ function buildText() {
     group.add(new THREE.LineSegments(edges, edgeMat));
   }
 
-  scene.add(group);
-  textGroup = group;
+  return group;
 }
 
 let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -279,12 +300,12 @@ export const typography3d: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!textGroup) return;
-
-    // Rebuild if custom colors changed
+    // Rebuild if custom colors changed — checked BEFORE the textGroup guard so a
+    // previously failed build can recover instead of dead-ending on black forever.
     if (colorC2.main !== _lastPrimary || colorC2.contrast !== _lastGlow || colorC2.colorsV2 !== _lastColorsV2) {
       buildText();
     }
+    if (!textGroup) return;
 
     animTime += dt;
 

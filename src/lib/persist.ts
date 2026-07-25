@@ -58,6 +58,13 @@ export function wrapWithPersist(pattern: Pattern): Pattern {
       setLive(v: number) {
         ctrl.set(v);
       },
+      // Final write of an animated transition (randomize/preset sweep): persist
+      // once, no undo entry — the caller pushed one undo for the start value.
+      commit(v: number) {
+        ctrl.set(v);
+        localStorage.setItem(key, String(v));
+        notifyActivity();
+      },
     };
   });
 

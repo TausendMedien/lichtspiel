@@ -15,6 +15,12 @@ export interface RendererHandle {
   setTimeScale: (v: number) => void;
   getTimeScale: () => number;
   setFlickerGuard: (enabled: boolean) => void;
+  /** Briefly suspend flicker-guard detection and damping (ms, capped at 3 s).
+   *  For intentional whole-frame transitions — randomize sweeps, preset restores,
+   *  pattern switches — whose abrupt luminance change would otherwise trip the
+   *  guard and dim thin-feature patterns to near-black. Steady-state protection
+   *  is untouched; detection restarts cleanly when the window ends. */
+  suppressGuard: (ms: number) => void;
   /** Current flicker-guard blend factor: 1 = passthrough, <1 = actively damping.
    *  Lets the HUD show WHY the image is dimming (guard engaged) instead of it
    *  reading as a rendering bug. */
@@ -232,6 +238,18 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   const DECAY_TAU = 1.0;                     // s — memory of the transition-rate estimate
   const CELL_FLASH_TRANS = 6;               // transitions/s (= 3 flash pairs/s) → cell "flashing"
   const AREA_LOW = 0.10, AREA_HIGH = 0.30;   // engage from 10% area, full damping at 30%
+  let guardSuppressUntil = 0;                // performance.now() deadline of an intentional-transition window
+
+  function suppressGuard(ms: number) {
+    guardSuppressUntil = performance.now() + Math.min(Math.max(0, ms), 3000);
+    // Forget accumulated flash history so the transition itself is never counted
+    // and stale pre-transition rates can't re-engage damping afterwards.
+    cellRate.fill(0); cellDir.fill(0); cellExtremum.fill(0); cellPrev.fill(0);
+    guardSeverity = 0;
+    blendK = 1;
+    lastSampleT = 0; // first post-suppression sample warms up with dtS = 0
+    guardReadout.blendK = 1; guardReadout.flashesPerSec = 0; guardReadout.area = 0;
+  }
 
   function processGuardSample(now: number) {
     const dtS = lastSampleT ? Math.min(0.5, (now - lastSampleT) / 1000) : 0;
@@ -294,6 +312,9 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     // ASCII Swirls), let dispose() stop the outgoing pattern's camera normally —
     // otherwise it leaks as an unmanaged stream nobody ticks or stops.
     const reuseCamera = !!next.motionReactive;
+    // A pattern switch is an intentional whole-frame change — don't let the
+    // flicker guard read it (or stale history from the old pattern) as flashing.
+    suppressGuard(1300);
     if (reuseCamera) keepCameraAlive(true);
     current.dispose();
     clearScene();
@@ -406,12 +427,21 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
 
     if (guardEnabled) {
       // ── Guarded path: blend with previous frame, blit to canvas, analyse ──────
-      // Drive blendK from the detected flashing area (set in processGuardSample):
-      // ease down fast when flashing, recover slowly.
-      const targetK = 1.0 - 0.82 * guardSeverity;       // 1.0 → 0.18 (strong damping when fully engaged)
-      const rate = targetK < blendK ? 12 : 2;           // fast attack, slow release
-      blendK += (targetK - blendK) * (1 - Math.exp(-dt * rate));
-      guardReadout.blendK = Math.round(blendK * 100) / 100;
+      // During an intentional-transition window (suppressGuard) hold blendK at 1
+      // and skip sampling; the history blit below keeps running so histPrev is
+      // fresh the moment the window ends.
+      const suppressed = now < guardSuppressUntil;
+      if (suppressed) {
+        blendK = 1.0;
+        guardReadout.blendK = 1;
+      } else {
+        // Drive blendK from the detected flashing area (set in processGuardSample):
+        // ease down fast when flashing, recover slowly.
+        const targetK = 1.0 - 0.82 * guardSeverity;       // 1.0 → 0.18 (strong damping when fully engaged)
+        const rate = targetK < blendK ? 12 : 2;           // fast attack, slow release
+        blendK += (targetK - blendK) * (1 - Math.exp(-dt * rate));
+        guardReadout.blendK = Math.round(blendK * 100) / 100;
+      }
 
       // Post(rt, prev) → histCur  (temporal blend happens in the post shader)
       postUniforms.uPrev.value   = histPrev.texture;
@@ -428,7 +458,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       // (≈GUARD_W×GUARD_H px) so the synchronous read is cheap; only run it every
       // few frames to bound the GPU-sync cost.
       guardTick++;
-      if (guardTick % GUARD_EVERY === 0) {
+      if (!suppressed && guardTick % GUARD_EVERY === 0) {
         renderer.setRenderTarget(guardRT);
         renderer.render(copyScene, postCamera);
         renderer.readRenderTargetPixels(guardRT, 0, 0, GUARD_W, GUARD_H, guardBuf);
@@ -464,6 +494,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     setTimeScale(v: number) { timeScale = Math.max(0, v); },
     getTimeScale() { return timeScale; },
     setFlickerGuard(enabled: boolean) { guardEnabled = enabled; },
+    suppressGuard,
     getGuardBlendK() { return blendK; },
     getCanvas() { return canvas; },
     getLastFrameAt() { return lastFrameAt; },

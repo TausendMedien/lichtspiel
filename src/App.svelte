@@ -18,7 +18,7 @@
   import { CHANGELOG, inlineMarkdownToHtml } from "./lib/changelog";
   import { createMIDIController } from "./lib/midi";
   import type { MIDIAction } from "./lib/midi";
-  import { popUndo, setUndoing } from "./lib/undo";
+  import { popUndo, pushUndo, setUndoing } from "./lib/undo";
   import { encodeShare, decodeShare } from "./lib/shareUrl";
   import { getSlots, saveSlot, resetSlots, resetAllSlots } from "./lib/presets";
   import type { Snapshot } from "./lib/presets";
@@ -932,9 +932,11 @@
 
   function activatePattern(n: number) {
     dismissFirstRunHint();
-    index = switchTo(n);
-    focusedIndex = index;
-    handle?.activateCurrentPattern();
+    coverSwitch(() => {
+      index = switchTo(n);
+      focusedIndex = index;
+      handle?.activateCurrentPattern();
+    });
     appState = "active";
     overlayHidden = false;
     poke();
@@ -985,54 +987,76 @@
     return from; // all disabled or only current enabled — stay put
   }
 
-  async function crossFadeTo(n: number) {
-    // Capture current frame BEFORE switching so snapshot covers the transition.
-    // toDataURL() throws SecurityError if the canvas were ever tainted by a
-    // cross-origin texture without CORS — guarded so that failure degrades to a
-    // visible (but harmless) pop instead of aborting the transition entirely and
-    // silently breaking the demo's scheduleNext() chain.
+  // Snapshot-cover mechanism shared by demo crossfades and manual pattern
+  // switches: capture the current frame, freeze, switch behind the cover, then
+  // fade the cover out. Without it, patterns whose first frames depend on async
+  // resources (Light Painting waiting on getUserMedia) show hard black on entry.
+  let coverSwitching = false;
+  async function coverSwitch(doSwitch: () => void, opts: { forceScale1?: boolean } = {}) {
+    // Reentrancy guard: while a cover is in flight (rapid arrow-key mashing,
+    // demo tick racing a keypress), switch immediately without a new snapshot —
+    // stays responsive and never interleaves the await chains.
+    if (coverSwitching) { doSwitch(); return; }
+    coverSwitching = true;
     try {
-      snapshotUrl = canvas.toDataURL();
-    } catch (err) {
-      console.error('[crossFadeTo] toDataURL failed — skipping snapshot cover', err);
-      snapshotUrl = null;
+      // Capture current frame BEFORE switching so snapshot covers the transition.
+      // toDataURL() throws SecurityError if the canvas were ever tainted by a
+      // cross-origin texture without CORS — guarded so that failure degrades to a
+      // visible (but harmless) pop instead of aborting the transition entirely and
+      // silently breaking the demo's scheduleNext() chain.
+      try {
+        snapshotUrl = canvas.toDataURL();
+      } catch (err) {
+        console.error('[coverSwitch] toDataURL failed — skipping snapshot cover', err);
+        snapshotUrl = null;
+      }
+      snapshotFading = false;
+      // Freeze the renderer immediately so the canvas stays on the captured frame
+      // while decode() runs. On iPad/Safari, toDataURL() is slow (~30–80 ms) and
+      // decode() is async (~50–200 ms), so the canvas advances well past F0 before
+      // the snapshot covers it — producing a visible "jump back" when it finally
+      // appears. Freezing ensures canvas and snapshot always show the same frame.
+      const prevScale = timeScaleMirror;
+      handle?.setTimeScale(0);
+      freezeAnim = null;
+      await tick(); // ensure snapshot img is in DOM before canvas switches
+      // Ensure the snapshot img is fully decoded AND painted before switching the
+      // canvas — otherwise (notably on iPad/Safari) the data-URL decode is async
+      // and the incoming pattern flashes through for a frame before the cover appears.
+      try { await snapshotImg?.decode(); } catch { /* ignore decode errors */ }
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      // Switch pattern while snapshot covers the canvas
+      doSwitch();
+      // Unfreeze so the incoming pattern plays. Demo always resumes at 1×;
+      // manual switches restore the caller's speed (preserving a user freeze).
+      const resume = opts.forceScale1 ? 1 : prevScale;
+      handle?.setTimeScale(resume);
+      timeScaleMirror = resume;
+      freezeAnim = null;
+      // Let new pattern render a couple frames, then fade out snapshot
+      requestAnimationFrame(() => requestAnimationFrame(() => { snapshotFading = true; }));
+    } finally {
+      coverSwitching = false;
     }
-    snapshotFading = false;
-    // Freeze the renderer immediately so the canvas stays on the captured frame
-    // while decode() runs. On iPad/Safari, toDataURL() is slow (~30–80 ms) and
-    // decode() is async (~50–200 ms), so the canvas advances well past F0 before
-    // the snapshot covers it — producing a visible "jump back" when it finally
-    // appears. Freezing ensures canvas and snapshot always show the same frame.
-    handle?.setTimeScale(0);
-    freezeAnim = null;
-    await tick(); // ensure snapshot img is in DOM before canvas switches
-    // Ensure the snapshot img is fully decoded AND painted before switching the
-    // canvas — otherwise (notably on iPad/Safari) the data-URL decode is async
-    // and the incoming pattern flashes through for a frame before the cover appears.
-    try { await snapshotImg?.decode(); } catch { /* ignore decode errors */ }
-    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    // Switch pattern while snapshot covers the canvas
-    index = switchTo(n);
-    focusedIndex = index;
-    if (demoActive) {
-      if (demoStartBehavior === 'random') {
-        randomizeControls();
-      } else if (demoStartBehavior !== 'default') {
-        const slotIdx = ({ slot1: 0, slot2: 1, slot3: 2 } as Record<string, number>)[demoStartBehavior];
-        const slots = getSlots(patterns[n].id);
-        if (slots[slotIdx]) {
-          presetSlots = slots;
-          restorePreset(slotIdx);
+  }
+
+  async function crossFadeTo(n: number) {
+    await coverSwitch(() => {
+      index = switchTo(n);
+      focusedIndex = index;
+      if (demoActive) {
+        if (demoStartBehavior === 'random') {
+          randomizeControls();
+        } else if (demoStartBehavior !== 'default') {
+          const slotIdx = ({ slot1: 0, slot2: 1, slot3: 2 } as Record<string, number>)[demoStartBehavior];
+          const slots = getSlots(patterns[n].id);
+          if (slots[slotIdx]) {
+            presetSlots = slots;
+            restorePreset(slotIdx);
+          }
         }
       }
-    }
-    // Unfreeze so the incoming pattern plays at normal speed.
-    // crossFadeTo is only ever called in demo mode, so always reset to 1×.
-    handle?.setTimeScale(1);
-    timeScaleMirror = 1;
-    freezeAnim = null;
-    // Let new pattern render a couple frames, then fade out snapshot
-    requestAnimationFrame(() => requestAnimationFrame(() => { snapshotFading = true; }));
+    }, { forceScale1: true });
   }
 
   function scheduleNext() {
@@ -1124,7 +1148,7 @@
           activatePattern(focusedIndex);
           break;
         case "fullscreen":
-          fs.enter(document.documentElement);
+          fs.toggle(document.documentElement);
           break;
         case "toggleCheatsheet":
           cheatsheetVisible = !cheatsheetVisible;
@@ -1189,14 +1213,14 @@
       switch (action.type) {
         case "next":
           if (demoActive) { crossFadeTo(nextDemoIndex(index, 1)).then(() => resetDemoTimer()); }
-          else { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          else { coverSwitch(() => { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "prev":
           if (demoActive) { crossFadeTo(nextDemoIndex(index, -1)).then(() => resetDemoTimer()); }
-          else { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          else { coverSwitch(() => { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "jump":
-          if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          if (action.index < patterns.length) { coverSwitch(() => { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "fullscreen":
           fs.toggle(document.documentElement); hudVisible = false; break;
@@ -1214,17 +1238,17 @@
       switch (action.type) {
         case "next":
           if (demoActive) { crossFadeTo(nextDemoIndex(index, 1)).then(() => resetDemoTimer()); }
-          else { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          else { coverSwitch(() => { index = switchTo(nextVisibleIndex(index, 1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "prev":
           if (demoActive) { crossFadeTo(nextDemoIndex(index, -1)).then(() => resetDemoTimer()); }
-          else { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          else { coverSwitch(() => { index = switchTo(nextVisibleIndex(index, -1)); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "jump":
-          if (action.index < patterns.length) { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }
+          if (action.index < patterns.length) { coverSwitch(() => { index = switchTo(action.index); focusedIndex = index; handle?.activateCurrentPattern(); resetDemoTimer(); }); }
           break;
         case "fullscreen":
-          fs.enter(document.documentElement); appState = "active"; hudVisible = false; break;
+          fs.toggle(document.documentElement); appState = "active"; hudVisible = false; break;
         case "demo":
           demoVisible = !demoVisible; poke(); break;
         case "escape":
@@ -1240,11 +1264,13 @@
       if (demoTimer) clearTimeout(demoTimer);
       crossFadeTo(nextDemoIndex(index)).then(() => { after?.(); scheduleNext(); });
     } else {
-      index = switchTo(nextVisibleIndex(index, 1));
-      focusedIndex = index;
-      handle?.activateCurrentPattern();
-      resetDemoTimer();
-      after?.();
+      coverSwitch(() => {
+        index = switchTo(nextVisibleIndex(index, 1));
+        focusedIndex = index;
+        handle?.activateCurrentPattern();
+        resetDemoTimer();
+        after?.();
+      });
     }
   }
 
@@ -1300,6 +1326,7 @@
   }
 
   function startRandomize(now: number) {
+    handle?.suppressGuard(1300); // intentional transition — don't let the flicker guard dim it
     const anims: Record<string, RandAnim> = {};
     for (const ctrl of patterns[index]?.controls ?? []) {
       if (/camera|microphone/i.test(ctrl.label)) continue;
@@ -1310,6 +1337,7 @@
         const r = Math.floor(Math.random() * (steps + 1));
         const to = parseFloat(Math.min(ctrl.max, ctrl.min + r * ctrl.step).toFixed(10));
         anims[ctrl.label] = { from: ctrl.get(), to, startMs: now };
+        pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
         broadcastCtrlValue(ctrl.label, to); // animates via setLive locally — broadcast the final target directly
       } else if (ctrl.type === 'select' && !ctrl.disabled?.()) {
         const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options;
@@ -1482,6 +1510,7 @@
       const ids = String(snap['__demoPatternIds']).split(',').filter(Boolean);
       if (ids.length) applyDemoPatternIds(new Set(ids));
     }
+    handle?.suppressGuard(1300); // intentional transition — don't let the flicker guard dim it
     const anims: Record<string, RandAnim> = {};
     const now = performance.now();
     for (const ctrl of patterns[index].controls ?? []) {
@@ -1489,6 +1518,7 @@
       const target = snap[ctrl.label];
       if (typeof target === 'number') {
         anims[ctrl.label] = { from: ctrl.get(), to: target, startMs: now };
+        pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
         broadcastCtrlValue(ctrl.label, target); // animates via setLive locally — broadcast the final target directly
       }
     }
@@ -2031,7 +2061,10 @@
           if (!anim) continue;
           const t = Math.min(1, (now - anim.startMs) / 1000);
           const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-          ctrl.set(anim.from + (anim.to - anim.from) * ease);
+          // setLive during the sweep — per-frame ctrl.set() would write localStorage
+          // and push undo entries ~60×/s per control, stalling the main thread
+          // (visible jitter). One undo was pushed at sweep start; commit persists once below.
+          (ctrl.setLive ?? ctrl.set)(anim.from + (anim.to - anim.from) * ease);
           ctrlVals[ctrl.label] = ctrl.get();
           if (t >= 1) anyDone = true;
         }
@@ -2041,6 +2074,7 @@
             if (ctrl.type === 'range' && ctrl.label in randomizeAnims) {
               const anim = randomizeAnims[ctrl.label];
               if ((now - anim.startMs) / 1000 < 1) next[ctrl.label] = anim;
+              else (ctrl.commit ?? ctrl.set)(anim.to); // final value → pp: key, exactly once
             }
           }
           randomizeAnims = next;
@@ -2326,7 +2360,7 @@
             isFullscreenState ? "Exit ⛶" : (isTouch ? "⛶ Fullscreen" : "⛶ Fullscreen (F)"),
             "Toggle fullscreen (F)",
             false,
-            () => { fs.enter(document.documentElement); },
+            () => { fs.toggle(document.documentElement); },
           )}
         {/if}
         {@render hudButton(
@@ -4581,7 +4615,7 @@
               isFullscreenState ? "Exit ⛶" : (isTouch ? "⛶ Fullscreen" : "⛶ Fullscreen (F)"),
               "Toggle fullscreen (F)",
               false,
-              () => { fs.enter(document.documentElement); },
+              () => { fs.toggle(document.documentElement); },
             )}
           {/if}
           {@render hudButton(
