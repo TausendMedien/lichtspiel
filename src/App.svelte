@@ -1867,6 +1867,36 @@
       demoConfigs = listDemoConfigs();
     }
 
+    // One-time top-up: adds "Interactive Planetary" for installs that already had
+    // Saved Configs before this preset existed (the 'pp:demo-configs' first-run
+    // check above only fires once and won't retrofit existing installs).
+    const existingConfigs = listDemoConfigs();
+    if (!existingConfigs['Interactive Planetary']) {
+      saveDemoConfig('Interactive Planetary', {
+        demoPatternIds: [
+          'hyperMixHeat', 'particlesHeat', 'heatMap', 'particleLines',
+          'parallelLinesStraight', 'tunnelEdge', 'shaderGradient',
+        ],
+        demoStartBehavior: 'slot2', // Balanced
+        demoDwell: 60,
+        pedalDwell: 180,
+        demoRandomizeOrder: true,
+        demoFavoritesOnly: false,
+        randomizeMode: 'cycle',
+        pedalChangesPattern: true,
+        pedalDoubleChangesPattern: true,
+        pedalLongAction: 'none',
+        demoHideHud: true,
+        evoActive: false,
+        evoSpeed: 0.04,
+        evoConcurrent: 2,
+        motionEnabled: true,
+        heatEnabled: true,
+        audioEnabled: true,
+      });
+      demoConfigs = listDemoConfigs();
+    }
+
     const gpController = createGamepadController(
       handleGamepadAction,
       (c) => { gamepadConnected = c; },
