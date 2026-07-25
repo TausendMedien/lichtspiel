@@ -1817,6 +1817,56 @@
       startDemo();
     }
 
+    // Seed two default Saved Configs on the very first launch (independent of the
+    // 'lichtspiel-demo' firstRun check above — this one guards its own storage key
+    // so a user who later deletes these configs never gets them silently recreated).
+    if (localStorage.getItem('pp:demo-configs') === null) {
+      saveDemoConfig('Just Lightpainting', {
+        demoPatternIds: ['lightPaint'],
+        demoStartBehavior: 'slot2', // Balanced
+        demoDwell: 60,
+        pedalDwell: 180,
+        demoRandomizeOrder: false,
+        demoFavoritesOnly: false,
+        randomizeMode: 'cycle',
+        pedalChangesPattern: true,
+        pedalDoubleChangesPattern: true,
+        pedalLongAction: 'none',
+        demoHideHud: true,
+        evoActive: false,
+        evoSpeed: 0.04,
+        evoConcurrent: 2,
+        motionEnabled: false,
+        heatEnabled: false,
+        audioEnabled: true,
+      });
+      saveDemoConfig('Chilled Visuals', {
+        demoPatternIds: [
+          'hyperMixHeat', 'particleLines', 'particlesHeat',
+          'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines',
+          'img-thinVerticals', 'img-twoFeather', 'img-rootWave', 'img-purpleOrnate',
+          'img-flowingDots',
+        ],
+        demoStartBehavior: 'slot1', // Chilled
+        demoDwell: 60,
+        pedalDwell: 180,
+        demoRandomizeOrder: false,
+        demoFavoritesOnly: false,
+        randomizeMode: 'cycle',
+        pedalChangesPattern: true,
+        pedalDoubleChangesPattern: true,
+        pedalLongAction: 'none',
+        demoHideHud: true,
+        evoActive: false,
+        evoSpeed: 0.04,
+        evoConcurrent: 2,
+        motionEnabled: false,
+        heatEnabled: false,
+        audioEnabled: true,
+      });
+      demoConfigs = listDemoConfigs();
+    }
+
     const gpController = createGamepadController(
       handleGamepadAction,
       (c) => { gamepadConnected = c; },
