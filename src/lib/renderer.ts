@@ -458,12 +458,14 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       // (≈GUARD_W×GUARD_H px) so the synchronous read is cheap; only run it every
       // few frames to bound the GPU-sync cost.
       guardTick++;
-      if (!suppressed && guardTick % GUARD_EVERY === 0) {
+      if (guardTick % GUARD_EVERY === 0) {
         renderer.setRenderTarget(guardRT);
         renderer.render(copyScene, postCamera);
         renderer.readRenderTargetPixels(guardRT, 0, 0, GUARD_W, GUARD_H, guardBuf);
         renderer.setRenderTarget(null);
-        processGuardSample(performance.now());
+        // During an intentional-transition window the sample is discarded —
+        // keeping the readback itself running keeps GPU timing identical.
+        if (!suppressed) processGuardSample(performance.now());
       }
 
       // Swap history ping-pong: this frame becomes next frame's "previous"

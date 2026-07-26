@@ -248,13 +248,14 @@ function effectiveCount() {
   return qualityLow ? Math.max(5000, Math.round(params.pointCount / 2)) : params.pointCount;
 }
 
+// Geometry is allocated once at the control's max; count changes only move the
+// draw range. A full rebuild re-randomizes every particle, and during an animated
+// preset/randomize sweep the Point Count set() fires every frame — constantly
+// re-seeding the cloud so it never converges, which reads as a dark flash.
+const MAX_POINTS = 30000;
+
 function rebuildPoints(count: number) {
-  if (!sceneRef || !points || !material) return;
-  sceneRef.remove(points);
-  geometry?.dispose();
-  geometry = buildGeometry(count);
-  points = new THREE.Points(geometry, material);
-  sceneRef.add(points);
+  geometry?.setDrawRange(0, Math.min(count, MAX_POINTS));
 }
 
 function buildGeometry(count: number): THREE.BufferGeometry {
@@ -385,7 +386,8 @@ export const hyperMixHeat: Pattern = {
     heatTexture.magFilter = THREE.LinearFilter;
     heatTexture.needsUpdate = true;
 
-    geometry = buildGeometry(params.pointCount);
+    geometry = buildGeometry(MAX_POINTS);
+    geometry.setDrawRange(0, Math.min(effectiveCount(), MAX_POINTS));
 
     material = new THREE.ShaderMaterial({
       uniforms: {

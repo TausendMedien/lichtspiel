@@ -316,6 +316,16 @@
   let copiedLink = $state(false);
   let slotPressTimer: ReturnType<typeof setTimeout> | null = null;
   let slotFlash = $state<number | null>(null);
+  // Transient "Preset N" toast for the b-key/pedal preset cycle — on patterns whose
+  // slots differ mostly in camera reactivity, the cycle is otherwise invisible and
+  // the key reads as dead.
+  let presetToast = $state<string | null>(null);
+  let presetToastTimer: ReturnType<typeof setTimeout> | null = null;
+  function showPresetToast(text: string) {
+    presetToast = text;
+    if (presetToastTimer) clearTimeout(presetToastTimer);
+    presetToastTimer = setTimeout(() => { presetToast = null; presetToastTimer = null; }, 1100);
+  }
 
   // MIDI lifecycle callbacks populated in onMount
   let _midiStart: (() => void) | null = null;
@@ -1294,6 +1304,9 @@
     const next = filled.find(i => i > presetCycleIdx) ?? filled[0];
     presetCycleIdx = next;
     restorePreset(next);
+    slotFlash = next;
+    setTimeout(() => { slotFlash = null; }, 400);
+    showPresetToast(`Preset ${next + 1} · ${(['Chilled', 'Balanced', 'Active'] as const)[next] ?? ''}`);
   }
 
   // Pedal long press: configurable action (nothing / Light Paint / screenshot / 10s video).
@@ -4846,5 +4859,14 @@
   <div class="pointer-events-none fixed bottom-3 right-3 z-[90] rounded-full border border-white/20 bg-black/60 px-2.5 py-1 text-[10px] tracking-wide text-white/60 backdrop-blur-sm"
     title="The epilepsy guard detected flashing and is damping the image.">
     ⛨ Epilepsy guard active
+  </div>
+{/if}
+
+<!-- Preset-cycle toast (b key / pedal): brief confirmation of which preset slot was
+     applied — on patterns whose slots differ mostly in camera reactivity the change
+     is otherwise invisible and the key reads as dead. -->
+{#if presetToast}
+  <div class="pointer-events-none fixed bottom-8 left-1/2 -translate-x-1/2 z-[90] rounded-full border border-white/20 bg-black/60 px-3 py-1 text-[11px] tracking-wide text-white/70 backdrop-blur-sm">
+    {presetToast}
   </div>
 {/if}
