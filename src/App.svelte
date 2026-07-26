@@ -1529,11 +1529,22 @@
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type !== 'range' || ctrl.readonly) continue;
       const target = snap[ctrl.label];
-      if (typeof target === 'number') {
-        anims[ctrl.label] = { from: ctrl.get(), to: target, startMs: now };
-        pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
-        broadcastCtrlValue(ctrl.label, target); // animates via setLive locally — broadcast the final target directly
+      if (typeof target !== 'number') continue;
+      if ((ctrl as any).interactive) {
+        // Camera/heat/pose-driven controls (e.g. Heat Gain, Heat Strength) apply
+        // instantly instead of sweeping over 1s: they scale a live per-frame
+        // reaction to real sensor data (heat-map gradient etc.), so animating
+        // them through intermediate values combined with real motion can
+        // transiently over-amplify that reaction — e.g. pushing an entire
+        // particle cloud off-screen for a moment, which reads as a black flash.
+        pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() });
+        ctrl.set(target);
+        ctrlVals[ctrl.label] = ctrl.get();
+        continue;
       }
+      anims[ctrl.label] = { from: ctrl.get(), to: target, startMs: now };
+      pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
+      broadcastCtrlValue(ctrl.label, target); // animates via setLive locally — broadcast the final target directly
     }
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type === 'button' || ctrl.type === 'separator' || ctrl.type === 'range') continue;
