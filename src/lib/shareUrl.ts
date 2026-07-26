@@ -14,7 +14,12 @@ export function encodeShare(
   const c: Record<string, number | boolean | string> = {};
   for (const ctrl of pattern.controls ?? []) {
     if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
-    if ((ctrl as any).interactive) continue; // camera/mic device IDs are device-specific
+    // Device pickers (always `type: 'select'`, e.g. "Camera Device") are
+    // machine-specific and never worth sharing. Reactive tuning parameters
+    // (always `type: 'range'`, e.g. Heat Strength/Gain, Cam Blend) are real
+    // preset values and should be included.
+    if (ctrl.type === 'select' && (ctrl as any).interactive) continue;
+    if ((ctrl as any).interactive === 'internal') continue; // mirrors a value captured elsewhere
     c[ctrl.label] = ctrl.get();
   }
   const payload: SharePayload = { p: pattern.id, c };

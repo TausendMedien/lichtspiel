@@ -1470,7 +1470,18 @@
     const snap: Snapshot = {};
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
-      if ((ctrl as any).interactive) continue; // never save camera/mic device in a preset
+      // `interactive` marks a control as sensor-driven, but that covers two very
+      // different things: device pickers (always `type: 'select'`, e.g. "Camera
+      // Device" — machine-specific, never worth saving) and reactive tuning
+      // parameters (always `type: 'range'`, e.g. Heat Strength/Gain, Cam Blend,
+      // Body Warp — genuinely part of the pattern's look and meant to be saved,
+      // as the hand-authored factory presets in preset-defaults.ts already do).
+      // Only skip the former.
+      if (ctrl.type === 'select' && (ctrl as any).interactive) continue;
+      // 'internal' controls mirror a global value already captured separately
+      // below (e.g. particleLines' "Colors v2" ↔ __c2ColorsV2) — skip to avoid
+      // a redundant/conflicting duplicate entry.
+      if ((ctrl as any).interactive === 'internal') continue;
       snap[ctrl.label] = ctrl.get();
     }
     // Per-pattern colour state
@@ -1548,7 +1559,7 @@
     }
     for (const ctrl of patterns[index].controls ?? []) {
       if (ctrl.type === 'button' || ctrl.type === 'separator' || ctrl.type === 'range') continue;
-      if ((ctrl as any).interactive) continue; // never restore camera/mic device from a preset
+      if (ctrl.type === 'select' && (ctrl as any).interactive) continue; // never restore a device picker (e.g. Camera Device) from a preset
       const target = snap[ctrl.label];
       if (target !== undefined) {
         if (ctrl.type === 'toggle' || ctrl.type === 'section') ctrl.set(!!target);
@@ -1979,7 +1990,7 @@
         focusedIndex = pIdx;
         for (const ctrl of patterns[pIdx].controls ?? []) {
           if (ctrl.type === 'button' || ctrl.type === 'separator') continue;
-          if ((ctrl as any).interactive) continue; // camera/mic device IDs are device-specific
+          if (ctrl.type === 'select' && (ctrl as any).interactive) continue; // device pickers are machine-specific
           const val = shared.controls[ctrl.label];
           if (val === undefined) continue;
           if (ctrl.type === 'toggle' || ctrl.type === 'section') ctrl.set(!!val);
