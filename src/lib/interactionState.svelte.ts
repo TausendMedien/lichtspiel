@@ -103,6 +103,11 @@ export const interactionState = $state({
    *  > 1.0 when motion active, < 1.0 during prolonged stillness.
    *  Written by motionCameraWrapper; applied in renderer. */
   speedMult:          1.0,
+
+  /** True while the Fold Angle slider is being dragged. Makes the fold patterns
+   *  outline the region of the image that is actually being sampled, so you can
+   *  see what you are aiming at. Written by App.svelte, read by light-paint. */
+  foldGuide:          false,
 });
 
 export function getPatternSettings(id: string): PatternInteractionSettings {

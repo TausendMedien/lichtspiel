@@ -742,6 +742,7 @@
   $effect(() => {
     const _ = index;
     syncCtrlVals();
+    foldGuideOff();
     const pat = patterns[index];
     if (pat) {
       if (appState === 'active') maybeShowCameraContext(pat);
@@ -895,9 +896,25 @@
     if (!chromeHeld) chromeRelease();
   }
   function chromeDimEnd() { // pointerup/cancel anywhere — a drag often ends off-panel
+    foldGuideOff();
     if (!chromeHeld) return;
     chromeHeld = false;
     chromeRelease();
+  }
+
+  // While Fold Angle is being dragged, Mirror/Kaleidoscope outline the part of the
+  // image they are actually sampling. Same lifecycle as the chrome dim: held while
+  // the pointer is down, and released 500 ms after a keyboard/arrow-key edit.
+  const FOLD_ANGLE = 'Fold Angle';
+  let foldGuideTimer: ReturnType<typeof setTimeout> | null = null;
+  function foldGuideOn(hold: boolean) {
+    interactionState.foldGuide = true;
+    if (foldGuideTimer) { clearTimeout(foldGuideTimer); foldGuideTimer = null; }
+    if (!hold) foldGuideTimer = setTimeout(() => (interactionState.foldGuide = false), 500);
+  }
+  function foldGuideOff() {
+    if (foldGuideTimer) { clearTimeout(foldGuideTimer); foldGuideTimer = null; }
+    interactionState.foldGuide = false;
   }
 
   // A tap synthesizes mouse events on iOS/iPadOS. Gate the desktop click/mousemove
@@ -3761,9 +3778,17 @@
     onpointerdown={(e) => {
       poke();
       // Delegated: covers every slider/select/knob in the panel without per-control wiring.
-      if ((e.target as Element).closest('input[type=range], select, [data-knob]')) chromeDimStart();
+      const el = (e.target as Element).closest('input[type=range], select, [data-knob]');
+      if (el) {
+        chromeDimStart();
+        if ((el as HTMLElement).dataset.ctrl === FOLD_ANGLE) foldGuideOn(true);
+      }
     }}
-    oninput={() => chromeDimPulse()}
+    oninput={(e) => {
+      chromeDimPulse();
+      // Arrow-key edits never fire pointerdown, so catch the guide here too.
+      if ((e.target as HTMLElement).dataset?.ctrl === FOLD_ANGLE) foldGuideOn(chromeHeld);
+    }}
     class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-auto"
     style="max-height: {isTouch ? `calc(100dvh - ${hudPanelHeight + 40}px)` : 'calc(100dvh - 2rem)'}"
     class:opacity-0={!hudVisible || overlayHidden}
@@ -3989,6 +4014,7 @@
                     <span class="select-none text-[10px] text-white/50 transition-opacity duration-150 {focused ? 'opacity-100' : 'opacity-0'}">◄</span>
                     <input
                       type="range"
+                      data-ctrl={ctrl.label}
                       min={ctrl.min}
                       max={ctrl.max}
                       step={ctrl.step}

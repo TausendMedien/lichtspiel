@@ -197,6 +197,7 @@ const compositeFragmentShader = /* glsl */ `
   uniform float uFoldRound;    // >0.5 = aspect-correct so wedges are circular, not stretched
   uniform vec2  uFoldCenter;   // fold pivot in uv space (0.5,0.5 or the heat centroid)
   uniform float uAspect;       // width / height
+  uniform float uFoldGuide;    // >0.5 while Fold Angle is being dragged
   uniform vec2  uHeatOffset;   // Center Shift: pans the whole image toward the person
   uniform sampler2D uHeatMap;  // 160x90 smoothed motion field (same layout as static patterns)
   uniform float uHeatStrength; // Sobel edge warp magnitude, 0 = off
@@ -208,13 +209,26 @@ const compositeFragmentShader = /* glsl */ `
     return t / (t + 1.0);
   }
 
+  // A fold sends many destination pixels outside [0,1]. Clamping smears the edge
+  // pixels into flat blocks; reflecting the coordinate instead fills those areas
+  // with real mirrored image, which is what a kaleidoscope should do anyway.
+  vec2 mirrorRepeat(vec2 uv) {
+    vec2 m = mod(abs(uv), 2.0);
+    return mix(m, 2.0 - m, step(1.0, m));
+  }
+
   // Kaleidoscope (radial wedge) and Mirror (single-axis) folds share one transform:
-  // move to the pivot, optionally undo the aspect stretch, rotate into fold space,
-  // fold, then rotate back out — rotating back is what makes uFoldAngle move the
-  // seam rather than spin the whole image.
+  // move to the pivot, undo the aspect stretch, rotate into fold space, fold, then
+  // rotate back out — rotating back is what makes uFoldAngle move the seam rather
+  // than spin the whole image.
+  //
+  // The aspect step is not optional for Mirror. uv space is stretched relative to
+  // the screen, and a reflection across a tilted axis in stretched space is a skew,
+  // not a reflection — the mirrored half comes out sheared. Only the kaleidoscope's
+  // wedge shape is a matter of taste, so uFoldRound governs that alone.
   vec2 applyFold(vec2 uv) {
     if (uFoldMode < 0.5) return uv;
-    float aspect = uFoldRound > 0.5 ? uAspect : 1.0;
+    float aspect = (uFoldMode > 1.5 || uFoldRound > 0.5) ? uAspect : 1.0;
     vec2 p = (uv - uFoldCenter) * vec2(aspect, 1.0);
     float ca = cos(uFoldAngle), sa = sin(uFoldAngle);
     p = mat2(ca, -sa, sa, ca) * p;
@@ -235,7 +249,33 @@ const compositeFragmentShader = /* glsl */ `
     }
 
     p = mat2(ca, sa, -sa, ca) * p;
-    return p / vec2(aspect, 1.0) + uFoldCenter;
+    return mirrorRepeat(p / vec2(aspect, 1.0) + uFoldCenter);
+  }
+
+  // While Fold Angle is being dragged: outline the region of the image that is
+  // actually being sampled and dim everything outside it, so you can see what the
+  // fold is aimed at. Returns 0 outside the source region, 1 on its outline.
+  void foldGuide(vec2 uv, out float inSource, out float onEdge) {
+    float aspect = (uFoldMode > 1.5 || uFoldRound > 0.5) ? uAspect : 1.0;
+    vec2 p = (uv - uFoldCenter) * vec2(aspect, 1.0);
+    float ca = cos(uFoldAngle), sa = sin(uFoldAngle);
+    p = mat2(ca, -sa, sa, ca) * p;
+    float d;  // signed distance to the source-region boundary, negative inside
+    if (uFoldMode > 1.5) {
+      if      (uMirrorDir < 0.5) d =  p.x;
+      else if (uMirrorDir < 1.5) d = -p.x;
+      else if (uMirrorDir < 2.5) d = -p.y;
+      else                       d =  p.y;
+    } else {
+      // Source wedge spans 0 .. seg/2 around the fold axis.
+      float seg = 6.2831853 / uKaleidoSeg;
+      float ang = atan(p.y, p.x);
+      float rad = length(p);
+      // Distance to whichever of the two bounding rays is nearer.
+      d = max(-sin(ang) * rad, sin(ang - seg * 0.5) * rad);
+    }
+    inSource = d < 0.0 ? 1.0 : 0.0;
+    onEdge = 1.0 - smoothstep(0.0015, 0.0045, abs(d));
   }
 
   // Heat displacement — Center Shift pan plus the Sobel edge warp. Applied to the
@@ -290,6 +330,14 @@ const compositeFragmentShader = /* glsl */ `
 
     vec3 outc = clamp((bg + colored) * uBrightnessMult, 0.0, 1.0);
     outc = mix(outc, live.rgb, uGhost);
+
+    if (uFoldGuide > 0.5 && uFoldMode > 0.5) {
+      float inSource, onEdge;
+      foldGuide(vUv, inSource, onEdge);
+      outc *= mix(0.45, 1.0, inSource);                       // dim what isn't the source
+      outc = mix(outc, vec3(1.0, 0.85, 0.25), onEdge * 0.9);  // outline it
+    }
+
     gl_FragColor = vec4(outc, 1.0);
   }
 `;
@@ -316,6 +364,8 @@ interface LPDefaults {
   foldAngle: number;
   foldRound: boolean;
   foldFollow: boolean;
+  heatCenterStr: number;
+  heatStrength: number;
   mirror: boolean;
 }
 
@@ -344,6 +394,8 @@ const BASE_DEFAULTS: LPDefaults = {
   foldAngle: 0,
   foldRound: false,
   foldFollow: false,
+  heatCenterStr: 1.0,
+  heatStrength: 1.8,
   mirror: true,     // default mirrored (selfie-correct: move left → reads left)
 };
 
@@ -389,8 +441,8 @@ function createLightPainting(
   const foldCenter = new THREE.Vector2(0.5, 0.5);
 
   // Heat state — reuses this instance's own camera feed (see HEAT_W/HEAT_H helpers above)
-  let heatCenterStr = 1.0;
-  let heatStrength  = 1.8;
+  let heatCenterStr = D.heatCenterStr;
+  let heatStrength  = D.heatStrength;
   let heatBlurR     = 1;
   const heatOffset  = new THREE.Vector2();
   let heatDiffCanvas: HTMLCanvasElement | null = null;
@@ -759,8 +811,10 @@ function createLightPainting(
         {
           label: "Round",
           type: "toggle" as const,
-          disabled: () => foldMode === 0,
-          tip: "Correct for screen aspect so wedges are circular instead of stretched.",
+          // Mirror always corrects for aspect (a tilted reflection needs it to be a
+          // reflection at all), so this only governs the kaleidoscope wedge shape.
+          disabled: () => foldMode !== 1,
+          tip: "Circular wedges instead of ones stretched by the screen shape.",
           get: () => foldRound,
           set: (v: boolean) => { foldRound = !!v; },
         },
@@ -779,13 +833,13 @@ function createLightPainting(
           action: () => { clearRequested = true; },
         },
         {
-          label: "Center Shift", type: "range" as const, min: 0, max: 2, step: 0.1, default: 1.0,
+          label: "Center Shift", type: "range" as const, min: 0, max: 2, step: 0.1, default: D.heatCenterStr,
           interactive: 'heat' as const,
           tip: "How much heat-map position shifts the image center toward the person. Requires Heat.",
           get: () => heatCenterStr, set: v => { heatCenterStr = v; },
         },
         {
-          label: "Heat Strength", type: "range" as const, min: 0, max: 2.5, step: 0.1, default: 1.8,
+          label: "Heat Strength", type: "range" as const, min: 0, max: 2.5, step: 0.1, default: D.heatStrength,
           interactive: 'heat' as const,
           tip: "How much heat-map edges locally warp the image. Requires Heat.",
           get: () => heatStrength, set: v => { heatStrength = v; },
@@ -933,6 +987,7 @@ function createLightPainting(
           uFoldRound:  { value: foldRound ? 1.0 : 0.0 },
           uFoldCenter: { value: new THREE.Vector2(0.5, 0.5) },
           uAspect:     { value: resX / Math.max(1, resY) },
+          uFoldGuide:  { value: 0.0 },
           uHeatOffset:   { value: new THREE.Vector2(0, 0) },
           uHeatMap:      { value: heatTex },
           uHeatStrength: { value: 0 },
@@ -1064,6 +1119,7 @@ function createLightPainting(
       u.uFoldAngle.value  = foldAngle * Math.PI / 180;
       u.uFoldRound.value  = foldRound ? 1.0 : 0.0;
       u.uAspect.value     = resX / Math.max(1, resY);
+      u.uFoldGuide.value  = interactionState.foldGuide ? 1.0 : 0.0;
       u.uFoldCenter.value.copy(foldCenter);
       // Palette ordered by the Color-Shuffle assignment (Apply Colors / Shuffle apply).
       const a = colorShuffle.assign;
@@ -1130,6 +1186,8 @@ export const lightTrail      = createLightPainting("lightTrail",      "Light Tra
 export const lightPaintBlack = createLightPainting("lightPaintBlack", "Light Paint Black", { black: 1.0, ghostOpacity: 0 }, ["Black"]);
 export const lightFly        = createLightPainting("lightFly",        "Light Fly",         { flow: -0.25 }, ["Fly In/Out"]);
 export const lightVortex     = createLightPainting("lightVortex",     "Light Vortex",      { vortex: -0.10 }, ["Vortex"]);
-export const lightMirror     = createLightPainting("lightMirror",     "Mirror",            { mirrorFold: true }, ["Mirror Fold", "Direction"]);
-export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true }, ["Kaleidoscope", "Segments"]);
+// Mirror and Kaleidoscope start with Heat neutralised: its warp fights the fold,
+// and the global Heat switch stays on once a heat pattern has turned it on.
+export const lightMirror     = createLightPainting("lightMirror",     "Mirror",            { mirrorFold: true, heatStrength: 0, heatCenterStr: 0 }, ["Mirror Fold", "Direction"]);
+export const lightKaleido    = createLightPainting("lightKaleido",    "Kaleidoscope",      { kaleidoOn: true, heatStrength: 0, heatCenterStr: 0 }, ["Kaleidoscope", "Segments"]);
 export const lightGlitch     = createLightPainting("lightGlitch",     "RGB Glitch",        { rgbSplit: 0.020 }, ["RGB Split"]);
