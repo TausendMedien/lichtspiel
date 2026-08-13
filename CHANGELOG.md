@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.7.260813-1532 — Mirror · Kaleidoscope · Saved Configs
+
+**Mirror** — a new Live Light Painting pattern that folds the image across a single axis: a two-segment kaleidoscope. A **Direction** control picks the axis and which half is the source — horizontally, horizontally mirrored, vertically, vertically mirrored. Everything else starts from the Light Paint defaults.
+
+**Kaleidoscope — Only Light** — a new knob, on by default, that repeats only the light above the Threshold. Everything darker stays a normal, unfolded image, so the room reads naturally while the painted light fans out around it. Switch it off for the previous behaviour, where the whole picture folds. **Segments** now runs 3–12 and starts at 5.
+
+**Fold controls** — Mirror and Kaleidoscope share three new options. **Fold Angle** rotates the mirror seam or wedge orientation, which used to be locked to the horizontal. **Round** corrects for screen aspect so wedges come out circular instead of stretched on a widescreen display. **Center on Person**, off by default, pivots the fold on whoever is moving instead of the image centre — it needs Heat. Controls that don't apply to the active fold are now greyed out.
+
+**Controls fade while you adjust them** — dragging a slider or flipping a knob fades the panel backgrounds to transparent so you can see the change on the projection underneath. Typography, sliders and knobs stay fully visible, and the background returns half a second after you let go. Mac, iPhone and iPad.
+
+**Tap to hide on iPhone and iPad** — a tap on the canvas now hides the interface the way a click already did on the Mac, and a second tap brings it back. Previously the interface flickered off and came straight back, and lingered longer on touch devices than on desktop.
+
+**Saved Configs** — two configurations now ship on first launch, including "Interactive Planetary", and existing installs are retrofitted with them.
+
+**Camera reliability** — the Heat and Motion toggles no longer fight each other on Hyper Mix, Particle Field and ASCII Swirls, and every pattern now goes through one central CameraManager that shares a single stream and recovers when a camera drops out.
+
+**Fixes** — black flashes on pattern switch and on preset restore with Heat active, 3D Typography blacking out and not reacting to its controls, fullscreen exit, and preset/share export silently dropping Heat and Pose values. Hyper Mix regained its distinct Chilled/Balanced/Active presets with explicit Heat Strength, Gain and Blur Radius.
+
+**Interface** — Move/Heat/Audio filter chips in both the pattern menu and Demo, category dividers that stay put under the filters, consistent Options and Demo headers, first-run hints, an Exit button on the Display-mode splash, sensitivity via preset slots, an epilepsy-guard badge, and credits for @olgen. Number-key pattern jumping was removed so typing can no longer throw you into another pattern.
+
 ## v0.7.260711-0515 — Remote Control
 
 **Display / Remote modes** — one device can now show the projection (**Display**) while another controls it live (**Remote**), paired over a WebSocket relay with a 4-character room code. Remote runs the full app — you see your own local preview and every change you make broadcasts to the Display in real time. New "Remote Control" section in Options to start either mode, plus `?mode=display` / `?mode=remote` URL parameters for kiosk setups.

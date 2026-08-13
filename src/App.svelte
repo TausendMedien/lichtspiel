@@ -567,7 +567,7 @@
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
     { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
-    { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightKaleido','lightGlitch'] },
+    { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
@@ -575,7 +575,7 @@
     'hyperMixHeat', 'particlesHeat', 'heatMap', 'particleLines', 'parallelLinesWave',
     'tunnelEdge', 'baroqueSwirlsBody', 'shaderGradient', 'asciiSwirls',
     'wavySphere', 'crystalGem', 'typography3d',
-    'lightPaint', 'lightPaintBlack', 'lightFly', 'lightKaleido', 'lightGlitch',
+    'lightPaint', 'lightPaintBlack', 'lightFly', 'lightMirror', 'lightKaleido', 'lightGlitch',
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
     'img-twoFeather', 'img-rootWave', 'img-purpleOrnate', 'img-flowingDots',
   ] as const;
@@ -3849,7 +3849,12 @@
               currentSection = null;
               sectionOn = true;
             }
-            const groupDisabled = !sectionOn && ctrl.type !== 'section' && ctrl.type !== 'separator';
+            // A control can also disable itself (e.g. Segments only applies while
+            // Kaleidoscope is the active fold). Same greyed-out treatment as a section
+            // that is switched off. Re-evaluated whenever ctrlVals is rebuilt.
+            const selfDisabled = !!(ctrl as any).disabled?.();
+            const groupDisabled = (selfDisabled || !sectionOn)
+              && ctrl.type !== 'section' && ctrl.type !== 'separator';
             const inSection = (ctrl.type !== 'section' && ctrl.type !== 'separator') ? currentSection : null;
             const hidden = inSection !== null && collapsedSections.has(inSection);
             // Skip controls that belong to the Interactive section (camera toggles, select, etc.)
@@ -3905,7 +3910,7 @@
                 <div
                   data-knob
                   class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/60' : 'bg-white/20'}"
-                  onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
+                  onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; syncCtrlVals(); saveSettings(patterns); }}
                 >
                   <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                 </div>
@@ -3926,7 +3931,7 @@
                 <div
                   data-knob
                   class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
-                  onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
+                  onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; syncCtrlVals(); saveSettings(patterns); }}
                 >
                   <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
                 </div>
@@ -4229,7 +4234,7 @@
                             <div
                               data-knob
                               class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
-                              onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
+                              onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; syncCtrlVals(); saveSettings(patterns); }}
                             >
                               <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
                             </div>

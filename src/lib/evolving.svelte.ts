@@ -89,7 +89,7 @@ export function saveEvo(patternId: string, cfg: EvoConfig): void {
 // 1/2/3 = Chilled/Balanced/Active (matching the demo Pattern-Start slots). Applied to
 // every light* variant since they share the same six controls.
 const LIGHT_PAINT_IDS = new Set([
-  'lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightKaleido', 'lightGlitch',
+  'lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch',
 ]);
 
 type Bands = Record<string, [number, number]>;

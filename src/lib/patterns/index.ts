@@ -9,7 +9,7 @@ import { parallelLinesWave } from "./parallelLinesWave";
 import { flowLines } from "./flowLines";
 import { curlOrbsBody } from "./curlOrbsBody";
 import { baroqueSwirlsBody } from "./baroqueSwirlsBody";
-import { lightPaint, lightTrail, lightPaintBlack, lightFly, lightVortex, lightKaleido, lightGlitch } from "./light-paint";
+import { lightPaint, lightTrail, lightPaintBlack, lightFly, lightVortex, lightMirror, lightKaleido, lightGlitch } from "./light-paint";
 import { warpedSurfaces } from "./warpedSurfaces";
 import { wavySphere } from "./wavySphere";
 import { crystalGem } from "./crystalGem";
@@ -41,7 +41,7 @@ const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',  
 // Patterns that must NOT get the generic motion camera wrapper:
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
-export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightKaleido', 'lightGlitch'];
+export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -68,6 +68,7 @@ const rawPatterns: Pattern[] = [
   lightPaintBlack,
   lightFly,
   lightVortex,
+  lightMirror,
   lightKaleido,
   lightGlitch,
   imgTealLines,
