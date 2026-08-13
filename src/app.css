@@ -28,3 +28,24 @@ body.cursor-hidden,
 body.cursor-hidden * {
   cursor: none !important;
 }
+
+/* While a slider or knob is being dragged, the HUD panel chrome fades out so the
+   canvas stays visible underneath. Typography, sliders and knobs are untouched —
+   only containers explicitly marked [data-chrome] lose their fill.
+   The descendant selector outranks Tailwind's single-class utilities, so no
+   !important is needed. backdrop-filter is animated to blur(0px) rather than
+   `none` so it interpolates instead of snapping. */
+[data-chrome] {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    backdrop-filter 200ms ease,
+    -webkit-backdrop-filter 200ms ease;
+}
+.ui-dim [data-chrome],
+.ui-dim[data-chrome] {
+  background-color: transparent;
+  border-color: transparent;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+}

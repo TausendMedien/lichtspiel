@@ -873,6 +873,39 @@
   // counts as activity — not just pattern switches, which already called poke() directly.
   onActivity(() => poke());
 
+  // ── Chrome dimming ─────────────────────────────────────────────────────
+  // While a slider/knob is being dragged or changed, the panel backgrounds fade
+  // to transparent so the canvas underneath stays readable. Text, sliders and
+  // knobs are untouched. Backgrounds return 500 ms after the interaction stops.
+  let chromeDim = $state(false);
+  let chromeDimTimer: ReturnType<typeof setTimeout> | null = null;
+  let chromeHeld = false; // pointer still down on a control
+
+  function chromeRelease() {
+    if (chromeDimTimer) clearTimeout(chromeDimTimer);
+    chromeDimTimer = setTimeout(() => (chromeDim = false), 500);
+  }
+  function chromeDimStart() { // pointerdown on a slider/knob — hold until release
+    chromeHeld = true;
+    chromeDim = true;
+    if (chromeDimTimer) { clearTimeout(chromeDimTimer); chromeDimTimer = null; }
+  }
+  function chromeDimPulse() { // value changed (also covers keyboard/arrow-key edits)
+    chromeDim = true;
+    if (!chromeHeld) chromeRelease();
+  }
+  function chromeDimEnd() { // pointerup/cancel anywhere — a drag often ends off-panel
+    if (!chromeHeld) return;
+    chromeHeld = false;
+    chromeRelease();
+  }
+
+  // A tap synthesizes mouse events on iOS/iPadOS. Gate the desktop click/mousemove
+  // paths on "did a touch just happen" rather than on isTouch, which is false on
+  // iPadOS Safari in its default desktop-UA mode.
+  let lastTouchAt = 0;
+  const touchRecently = () => performance.now() - lastTouchAt < 700;
+
   // Show the cursor on any mouse movement; hide it again after a short idle.
   function pokeCursor() {
     if (isTouch) return;
@@ -1178,7 +1211,19 @@
 
     // Global actions for active + preview
     switch (action.type) {
-      case "tap":              poke(); return;
+      case "tap":
+        // Touch parity with the desktop click-on-canvas: a tap toggles the HUD.
+        // Toggle rather than hide-only — on touch there is no mousemove, so a tap
+        // is the only way to bring the HUD back.
+        // (Taps on the panels never reach here — touch.ts skips [data-no-swipe].)
+        lastTouchAt = performance.now();
+        if (hudVisible && !overlayHidden) {
+          hudVisible = false;
+          if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
+        } else {
+          poke();
+        }
+        return;
       case "freeze":
         applyFreeze();
         if (demoActive) {
@@ -2259,8 +2304,16 @@
         syncCtrlVals();
       }
     });
-    function onMouseMove() { pokeCursor(); (demoActive && demoHideHud) ? demoPoke() : poke(); }
+    function onMouseMove() {
+      if (touchRecently()) return; // iPadOS synthesizes mousemove on tap
+      pokeCursor();
+      (demoActive && demoHideHud) ? demoPoke() : poke();
+    }
     if (!isTouch) window.addEventListener("mousemove", onMouseMove);
+
+    // A range drag routinely ends outside the panel, so release is caught at window level.
+    window.addEventListener("pointerup", chromeDimEnd);
+    window.addEventListener("pointercancel", chromeDimEnd);
 
     // Display mode: show the room-code/status overlay on any touch or pointer move.
     function onDisplayActivity() { if (remoteMode === 'display') pokeDisplayOverlay(); }
@@ -2278,9 +2331,12 @@
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       document.removeEventListener('pointerdown', onPointerDownFocus, { capture: true });
       if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("pointerup", chromeDimEnd);
+      window.removeEventListener("pointercancel", chromeDimEnd);
       window.removeEventListener("pointermove", onDisplayActivity);
       window.removeEventListener("touchstart", onDisplayActivity);
       if (hudTimer) clearTimeout(hudTimer);
+      if (chromeDimTimer) clearTimeout(chromeDimTimer);
       if (demoTimer) clearTimeout(demoTimer);
       if (demoPointerTimer) clearTimeout(demoPointerTimer);
       if (autoRestartTimer) clearTimeout(autoRestartTimer);
@@ -2342,18 +2398,12 @@
   class="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0" />
 
 <canvas bind:this={canvas} tabindex="0" class="block w-full h-full outline-none"
-  onclick={() => { if (appState !== "overview" && !isTouch) hudVisible = false; }}
+  onclick={() => { if (appState !== "overview" && !touchRecently()) hudVisible = false; }}
   ontouchstart={() => {
-    if (appState !== "overview") {
-      if (demoActive && demoHideHud) {
-        demoPoke();
-      } else if (hudVisible && !overlayHidden) {
-        hudVisible = false;
-        if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
-      }
-      // HUD is shown on tap (handled via "tap" action), not here,
-      // so that swipes do not accidentally reveal the HUD.
-    }
+    lastTouchAt = performance.now();
+    if (appState !== "overview" && demoActive && demoHideHud) demoPoke();
+    // Hide/show is decided on touchend by the "tap" action, so swipes and
+    // scrolls do not toggle the HUD.
   }}
 ></canvas>
 
@@ -3554,6 +3604,7 @@
           <span class="text-xs font-semibold uppercase tracking-widest text-white/60" title="Sliders drift automatically within their min/max bands so the look evolves gradually over time."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
+            data-knob
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
             onclick={() => { evolving.active = !evolving.active; saveEvolving(); }}
           >
@@ -3707,13 +3758,19 @@
   <div
     data-no-swipe
     inert={!hudVisible || overlayHidden}
-    onpointerdown={() => poke()}
+    onpointerdown={(e) => {
+      poke();
+      // Delegated: covers every slider/select/knob in the panel without per-control wiring.
+      if ((e.target as Element).closest('input[type=range], select, [data-knob]')) chromeDimStart();
+    }}
+    oninput={() => chromeDimPulse()}
     class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-auto"
     style="max-height: {isTouch ? `calc(100dvh - ${hudPanelHeight + 40}px)` : 'calc(100dvh - 2rem)'}"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
+    class:ui-dim={chromeDim}
   >
-    <div class="flex flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
+    <div data-chrome class="flex flex-col rounded-md border border-white/10 bg-black/60 px-4 py-3 text-white backdrop-blur-sm">
       {#if patterns[index].controls?.length}
         <!-- Pattern controls header -->
         <div class="mb-2 shrink-0 flex items-center justify-between gap-2">
@@ -3748,6 +3805,7 @@
           <span class="flex items-center gap-1.5 text-white/70" title="Sliders drift slowly within their min/max bands, creating autonomous variation."><span class="font-mono text-cyan-300">~</span> Evolving Ranges</span>
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
+            data-knob
             class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {evolving.active ? 'bg-cyan-400/70' : 'bg-white/20'}"
             onclick={() => { evolving.active = !evolving.active; saveEvolving(); }}
           >
@@ -3845,6 +3903,7 @@
                 {#if !(ctrl as any).collapsible}
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
+                  data-knob
                   class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/60' : 'bg-white/20'}"
                   onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
                 >
@@ -3865,6 +3924,7 @@
                 </span>
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <div
+                  data-knob
                   class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
                   onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
                 >
@@ -3892,6 +3952,7 @@
                       <div class="flex items-center gap-1 ml-1 mr-auto" title={(linkedToggle as any).tip ?? linkedToggle.title ?? linkedToggle.label}>
                         <span class="text-[10px] text-white/30">{linkedToggle.label}</span>
                         <div
+                          data-knob
                           class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isLinkedOn ? 'bg-white/60' : 'bg-white/20'}"
                           onclick={() => { const nv = !linkedToggle.get(); linkedToggle.set(nv); ctrlVals[linkedToggle.label] = nv ? 1 : 0; saveSettings(patterns); }}
                         >
@@ -4043,7 +4104,7 @@
             <div class="mt-1 flex items-center justify-between">
               <span class="text-xs text-white/70 select-none" title='Remap the entire finished image onto your Main/Contrast/Glow palette (off = original colours). Applies on top of everything, including trails already tinted by "Colorize Light".'>Apply Colors</span>
               <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div class="relative h-[18px] w-7 shrink-0 cursor-pointer rounded-full transition-colors duration-200 {colorShuffle.enabled ? 'bg-white/70' : 'bg-white/20'}"
+              <div data-knob class="relative h-[18px] w-7 shrink-0 cursor-pointer rounded-full transition-colors duration-200 {colorShuffle.enabled ? 'bg-white/70' : 'bg-white/20'}"
                 onclick={() => { colorShuffle.enabled = !colorShuffle.enabled; savePatternColor(patterns[index].id); }}>
                 <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {colorShuffle.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
               </div>
@@ -4106,6 +4167,7 @@
             >Interactive <span class="text-[8px] transition-transform duration-200 {interactiveCollapsed ? '' : 'rotate-180 inline-block'}" style="display:inline-block">▼</span></span>
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <div
+              data-knob
               class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {interactiveOn ? 'bg-white/60' : 'bg-white/20'}"
               onclick={() => {
                 interactiveOn = !interactiveOn;
@@ -4145,7 +4207,7 @@
             <div class="flex flex-col gap-2.5 mt-1 transition-opacity duration-200 {interactiveOn ? '' : 'opacity-40 pointer-events-none'}">
 
               {#if privacyMode.active}
-                <div class="flex items-center gap-1.5 rounded border border-purple-500/30 bg-purple-900/40 px-2 py-1.5 text-[11px] text-purple-300">
+                <div data-chrome class="flex items-center gap-1.5 rounded border border-purple-500/30 bg-purple-900/40 px-2 py-1.5 text-[11px] text-purple-300">
                   <span>⊘</span><span>Sensors blocked by Sensor Block</span>
                 </div>
               {/if}
@@ -4165,6 +4227,7 @@
                             <span>{ctrl.label}</span>
                             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                             <div
+                              data-knob
                               class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
                               onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; saveSettings(patterns); }}
                             >
@@ -4204,7 +4267,7 @@
                         <button onclick={() => runCameraTest()} disabled={cameraTesting} class="shrink-0 rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/50 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer disabled:opacity-40" title="Open each pattern's camera and show which lens it resolves to">{cameraTesting ? '…' : 'Test'}</button>
                       </div>
                       {#if cameraProbes.length > 0}
-                        <div class="rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+                        <div data-chrome class="rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
                           <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
                             {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
                           </div>
@@ -4238,7 +4301,7 @@
                         <button onclick={() => runCameraTest()} disabled={cameraTesting} class="shrink-0 rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/50 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer disabled:opacity-40" title="Open each pattern's camera and show which lens it resolves to">{cameraTesting ? '…' : 'Test'}</button>
                       </div>
                       {#if cameraProbes.length > 0}
-                        <div class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+                        <div data-chrome class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
                           <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
                             {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
                           </div>
@@ -4266,6 +4329,7 @@
                   <span title="The camera's motion field drives pattern effects — objects moving in frame push, tilt, or stretch the visuals.">Heat</span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
+                    data-knob
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.heatEnabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => {
                       const next = !cameraState.heatEnabled;
@@ -4309,6 +4373,7 @@
                   <span class="flex items-center gap-1.5" title="Boosts pattern parameters in real time based on how much movement the camera sees.">Motion Detection <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
+                    data-knob
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.motionEnabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => {
                       const next = !cameraState.motionEnabled;
@@ -4355,6 +4420,7 @@
                   </span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
+                    data-knob
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {poseActive ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={togglePoseTracking}
                   >
@@ -4378,7 +4444,7 @@
                       poseSettings.lowRes = poseLowRes;
                       if (poseActive) { stopPoseTracking(); poseActive = false; poseError = null; poseLoading = true; try { const devId = cameraState.deviceId || undefined; await startPoseTracking(devId); _poseDeviceId = devId ?? ''; poseActive = true; } catch(e) { poseError = e instanceof Error ? e.message : 'error'; } finally { poseLoading = false; } }
                     }}>
-                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseLowRes ? 'bg-white/60' : 'bg-white/20'}">
+                    <div data-knob class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseLowRes ? 'bg-white/60' : 'bg-white/20'}">
                       <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseLowRes ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                     </div>
                     <span class="text-xs text-white/70">Low Res (320×240)</span>
@@ -4386,7 +4452,7 @@
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div class="flex items-center gap-2 cursor-pointer" title="Run pose inference every 2nd frame"
                     onclick={() => { poseSkipFrames = !poseSkipFrames; poseSettings.skipFrames = poseSkipFrames; }}>
-                    <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSkipFrames ? 'bg-white/60' : 'bg-white/20'}">
+                    <div data-knob class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {poseSkipFrames ? 'bg-white/60' : 'bg-white/20'}">
                       <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {poseSkipFrames ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                     </div>
                     <span class="text-xs text-white/70">Skip Frames (every 2nd)</span>
@@ -4420,6 +4486,7 @@
                   <span class="flex items-center gap-1.5" title="Boosts pattern parameters in real time based on microphone volume and beat.">Audio <span class="text-[9px] text-white/30 border border-white/20 rounded px-1 py-0.5">exp.</span></span>
                   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                   <div
+                    data-knob
                     class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {audioState.enabled ? 'bg-white/70' : 'bg-white/20'}"
                     onclick={() => { audioState.enabled = !audioState.enabled; if (audioState.enabled) enumerateMicrophones(); }}
                   >
@@ -4493,7 +4560,7 @@
                       <div class="text-xs text-white/50">Beat detectors</div>
                       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                       <div class="flex items-center gap-2 cursor-pointer" onclick={() => { audioState.energyEnabled = !audioState.energyEnabled; }}>
-                        <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.energyEnabled ? 'bg-white/60' : 'bg-white/20'}">
+                        <div data-knob class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.energyEnabled ? 'bg-white/60' : 'bg-white/20'}">
                           <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {audioState.energyEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                         </div>
                         <span class="text-xs text-white/70 flex-1">Energy Ratio</span>
@@ -4502,7 +4569,7 @@
                       </div>
                       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                       <div class="flex items-center gap-2 cursor-pointer" onclick={() => { audioState.fluxEnabled = !audioState.fluxEnabled; }}>
-                        <div class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.fluxEnabled ? 'bg-white/60' : 'bg-white/20'}">
+                        <div data-knob class="relative h-[14px] w-[22px] flex-shrink-0 rounded-full transition-colors duration-200 {audioState.fluxEnabled ? 'bg-white/60' : 'bg-white/20'}">
                           <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {audioState.fluxEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
                         </div>
                         <span class="text-xs text-white/70 flex-1">Spectral Flux</span>
@@ -4547,8 +4614,9 @@
     class="pointer-events-none fixed top-4 left-4 z-10 select-none transition-opacity duration-500"
     class:opacity-0={!hudVisible || overlayHidden}
     class:opacity-100={hudVisible && !overlayHidden}
+    class:ui-dim={chromeDim}
   >
-    <div class="rounded-md border bg-black/60 px-4 py-3 text-white backdrop-blur-sm transition-colors duration-300 {privacyMode.active ? 'border-purple-500/40' : 'border-white/10'}">
+    <div data-chrome class="rounded-md border bg-black/60 px-4 py-3 text-white backdrop-blur-sm transition-colors duration-300 {privacyMode.active ? 'border-purple-500/40' : 'border-white/10'}">
       <div class="flex items-start justify-between gap-4">
         <div>
           <div class="text-[10px] font-semibold tracking-[0.3em] text-white/25 mb-1">LICHTSPIEL</div>
