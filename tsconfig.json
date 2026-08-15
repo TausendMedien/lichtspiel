@@ -15,5 +15,7 @@
     "noUnusedParameters": false,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte"],
+  // Tests run under `bun test`, which supplies its own `bun:test` types.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -16,7 +16,7 @@ A browser-based, keyboard-operated abstract visual instrument built with Svelte 
 
 ## Patterns
 
-**Generative** — 3D Lines, Particle Field, Particle Field Heat, Tunnel, Tunnel Edge, Parallel Lines, Flow Lines, Curl Orbs, Baroque Swirls, Wavy Sphere, Crystal Gem, Hyper Mix, Hyper Mix Heat, Heat Map, Shader Gradient, 3D Typography, Warp Surfaces, ASCII Swirls
+**Generative** — 3D Lines, Particle Field, Particle Field Heat, Gravity Lines, Tunnel, Tunnel Edge, Parallel Lines, Flow Lines, Curl Orbs, Baroque Swirls, Wavy Sphere, Crystal Gem, Hyper Mix, Hyper Mix Heat, Heat Map, Shader Gradient, 3D Typography, Warp Surfaces, ASCII Swirls
 
 **Static Images** — artwork and photos with live Drift, Zoom Breathe, Ripple, Chromatic Aberration, Edge Pulse, and heat-haze effects
 

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { cameraState } from "../globalCameraSettings.svelte";
-import { colorC2 } from "../colorC2.svelte";
+import { loadColorStops, RAMP_GLSL } from "../palette";
 
 const W = 160;
 const H = 90;
@@ -24,7 +24,6 @@ const vertexShader = /* glsl */ `
 `;
 
 // Palette-based ramp: 0 → black, stops evenly distributed through enabled colors.
-// Constant indices only — compatible with GLSL ES 1.0.
 const fragmentShader = /* glsl */ `
   uniform sampler2D uHeatMap;
   uniform float     uGain;
@@ -33,22 +32,7 @@ const fragmentShader = /* glsl */ `
   uniform float     uColorCount;
   varying vec2      vUv;
 
-  vec3 heatRamp(float t) {
-    float pos = clamp(t * uColorCount, 0.0, uColorCount - 0.001);
-    float lof = floor(pos);
-    float f   = pos - lof;
-
-    vec3 a = vec3(0.0);
-    vec3 b = uColors[0];
-
-    if (lof >= 1.0) { a = uColors[0]; b = uColors[1]; }
-    if (lof >= 2.0) { a = uColors[1]; b = uColors[2]; }
-    if (lof >= 3.0) { a = uColors[2]; b = uColors[3]; }
-    if (lof >= 4.0) { a = uColors[3]; b = uColors[4]; }
-    if (lof >= 5.0) { a = uColors[4]; b = uColors[5]; }
-
-    return mix(a, b, f);
-  }
+  ${RAMP_GLSL}
 
   void main() {
     // Flip Y: diff buffer row 0 = top of frame, Three.js UV (0,0) = bottom-left
@@ -56,30 +40,9 @@ const fragmentShader = /* glsl */ `
     float heat = texture2D(uHeatMap, vec2(1.0 - vUv.x, 1.0 - vUv.y)).r;
     // Subtract noise floor before amplifying — keeps static dark areas black
     float t = clamp((heat - uThreshold) * uGain, 0.0, 1.0);
-    gl_FragColor = vec4(heatRamp(t), 1.0);
+    gl_FragColor = vec4(paletteRamp(t), 1.0);
   }
 `;
-
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.replace('#', ''), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
-function loadColorStops(colors: THREE.Vector3[]): number {
-  let count = 0;
-  const push = (hex: string) => {
-    const [r, g, b] = hexToRgb(hex);
-    colors[count].set(r, g, b);
-    count++;
-  };
-  push(colorC2.main);
-  push(colorC2.contrast);
-  push(colorC2.glow);
-  if (colorC2.extra1on) push(colorC2.extra1);
-  if (colorC2.extra2on) push(colorC2.extra2);
-  if (colorC2.extra3on) push(colorC2.extra3);
-  return count;
-}
 
 function fillPlane(width: number, height: number) {
   if (!planeMesh || !camera) return;

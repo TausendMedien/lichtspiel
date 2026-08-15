@@ -566,13 +566,13 @@
   let demoPickerFilter = $state<PatternFilter>('all');
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
-    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
+    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [
-    'hyperMixHeat', 'particlesHeat', 'heatMap', 'particleLines', 'parallelLinesWave',
+    'hyperMixHeat', 'particlesHeat', 'gravityLines', 'heatMap', 'particleLines', 'parallelLinesWave',
     'tunnelEdge', 'baroqueSwirlsBody', 'shaderGradient', 'asciiSwirls',
     'wavySphere', 'crystalGem', 'typography3d',
     'lightPaint', 'lightPaintBlack', 'lightFly', 'lightMirror', 'lightKaleido', 'lightGlitch',
@@ -4373,10 +4373,25 @@
                   </div>
                 </div>
                 {#if cameraState.heatEnabled}
-                  {@const heatControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'heat' && c.type === 'range')}
+                  {@const heatControls = (patterns[index].controls ?? []).filter(c => (c as any).interactive === 'heat' && (c.type === 'range' || c.type === 'toggle'))}
                   {#if heatControls.length > 0}
                     <div class="flex flex-col gap-1.5 pl-1">
                       {#each heatControls as ctrl}
+                        {#if ctrl.type === 'toggle'}
+                        {@const isOn = !!(ctrlVals[ctrl.label] ?? ctrl.get())}
+                        <!-- Heat mode switch (e.g. Push Away) — lives with the heat sliders it governs -->
+                        <div title={(ctrl as any).tip ?? ''} class="flex items-center justify-between text-xs text-white/70">
+                          <span>{ctrl.label}</span>
+                          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                          <div
+                            data-knob
+                            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {isOn ? 'bg-white/70' : 'bg-white/20'}"
+                            onclick={() => { const nv = !ctrl.get(); ctrl.set(nv); ctrlVals[ctrl.label] = nv ? 1 : 0; syncCtrlVals(); saveSettings(patterns); }}
+                          >
+                            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {isOn ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                          </div>
+                        </div>
+                        {:else}
                         {@const c = ctrl as (typeof ctrl & { type: 'range' })}
                         <div>
                           <div class="flex justify-between mb-1 text-xs text-white/70">
@@ -4392,6 +4407,7 @@
                             onchange={() => saveSettings(patterns)}
                             class="w-full accent-white cursor-pointer" />
                         </div>
+                        {/if}
                       {/each}
                     </div>
                   {/if}

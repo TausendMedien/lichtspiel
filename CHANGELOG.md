@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.260815-0553 — Gravity Lines · Push Away
+
+**Gravity Lines** — a new Generative pattern: a fine grid of short rounded capsules, each one aligned to a field of drifting gravity centres. Nothing travels across the screen; the masses move *under* a still grid, so what you see is the field itself becoming visible — vortices winding up, bands fanning out between them, dark cores where a mass sits. Every third mass repels instead of attracts, which is what opens the bright ridges. **Masses**, **Swirl** (point at the centres, or orbit them), **Softening** (core size), **Depth** (flat grid, or a sheet folding in 3D), plus Line Count, Width and Length. It takes its colours from the palette, from black through the enabled colours as the field gets stronger, and it reacts to motion, audio and heat exactly like Particle Field.
+
+**Push Away** — a new heat mode on **Particle Field**, **Hyper Mix** and **Gravity Lines**. Normally heat pulls the visuals around as you move and they snap back the instant you stop. Switched on, your movement instead shoves them aside and the gap stays: like balls lying on a floor pushed away with your hands, then slowly rolling back to cover it again. **Push Strength** sets how deep a gap you carve, **Return Speed** how long it stays open, and **Spread** how softly its edge melts as neighbours roll in from the sides. Off by default; the third preset slot on Gravity Lines starts with it on.
+
+**Under the hood** — the heat map's smoothing and blur, which three patterns each carried their own copy of, now live in one place, along with the palette ramp shared with Heat Map.
+
 ## v0.7.260813-1532 — Mirror · Kaleidoscope · Saved Configs
 
 **Mirror** — a new Live Light Painting pattern that folds the image across a single axis: a two-segment kaleidoscope. A **Direction** control picks the axis and which half is the source — horizontally, horizontally mirrored, vertically, vertically mirrored. Everything else starts from the Light Paint defaults.

@@ -18,6 +18,7 @@ import { particlesPalette } from "./particlesPalette";
 import { tunnelEdgePalette } from "./tunnelEdgePalette";
 import { heatMap } from "./heatMap";
 import { particlesHeat } from "./particlesHeat";
+import { gravityLines } from "./gravityLines";
 import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
@@ -47,6 +48,7 @@ const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 const rawPatterns: Pattern[] = [
   hyperMixHeat,
   particlesHeat,
+  gravityLines,
   heatMap,
   particleLines,
   parallelLinesStraight,

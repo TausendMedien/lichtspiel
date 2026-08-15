@@ -2,9 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
-
-const W = 160;
-const H = 90;
+import { createHeatField, HEAT_DISPLACE_GLSL, type HeatField } from "../heatField";
 
 const BASE_COUNT = 25000;
 const _c1 = new THREE.Color();
@@ -25,41 +23,11 @@ const params = {
 
 let blurRadius = 2.0;
 let mirrorX    = true;
-
-function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r < 1) { dst.set(src); return; }
-  for (let y = 0; y < H; y++) {
-    const yo = y * W;
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
-    tmp[yo] = sum / cnt;
-    for (let x = 1; x < W; x++) {
-      if (x + r < W)      { sum += src[yo + x + r];     cnt++; }
-      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
-      tmp[yo + x] = sum / cnt;
-    }
-  }
-  for (let x = 0; x < W; x++) {
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
-    dst[x] = sum / cnt;
-    for (let y = 1; y < H; y++) {
-      if (y + r < H)      { sum += tmp[(y + r) * W + x];     cnt++; }
-      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
-      dst[y * W + x] = sum / cnt;
-    }
-  }
-}
-
-function updateHeatTexture() {
-  if (!smoothedRaw || !tmpBuf || !heatTexData || !heatTexture) return;
-  const raw = cameraState.heatMap;
-  for (let i = 0; i < W * H; i++) {
-    smoothedRaw[i] = smoothedRaw[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-  }
-  boxBlur(smoothedRaw, tmpBuf, heatTexData, blurRadius);
-  heatTexture.needsUpdate = true;
-}
+// Heat Mode: 0 = Attract (instantaneous), 1 = Push Away (persistent, relaxes back)
+let heatMode     = 0;
+let pushStrength = 1.2;
+let returnSpeed  = 0.35;
+let pushSpread   = 0.4;
 
 let qualityLow = false;
 
@@ -71,9 +39,7 @@ uniform float uTime;
 uniform float uCurlScale;
 uniform float uSpread;
 uniform float uPtSize;
-uniform sampler2D uHeatMap;
 uniform float     uHeatStrength;
-uniform float     uHeatGain;
 uniform float     uMirrorX;
 
 attribute float aSeed;
@@ -81,6 +47,8 @@ attribute float aSide;
 
 varying float vColorRatio;
 varying float vAlpha;
+
+${HEAT_DISPLACE_GLSL}
 
 vec3 _mod289(vec3 x){ return x - floor(x*(1./289.))*289.; }
 vec4 _mod289(vec4 x){ return x - floor(x*(1./289.))*289.; }
@@ -178,23 +146,18 @@ void main() {
   float sizeScale = min(1.0, sizeRef / uPtSize);
   vAlpha = smoothstep(0.0, 0.08, tLife) * smoothstep(1.0, 0.75, tLife) * sizeScale;
 
-  // Attract particles toward hot zones in the heat map.
+  // Deform the cloud by the heat map at this particle's own screen position.
   vec4 mv0   = modelViewMatrix * vec4(pos, 1.0);
   vec4 clip0 = projectionMatrix * mv0;
   if (clip0.w > 0.0) {
     vec2 uv = clip0.xy / clip0.w * 0.5 + 0.5;
     uv.y    = 1.0 - uv.y;
     if (uMirrorX > 0.5) uv.x = 1.0 - uv.x;
-    vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
-    float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
-    float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
-    float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
-    float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
-    vec2 grad = vec2(hR - hL, hU - hD) * uHeatGain;
+    vec2 disp = heatDisplace(uv);
     float depth = max(-mv0.z, 0.1);
     float halfH = depth * tan(radians(30.0));
-    pos.x += grad.x * halfH * uHeatStrength;
-    pos.y += grad.y * halfH * uHeatStrength;
+    pos.x += disp.x * halfH * uHeatStrength;
+    pos.y += disp.y * halfH * uHeatStrength;
   }
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
@@ -239,10 +202,8 @@ let geometry: THREE.BufferGeometry | null = null;
 let material: THREE.ShaderMaterial | null = null;
 let cam:      THREE.PerspectiveCamera | null = null;
 let sceneRef: THREE.Scene | null = null;
-let heatTexture: THREE.DataTexture | null = null;
-let heatTexData: Float32Array | null = null;
-let smoothedRaw: Float32Array | null = null;
-let tmpBuf:      Float32Array | null = null;
+let heatField: HeatField | null = null;
+let heatWasOn  = false;
 
 function effectiveCount() {
   return qualityLow ? Math.max(5000, Math.round(params.pointCount / 2)) : params.pointCount;
@@ -370,6 +331,41 @@ export const hyperMixHeat: Pattern = {
       get: () => blurRadius,
       set: (v) => { blurRadius = v; },
     },
+    {
+      label: "Push Away",
+      type: "toggle",
+      interactive: 'heat' as const,
+      tip: "Off: the cloud follows your motion and snaps back the moment you stop. On: your movement shoves it aside and the gap only slowly fills in again. Requires Heat.",
+      get: () => heatMode === 1,
+      set: (v: boolean) => { heatMode = v ? 1 : 0; heatField?.reset(); },
+    },
+    {
+      label: "Push Strength",
+      type: "range", min: 0, max: 3, step: 0.05,
+      default: 1.2,
+      interactive: 'heat' as const,
+      tip: "How deep a gap your movement carves. Push Away only.",
+      get: () => pushStrength,
+      set: (v) => { pushStrength = v; },
+    },
+    {
+      label: "Return Speed",
+      type: "range", min: 0.05, max: 2, step: 0.05,
+      default: 0.35,
+      interactive: 'heat' as const,
+      tip: "How fast the gap fills back in — lower = it stays open longer. Push Away only.",
+      get: () => returnSpeed,
+      set: (v) => { returnSpeed = v; },
+    },
+    {
+      label: "Spread",
+      type: "range", min: 0, max: 1, step: 0.05,
+      default: 0.4,
+      interactive: 'heat' as const,
+      tip: "How softly the gap's edge melts back — neighbours roll in from the sides. Push Away only.",
+      get: () => pushSpread,
+      set: (v) => { pushSpread = v; },
+    },
   ],
 
   init(ctx: PatternContext) {
@@ -378,13 +374,8 @@ export const hyperMixHeat: Pattern = {
     cam.position.set(0, 0, 8);
     cam.lookAt(0, 0, 0);
 
-    heatTexData = new Float32Array(W * H);
-    smoothedRaw = new Float32Array(W * H);
-    tmpBuf      = new Float32Array(W * H);
-    heatTexture = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
-    heatTexture.minFilter = THREE.LinearFilter;
-    heatTexture.magFilter = THREE.LinearFilter;
-    heatTexture.needsUpdate = true;
+    heatField = createHeatField();
+    heatWasOn = false;
 
     geometry = buildGeometry(MAX_POINTS);
     geometry.setDrawRange(0, Math.min(effectiveCount(), MAX_POINTS));
@@ -399,7 +390,9 @@ export const hyperMixHeat: Pattern = {
         uCountScale:   { value: 1.0 },
         uColor1:       { value: new THREE.Color(0x00ccff) },
         uColor2:       { value: new THREE.Color(0xff00cc) },
-        uHeatMap:      { value: heatTexture },
+        uHeatMap:      { value: heatField.heatTexture },
+        uPushField:    { value: heatField.pushTexture },
+        uHeatMode:     { value: 0 },
         uHeatStrength: { value: params.heatStrength },
         uHeatGain:     { value: params.heatGain },
         uMirrorX:      { value: mirrorX ? 1.0 : 0.0 },
@@ -428,10 +421,20 @@ export const hyperMixHeat: Pattern = {
     if (cameraState.heatEnabled) {
       material.uniforms.uHeatStrength.value = params.heatStrength;
       material.uniforms.uHeatGain.value     = params.heatGain;
-      updateHeatTexture();
+      material.uniforms.uHeatMode.value     = heatMode;
+      heatField?.update(dt, {
+        blurRadius,
+        pushStrength: heatMode === 1 ? pushStrength : 0,
+        returnSpeed,
+        spread: pushSpread,
+      });
+      heatWasOn = true;
     } else {
       material.uniforms.uHeatStrength.value = 0;
       material.uniforms.uHeatGain.value     = 0;
+      // Drop any gap still open when Heat is switched off, so re-enabling it later
+      // doesn't bring a stale hole back with it.
+      if (heatWasOn) { heatField?.reset(); heatWasOn = false; }
     }
 
     _c1.set(colorC2.main);
@@ -446,16 +449,14 @@ export const hyperMixHeat: Pattern = {
   resize() {},
 
   dispose() {
-    heatTexture?.dispose();
+    heatField?.dispose();
     geometry?.dispose();
     material?.dispose();
     points      = null;
     geometry    = null;
     material    = null;
-    heatTexture = null;
-    heatTexData = null;
-    smoothedRaw = null;
-    tmpBuf      = null;
+    heatField   = null;
+    heatWasOn   = false;
     cam         = null;
     sceneRef    = null;
     accTime     = 0;
