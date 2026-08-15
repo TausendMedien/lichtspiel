@@ -14,6 +14,7 @@ let mirrorX       = true;
 // Heat Mode: 0 = Attract (instantaneous), 1 = Push Away (persistent, relaxes back)
 let heatMode      = 0;
 let pushStrength  = 1.2;
+let solidity      = 1.0;
 let returnSpeed   = 0.35;
 let pushSpread    = 0.4;
 
@@ -30,7 +31,6 @@ let currentAspect = 1;
 const vertexShader = /* glsl */ `
   uniform float     uTime;
   uniform float     uSize;
-  uniform float     uHeatStrength;
   uniform float     uMirrorX;
   attribute float   aSeed;
   varying float     vSeed;
@@ -67,8 +67,8 @@ const vertexShader = /* glsl */ `
 
       float depth = max(-mv0.z, 0.1);
       float halfH = depth * tan(radians(30.0));
-      p.x += disp.x * halfH * uHeatStrength;
-      p.y += disp.y * halfH * uHeatStrength;
+      p.x += disp.x * halfH;
+      p.y += disp.y * halfH;
     }
 
     vec4 mv      = modelViewMatrix * vec4(p, 1.0);
@@ -149,7 +149,8 @@ export const particlesHeat: Pattern = {
     { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,     interactive: 'heat' as const, tip: "Blur applied to the heat map before driving particles.",          get: () => blurRadius,   set: v => { blurRadius = v; } },
     { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000,  tip: "Number of particles. More = denser cloud, heavier on GPU.",                 get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
     { label: "Push Away",     type: "toggle", interactive: 'heat' as const, tip: "Off: particles follow your motion and snap back the moment you stop. On: your movement shoves them aside and the gap only slowly fills in again. Requires Heat.", get: () => heatMode === 1, set: v => { heatMode = v ? 1 : 0; heatField?.reset(); } },
-    { label: "Push Strength", type: "range",  min: 0,    max: 3,     step: 0.05, default: 1.2,   interactive: 'heat' as const, tip: "How deep a gap your movement carves. Push Away only.",             get: () => pushStrength, set: v => { pushStrength = v; } },
+    { label: "Solidity",      type: "range",  min: 0,    max: 1.5,   step: 0.05, default: 1,     interactive: 'heat' as const, tip: "How solid your body is as it sweeps through. 1 = everything you cover is cleared out to the edge of your silhouette in one pass. 0 = only a soft nudge from your outline. Push Away only.", get: () => solidity,     set: v => { solidity = v; } },
+    { label: "Push Strength", type: "range",  min: 0,    max: 3,     step: 0.05, default: 1.2,   interactive: 'heat' as const, tip: "Extra soft shove from your outline, on top of Solidity — it builds up over repeated passes. Push Away only.", get: () => pushStrength, set: v => { pushStrength = v; } },
     { label: "Return Speed",  type: "range",  min: 0.05, max: 2,     step: 0.05, default: 0.35,  interactive: 'heat' as const, tip: "How fast the gap fills back in — lower = it stays open longer. Push Away only.", get: () => returnSpeed,  set: v => { returnSpeed = v; } },
     { label: "Spread",        type: "range",  min: 0,    max: 1,     step: 0.05, default: 0.4,   interactive: 'heat' as const, tip: "How softly the gap's edge melts back — neighbours roll in from the sides. Push Away only.", get: () => pushSpread,   set: v => { pushSpread = v; } },
   ],
@@ -206,11 +207,18 @@ export const particlesHeat: Pattern = {
       heatField?.update(dt, {
         blurRadius,
         pushStrength: heatMode === 1 ? pushStrength : 0,
+        solidity:     heatMode === 1 ? solidity : 0,
         returnSpeed,
         spread: pushSpread,
+        aspect: currentAspect,
+        heatGain,
+        heatStrength,
       });
       heatWasOn = true;
     } else {
+      // Push Away reads the field directly, so zeroing gain/strength isn't enough
+      // to switch it off — fall back to Attract, which they do gate.
+      material.uniforms.uHeatMode.value     = 0;
       material.uniforms.uHeatStrength.value = 0;
       material.uniforms.uHeatGain.value     = 0;
       // Drop any gap still open when Heat is switched off, so re-enabling it later

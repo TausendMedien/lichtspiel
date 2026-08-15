@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.260815-1022 — Solidity
+
+**Solidity** — Push Away now treats your body as a real object. Until now the push came from the *outline* of your movement, which meant the middle of your hand barely pushed at all and you had to sweep an area several times to clear it. Now everything the camera reads as you is vacated in one pass: sweep once and you carve an empty path, the way a hand sweeps balls off a floor. The slider sets how solid you are — 1 clears what you cover out to the edge of your silhouette, higher piles it up beyond that, 0 goes back to the old soft nudge. On Particle Field, Hyper Mix and Gravity Lines, starting at 1.
+
+**Push Strength** keeps its old job as the soft, cumulative shove from your outline, on top of Solidity. **Heat Gain** now also decides how much movement counts as solid.
+
+**Bend Strength** — Gravity Lines gets a knob for how far your motion swings the capsules' *direction*, separate from moving them. Past about 1 the whole grid starts snapping radially onto you and the vortices flatten out, which is a look in itself.
+
 ## v0.7.260815-0553 — Gravity Lines · Push Away
 
 **Gravity Lines** — a new Generative pattern: a fine grid of short rounded capsules, each one aligned to a field of drifting gravity centres. Nothing travels across the screen; the masses move *under* a still grid, so what you see is the field itself becoming visible — vortices winding up, bands fanning out between them, dark cores where a mass sits. Every third mass repels instead of attracts, which is what opens the bright ridges. **Masses**, **Swirl** (point at the centres, or orbit them), **Softening** (core size), **Depth** (flat grid, or a sheet folding in 3D), plus Line Count, Width and Length. It takes its colours from the palette, from black through the enabled colours as the field gets stronger, and it reacts to motion, audio and heat exactly like Particle Field.

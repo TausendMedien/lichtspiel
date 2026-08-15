@@ -26,8 +26,10 @@ let mirrorX    = true;
 // Heat Mode: 0 = Attract (instantaneous), 1 = Push Away (persistent, relaxes back)
 let heatMode     = 0;
 let pushStrength = 1.2;
+let solidity     = 1.0;
 let returnSpeed  = 0.35;
 let pushSpread   = 0.4;
+let currentAspect = 1;
 
 let qualityLow = false;
 
@@ -39,7 +41,6 @@ uniform float uTime;
 uniform float uCurlScale;
 uniform float uSpread;
 uniform float uPtSize;
-uniform float     uHeatStrength;
 uniform float     uMirrorX;
 
 attribute float aSeed;
@@ -156,8 +157,8 @@ void main() {
     vec2 disp = heatDisplace(uv);
     float depth = max(-mv0.z, 0.1);
     float halfH = depth * tan(radians(30.0));
-    pos.x += disp.x * halfH * uHeatStrength;
-    pos.y += disp.y * halfH * uHeatStrength;
+    pos.x += disp.x * halfH;
+    pos.y += disp.y * halfH;
   }
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
@@ -340,11 +341,20 @@ export const hyperMixHeat: Pattern = {
       set: (v: boolean) => { heatMode = v ? 1 : 0; heatField?.reset(); },
     },
     {
+      label: "Solidity",
+      type: "range", min: 0, max: 1.5, step: 0.05,
+      default: 1,
+      interactive: 'heat' as const,
+      tip: "How solid your body is as it sweeps through. 1 = everything you cover is cleared out to the edge of your silhouette in one pass. 0 = only a soft nudge from your outline. Push Away only.",
+      get: () => solidity,
+      set: (v) => { solidity = v; },
+    },
+    {
       label: "Push Strength",
       type: "range", min: 0, max: 3, step: 0.05,
       default: 1.2,
       interactive: 'heat' as const,
-      tip: "How deep a gap your movement carves. Push Away only.",
+      tip: "Extra soft shove from your outline, on top of Solidity — it builds up over repeated passes. Push Away only.",
       get: () => pushStrength,
       set: (v) => { pushStrength = v; },
     },
@@ -373,6 +383,7 @@ export const hyperMixHeat: Pattern = {
     sceneRef = ctx.scene;
     cam.position.set(0, 0, 8);
     cam.lookAt(0, 0, 0);
+    currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
 
     heatField = createHeatField();
     heatWasOn = false;
@@ -425,11 +436,18 @@ export const hyperMixHeat: Pattern = {
       heatField?.update(dt, {
         blurRadius,
         pushStrength: heatMode === 1 ? pushStrength : 0,
+        solidity:     heatMode === 1 ? solidity : 0,
         returnSpeed,
         spread: pushSpread,
+        aspect: currentAspect,
+        heatGain:     params.heatGain,
+        heatStrength: params.heatStrength,
       });
       heatWasOn = true;
     } else {
+      // Push Away reads the field directly, so zeroing gain/strength isn't enough
+      // to switch it off — fall back to Attract, which they do gate.
+      material.uniforms.uHeatMode.value     = 0;
       material.uniforms.uHeatStrength.value = 0;
       material.uniforms.uHeatGain.value     = 0;
       // Drop any gap still open when Heat is switched off, so re-enabling it later
@@ -446,7 +464,9 @@ export const hyperMixHeat: Pattern = {
     material.uniforms.uColor2.value.lerpColors(_cFade, _c2, _ph2);
   },
 
-  resize() {},
+  resize(w: number, h: number) {
+    currentAspect = w / Math.max(h, 1);
+  },
 
   dispose() {
     heatField?.dispose();

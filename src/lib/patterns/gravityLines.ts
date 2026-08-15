@@ -34,8 +34,10 @@ let mirrorX      = true;
 // Heat Mode: 0 = Attract (instantaneous), 1 = Push Away (persistent, relaxes back)
 let heatMode     = 0;
 let pushStrength = 1.2;
+let solidity     = 1.0;
 let returnSpeed  = 0.35;
 let pushSpread   = 0.4;
+let heatBend     = 1.0;
 
 let mesh:     THREE.Mesh | null = null;
 let geometry: THREE.BufferGeometry | null = null;
@@ -63,7 +65,7 @@ const vertexShader = /* glsl */ `
   uniform float uSwirl;
   uniform float uSoftening;
   uniform float uDepth;
-  uniform float uHeatStrength;
+  uniform float uHeatActive;    // 1 while Heat is on — gates the heat sampling
   uniform float uHeatBend;
   uniform float uMirrorX;
   uniform vec3  uAttractors[${MAX_ATTRACTORS}];   // xy = position, z = signed mass
@@ -102,14 +104,15 @@ const vertexShader = /* glsl */ `
 
     // Heat displacement at this capsule's own screen position.
     vec2 disp = vec2(0.0);
-    if (uHeatStrength > 0.0) {
-      vec4 clip0 = projectionMatrix * modelViewMatrix * vec4(base, 1.0);
+    if (uHeatActive > 0.5) {
+      vec4 mv0   = modelViewMatrix * vec4(base, 1.0);
+      vec4 clip0 = projectionMatrix * mv0;
       if (clip0.w > 0.0) {
         vec2 uv = clip0.xy / clip0.w * 0.5 + 0.5;
         uv.y = 1.0 - uv.y;
         if (uMirrorX > 0.5) uv.x = 1.0 - uv.x;
-        disp = heatDisplace(uv) * uHeatStrength;
-        base.xy += disp * 2.0;
+        disp = heatDisplace(uv);
+        base.xy += disp * max(-mv0.z, 0.1) * tan(radians(30.0));
       }
     }
 
@@ -302,9 +305,11 @@ export const gravityLines: Pattern = {
     { label: "Colors v2",     type: "range", min: 0,    max: 3,    step: 0.1,  default: 3,    interactive: 'internal' as const, get: () => colorC2.colorsV2, set: v => { colorC2.colorsV2 = v; } },
     { label: "Heat Strength", type: "range", min: 0,    max: 1.5,  step: 0.05, default: 0.5,  interactive: 'heat' as const, tip: "How strongly the heat map shifts and bends the grid. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
     { label: "Heat Gain",     type: "range", min: 4,    max: 20,   step: 0.5,  default: 11,   interactive: 'heat' as const, tip: "Amplify the heat signal — higher = reacts to subtler motion.",       get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Bend Strength", type: "range", min: 0,    max: 4,    step: 0.1,  default: 1,    interactive: 'heat' as const, tip: "How far your motion swings the capsules' direction, on top of moving them. High values snap the whole grid radially onto you and flatten the vortices.", get: () => heatBend, set: v => { heatBend = v; } },
     { label: "Blur Radius",   type: "range", min: 0,    max: 10,   step: 0.1,  default: 4,    interactive: 'heat' as const, tip: "Blur applied to the heat map before it drives the grid.",            get: () => blurRadius,   set: v => { blurRadius = v; } },
     { label: "Push Away",     type: "toggle", interactive: 'heat' as const, tip: "Off: the grid follows your motion and snaps back the moment you stop. On: your movement shoves the capsules aside and the gap only slowly fills in again. Requires Heat.", get: () => heatMode === 1, set: v => { heatMode = v ? 1 : 0; heatField?.reset(); } },
-    { label: "Push Strength", type: "range", min: 0,    max: 3,    step: 0.05, default: 1.2,  interactive: 'heat' as const, tip: "How deep a gap your movement carves. Push Away only.",               get: () => pushStrength, set: v => { pushStrength = v; } },
+    { label: "Solidity",      type: "range", min: 0,    max: 1.5,  step: 0.05, default: 1,    interactive: 'heat' as const, tip: "How solid your body is as it sweeps through. 1 = everything you cover is cleared out to the edge of your silhouette in one pass. 0 = only a soft nudge from your outline. Push Away only.", get: () => solidity, set: v => { solidity = v; } },
+    { label: "Push Strength", type: "range", min: 0,    max: 3,    step: 0.05, default: 1.2,  interactive: 'heat' as const, tip: "Extra soft shove from your outline, on top of Solidity — it builds up over repeated passes. Push Away only.", get: () => pushStrength, set: v => { pushStrength = v; } },
     { label: "Return Speed",  type: "range", min: 0.05, max: 2,    step: 0.05, default: 0.35, interactive: 'heat' as const, tip: "How fast the gap fills back in — lower = it stays open longer. Push Away only.", get: () => returnSpeed, set: v => { returnSpeed = v; } },
     { label: "Spread",        type: "range", min: 0,    max: 1,    step: 0.05, default: 0.4,  interactive: 'heat' as const, tip: "How softly the gap's edge melts back — neighbours roll in from the sides. Push Away only.", get: () => pushSpread, set: v => { pushSpread = v; } },
   ],
@@ -346,9 +351,10 @@ export const gravityLines: Pattern = {
         uHeatMode:     { value: 0 },
         uHeatGain:     { value: heatGain },
         uHeatStrength: { value: 0 },
-        // Heat perturbs the direction of the field; it must not replace it, or the
-        // whole grid snaps radially onto the person and the vortices disappear.
-        uHeatBend:     { value: 1.0 },
+        uHeatActive:   { value: 0 },
+        // Heat perturbs the direction of the field; past ~1 it starts to replace it,
+        // and the whole grid snaps radially onto the person as the vortices flatten.
+        uHeatBend:     { value: heatBend },
         uMirrorX:      { value: mirrorX ? 1.0 : 0.0 },
       },
       vertexShader,
@@ -398,17 +404,25 @@ export const gravityLines: Pattern = {
     // Heat reactivity must respect the "Heat" toggle — without this gate the pattern
     // keeps responding to heatMap data as long as the camera is running at all.
     if (cameraState.heatEnabled) {
+      u.uHeatActive.value   = 1;
       u.uHeatStrength.value = heatStrength;
       u.uHeatGain.value     = heatGain;
+      u.uHeatBend.value     = heatBend;
       u.uHeatMode.value     = heatMode;
       heatField?.update(dt, {
         blurRadius,
         pushStrength: heatMode === 1 ? pushStrength : 0,
+        solidity:     heatMode === 1 ? solidity : 0,
         returnSpeed,
         spread: pushSpread,
+        aspect,
+        heatGain,
+        heatStrength,
       });
       heatWasOn = true;
     } else {
+      u.uHeatActive.value   = 0;
+      u.uHeatMode.value     = 0;
       u.uHeatStrength.value = 0;
       u.uHeatGain.value     = 0;
       if (heatWasOn) { heatField?.reset(); heatWasOn = false; }

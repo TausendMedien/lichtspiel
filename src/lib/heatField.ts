@@ -77,7 +77,7 @@ export function createHeatField(): HeatField {
       boxBlur(smoothedRaw, blurTmp, heatData, opts.blurRadius);
       heatTexture.needsUpdate = true;
 
-      if (opts.pushStrength > 0) {
+      if (opts.pushStrength > 0 || opts.solidity > 0) {
         // Cap dt so a stalled tab can't jolt the field on the frame it resumes.
         stepPushField(heatData, fx, fy, fTmpA, fTmpB, Math.min(dt, 0.1), opts);
         for (let i = 0; i < HEAT_N; i++) {
@@ -107,22 +107,29 @@ export function createHeatField(): HeatField {
 
 /**
  * GLSL shared by every heat-displacement pattern: given the particle's screen-space
- * UV in heat-map space, return the displacement vector for the active mode.
- * Attract takes the instantaneous gradient; Push Away reads the field with memory.
+ * UV in heat-map space, return the displacement vector for the active mode. The
+ * caller multiplies the result by its own halfH (half the view height in world
+ * units at that depth) and nothing else.
+ *
+ * Attract takes the instantaneous gradient, scaled by Heat Gain and Heat Strength.
+ * Push Away reads the field with memory, which is already stored in screen-height
+ * fractions and calibrated on the CPU — so `× 2 × halfH` lands it exactly where
+ * Solidity says it should go, with no further scaling.
  */
 export const HEAT_DISPLACE_GLSL = /* glsl */ `
   uniform sampler2D uHeatMap;
   uniform sampler2D uPushField;
   uniform float     uHeatMode;    // 0 = Attract, 1 = Push Away
   uniform float     uHeatGain;
+  uniform float     uHeatStrength;
 
   vec2 heatDisplace(vec2 uv) {
-    if (uHeatMode > 0.5) return texture2D(uPushField, uv).rg * uHeatGain;
+    if (uHeatMode > 0.5) return texture2D(uPushField, uv).rg * 2.0;
     vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
     float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
     float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
     float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
     float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
-    return vec2(hR - hL, hU - hD) * uHeatGain;
+    return vec2(hR - hL, hU - hD) * uHeatGain * uHeatStrength;
   }
 `;

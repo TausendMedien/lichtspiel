@@ -1,8 +1,8 @@
 import { expect, test, describe } from "bun:test";
 import {
   HEAT_W, HEAT_H, HEAT_N,
-  boxBlur, smoothHeat, heatGradient, stepPushField,
-  PUSH_MAX_BASE, type PushOpts,
+  boxBlur, smoothHeat, heatGradient, stepPushField, evictionOffsets,
+  PUSH_MAX_BASE, MAX_EVICT, type PushOpts,
 } from "./pushField";
 
 const DT = 1 / 60;
@@ -24,29 +24,140 @@ function makeState() {
   };
 }
 
+type State = ReturnType<typeof makeState>;
+
 /** Run `seconds` of frames with the given heat map. */
-function run(s: ReturnType<typeof makeState>, heat: Float32Array, seconds: number, opts: PushOpts) {
+function run(s: State, heat: Float32Array, seconds: number, opts: PushOpts) {
   for (let i = 0; i < Math.round(seconds * 60); i++) {
     stepPushField(heat, s.fx, s.fy, s.a, s.b, DT, opts);
   }
 }
 
-const at = (s: ReturnType<typeof makeState>, x: number, y: number) => {
+const at = (s: State, x: number, y: number) => {
   const i = y * HEAT_W + x;
   return { x: s.fx[i], y: s.fy[i], mag: Math.hypot(s.fx[i], s.fy[i]) };
 };
 
-const OPTS: PushOpts = { pushStrength: 1.2, returnSpeed: 0.35, spread: 0.4 };
+/** Defaults as shipped: Solidity 1, Push Strength 1.2, 16:9. */
+const OPTS: PushOpts = {
+  pushStrength: 1.2, solidity: 1, returnSpeed: 0.35, spread: 0.4,
+  aspect: 16 / 9, heatGain: 11, heatStrength: 0.5,
+};
+const GRADIENT_ONLY: PushOpts = { ...OPTS, solidity: 0 };
+
+describe("solid-body eviction", () => {
+  test("clears the MIDDLE of the covered area, which the gradient alone cannot", () => {
+    // The whole point of Solidity: the heat gradient vanishes at the centre of a
+    // shape, so gradient-only push leaves a stubborn island of particles behind.
+    const heat = blob(80, 45, 0.3, 16);
+    const soft = makeState(), solid = makeState();
+    run(soft,  heat, 0.5, GRADIENT_ONLY);
+    run(solid, heat, 0.5, OPTS);
+
+    const centreSoft  = at(soft,  80, 45).mag;
+    const centreSolid = at(solid, 80, 45).mag;
+    expect(centreSoft).toBeLessThan(0.005);          // barely moves
+    expect(centreSolid).toBeGreaterThan(centreSoft * 20);
+  });
+
+  test("one pass is enough — a single sweep clears the swept lane", () => {
+    // Sweep a hand left→right, one frame per step, and check the lane behind it.
+    const s = makeState();
+    for (let cx = 30; cx <= 120; cx += 2) {
+      stepPushField(blob(cx, 45, 0.3, 12), s.fx, s.fy, s.a, s.b, DT, OPTS);
+    }
+    // Everything along the swept lane is displaced, including cells the hand only
+    // passed over once.
+    for (const x of [40, 60, 80, 100]) {
+      expect(at(s, x, 45).mag).toBeGreaterThan(0.05);
+    }
+    // Well outside the lane, nothing much happened.
+    expect(at(s, 80, 8).mag).toBeLessThan(0.02);
+  });
+
+  test("the displacement is roughly the distance to the edge of the silhouette", () => {
+    const s = makeState();
+    const r = 12;
+    run(s, blob(80, 45, 0.3, r), 0.5, { ...OPTS, spread: 0, returnSpeed: 0.01 });
+    // A cell at the centre must travel about the blob's radius to get out. The mask
+    // is thresholded from the heat falloff, so the effective radius is smaller than
+    // the nominal one — check the order of magnitude, in screen-height fractions.
+    const expected = r / HEAT_H;
+    const got = at(s, 80, 45).mag;
+    expect(got).toBeGreaterThan(expected * 0.3);
+    expect(got).toBeLessThan(expected * 1.5);
+  });
+
+  test("Solidity scales the eviction distance", () => {
+    const heat = blob(80, 45, 0.3, 14);
+    const half = makeState(), full = makeState();
+    run(half, heat, 0.5, { ...OPTS, solidity: 0.5, returnSpeed: 0.01, spread: 0 });
+    run(full, heat, 0.5, { ...OPTS, solidity: 1.0, returnSpeed: 0.01, spread: 0 });
+    expect(at(full, 80, 45).mag).toBeGreaterThan(at(half, 80, 45).mag * 1.6);
+  });
+
+  test("cells on opposite sides are evicted in opposite directions", () => {
+    const s = makeState();
+    run(s, blob(80, 45, 0.3, 14), 0.5, OPTS);
+    expect(Math.sign(at(s, 72, 45).x)).toBe(-Math.sign(at(s, 88, 45).x));
+    expect(Math.sign(at(s, 80, 38).y)).toBe(-Math.sign(at(s, 80, 52).y));
+  });
+
+  test("eviction pushes the same way the gradient does — the two never fight", () => {
+    const heat = blob(80, 45, 0.3, 14);
+    const soft = makeState(), solid = makeState();
+    run(soft,  heat, 0.5, GRADIENT_ONLY);
+    run(solid, heat, 0.5, { ...OPTS, pushStrength: 0 });
+    // Sample at the rim, where the gradient is strong enough to have a clear sign.
+    const a = at(soft, 90, 45), b = at(solid, 90, 45);
+    expect(Math.sign(a.x)).toBe(Math.sign(b.x));
+  });
+
+  test("stays within the ceiling", () => {
+    const s = makeState();
+    run(s, blob(80, 45, 0.9, 40), 20, OPTS);
+    const ceiling = Math.max(OPTS.pushStrength * PUSH_MAX_BASE, OPTS.solidity * MAX_EVICT);
+    for (let i = 0; i < HEAT_N; i++) {
+      expect(Math.hypot(s.fx[i], s.fy[i])).toBeLessThanOrEqual(ceiling + 1e-6);
+    }
+  });
+});
+
+describe("eviction offsets", () => {
+  test("point out of the mask by the shortest route", () => {
+    const mask = new Uint8Array(HEAT_N);
+    for (let y = 40; y < 50; y++) for (let x = 70; x < 90; x++) mask[y * HEAT_W + x] = 1;
+    const dx = new Float32Array(HEAT_N), dy = new Float32Array(HEAT_N);
+    evictionOffsets(mask, dx, dy);
+
+    // Free cells stay put.
+    expect(dx[45 * HEAT_W + 10]).toBe(0);
+    // The band is 10 rows tall and 20 wide, so from the middle the way out is
+    // vertical, and about half the height.
+    const i = 45 * HEAT_W + 80;
+    expect(Math.abs(dy[i])).toBeLessThanOrEqual(6);
+    expect(Math.abs(dy[i])).toBeGreaterThan(0);
+    expect(Math.abs(dx[i])).toBeLessThan(Math.abs(dy[i]) + 1);
+    // Near the left edge the way out is sideways and short.
+    const j = 45 * HEAT_W + 71;
+    expect(dx[j]).toBe(-2);
+  });
+
+  test("an empty mask leaves every cell at rest", () => {
+    const dx = new Float32Array(HEAT_N), dy = new Float32Array(HEAT_N);
+    evictionOffsets(new Uint8Array(HEAT_N), dx, dy);
+    for (let i = 0; i < HEAT_N; i++) expect(dx[i]).toBe(0);
+  });
+});
 
 describe("push field", () => {
   test("motion builds a displacement that points away from the hot centre", () => {
     const s = makeState();
     const heat = blob(80, 45, 0.3, 16);
-    run(s, heat, 1, OPTS);
+    run(s, heat, 1, GRADIENT_ONLY);
 
-    // Sample to the RIGHT of the blob centre. The heat gradient there points back
-    // toward the centre in texture space, which is the direction the Attract path
-    // already displaces by — i.e. outward on screen. Both modes must agree in sign.
+    // Sample to the RIGHT of the blob centre. The heat gradient there is the
+    // direction the Attract path already displaces by; both modes must agree.
     const right = at(s, 92, 45);
     const [gx] = heatGradient(heat, 92, 45);
     expect(Math.sign(right.x)).toBe(Math.sign(gx));
@@ -60,8 +171,7 @@ describe("push field", () => {
 
   test("sustained motion saturates at the clamp instead of running away", () => {
     const s = makeState();
-    const heat = blob(80, 45, 0.3, 16);
-    run(s, heat, 30, OPTS);
+    run(s, blob(80, 45, 0.3, 16), 30, GRADIENT_ONLY);
     const max = OPTS.pushStrength * PUSH_MAX_BASE;
     let peak = 0;
     for (let i = 0; i < HEAT_N; i++) peak = Math.max(peak, Math.hypot(s.fx[i], s.fy[i]));
@@ -69,21 +179,28 @@ describe("push field", () => {
     expect(peak).toBeGreaterThan(max * 0.9);   // it does reach the ceiling
   });
 
-  test("the gap stays open after the motion stops, then relaxes away", () => {
+  test("the gap stays open after the motion stops, then closes", () => {
     const s = makeState();
-    const heat = blob(80, 45, 0.3, 16);
-    run(s, heat, 2, OPTS);
-    const peak = at(s, 92, 45).mag;
-    expect(peak).toBeGreaterThan(0);
+    run(s, blob(80, 45, 0.3, 16), 2, OPTS);
+    // Measure the SIZE of the gap, not one cell: at the very centre the two sides
+    // of the eviction point opposite ways, so Spread cancels them there first —
+    // the hole genuinely refills from the middle outward.
+    const open = (st: State) => {
+      let n = 0;
+      for (let i = 0; i < HEAT_N; i++) if (Math.hypot(st.fx[i], st.fy[i]) > 0.02) n++;
+      return n;
+    };
+    const peak = open(s);
+    expect(peak).toBeGreaterThan(200);
 
     const still = new Float32Array(HEAT_N);   // person stopped moving
     run(s, still, 1, OPTS);
-    // Still clearly displaced a second later — this is the whole point of the mode.
-    expect(at(s, 92, 45).mag).toBeGreaterThan(peak * 0.5);
+    // Still clearly open a second later — this is the whole point of the mode.
+    expect(open(s)).toBeGreaterThan(peak * 0.5);
 
     run(s, still, 9, OPTS);
     // ...and effectively closed after ten seconds at the default Return Speed.
-    expect(at(s, 92, 45).mag).toBeLessThan(peak * 0.1);
+    expect(open(s)).toBe(0);
   });
 
   test("Return Speed controls how long the gap lingers", () => {
@@ -94,12 +211,12 @@ describe("push field", () => {
     run(fast, heat, 2, { ...OPTS, returnSpeed: 2.0 });
     run(slow, still, 3, { ...OPTS, returnSpeed: 0.1 });
     run(fast, still, 3, { ...OPTS, returnSpeed: 2.0 });
-    expect(at(slow, 92, 45).mag).toBeGreaterThan(at(fast, 92, 45).mag * 10);
+    expect(at(slow, 80, 45).mag).toBeGreaterThan(at(fast, 80, 45).mag * 10);
   });
 
-  test("pushStrength 0 (Attract mode) leaves the field untouched", () => {
+  test("both forces at zero (Attract mode) leaves the field untouched", () => {
     const s = makeState();
-    run(s, blob(80, 45, 0.3, 16), 2, { ...OPTS, pushStrength: 0 });
+    run(s, blob(80, 45, 0.3, 16), 2, { ...OPTS, pushStrength: 0, solidity: 0 });
     for (let i = 0; i < HEAT_N; i++) expect(s.fx[i]).toBe(0);
   });
 
@@ -108,7 +225,7 @@ describe("push field", () => {
     const none = makeState(), wide = makeState();
     run(none, heat, 2, { ...OPTS, spread: 0 });
     run(wide, heat, 2, { ...OPTS, spread: 1 });
-    const disturbed = (s: ReturnType<typeof makeState>) => {
+    const disturbed = (s: State) => {
       let n = 0;
       for (let i = 0; i < HEAT_N; i++) if (Math.hypot(s.fx[i], s.fy[i]) > 1e-4) n++;
       return n;
