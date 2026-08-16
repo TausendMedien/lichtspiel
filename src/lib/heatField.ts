@@ -24,16 +24,23 @@
 
 import * as THREE from "three";
 import { cameraState } from "./globalCameraSettings.svelte";
+import { pushState } from "./pushSettings.svelte";
+import { privacyMode } from "./privacyMode.svelte";
 import {
   HEAT_W, HEAT_H, HEAT_N,
-  boxBlur, smoothHeat, stepPushField, type PushOpts,
+  boxBlur, smoothHeat, stepPushField,
 } from "./pushField";
 
 export { HEAT_W, HEAT_H, boxBlur } from "./pushField";
 
-export interface HeatFieldOpts extends PushOpts {
-  /** Blur radius applied to the motion map (existing per-pattern control). */
-  blurRadius: number;
+/** True when the Push sensor is live — patterns set uPushMode from this. */
+export function pushActive(): boolean {
+  return pushState.enabled && cameraState.enabled && !privacyMode.active;
+}
+
+/** True when a pattern should be running its heat pipeline at all. */
+export function heatOrPushActive(): boolean {
+  return (cameraState.heatEnabled || pushState.enabled) && !privacyMode.active;
 }
 
 export interface HeatField {
@@ -41,8 +48,13 @@ export interface HeatField {
   readonly heatTexture: THREE.DataTexture;
   /** RG float, 160×90 — persistent displacement with memory. */
   readonly pushTexture: THREE.DataTexture;
-  update(dt: number, opts: HeatFieldOpts): void;
-  /** Clear all state — on activate, and whenever Heat is switched off. */
+  /**
+   * Refresh both textures. `blurRadius` is the pattern's own Heat Blur control;
+   * `aspect` is its viewport aspect, needed because the push field is stored per
+   * screen height. Push parameters come from the global Push sensor.
+   */
+  update(dt: number, blurRadius: number, aspect: number): void;
+  /** Clear all state — on activate, and whenever the sensors are switched off. */
   reset(): void;
   dispose(): void;
 }
@@ -72,14 +84,21 @@ export function createHeatField(): HeatField {
     heatTexture,
     pushTexture,
 
-    update(dt: number, opts: HeatFieldOpts) {
+    update(dt: number, blurRadius: number, aspect: number) {
       smoothHeat(cameraState.heatMap, smoothedRaw);
-      boxBlur(smoothedRaw, blurTmp, heatData, opts.blurRadius);
+      boxBlur(smoothedRaw, blurTmp, heatData, blurRadius);
       heatTexture.needsUpdate = true;
 
-      if (opts.pushStrength > 0 || opts.solidity > 0) {
+      if (pushActive() && (pushState.strength > 0 || pushState.solidity > 0)) {
         // Cap dt so a stalled tab can't jolt the field on the frame it resumes.
-        stepPushField(heatData, fx, fy, fTmpA, fTmpB, Math.min(dt, 0.1), opts);
+        stepPushField(heatData, fx, fy, fTmpA, fTmpB, Math.min(dt, 0.1), {
+          strength:    pushState.strength,
+          solidity:    pushState.solidity,
+          returnSpeed: pushState.returnSpeed,
+          spread:      pushState.spread,
+          sensitivity: pushState.sensitivity,
+          aspect,
+        });
         for (let i = 0; i < HEAT_N; i++) {
           pushData[i * 2]     = fx[i];
           pushData[i * 2 + 1] = fy[i];
@@ -106,30 +125,60 @@ export function createHeatField(): HeatField {
 }
 
 /**
- * GLSL shared by every heat-displacement pattern: given the particle's screen-space
- * UV in heat-map space, return the displacement vector for the active mode. The
- * caller multiplies the result by its own halfH (half the view height in world
- * units at that depth) and nothing else.
+ * GLSL for the particle patterns (Particle Field, Hyper Mix, Gravity Lines): given
+ * a particle's screen-space UV in heat-map space, the displacement for the active
+ * sensor. The caller multiplies by its own halfH — half the view height in world
+ * units at that depth — and nothing else.
  *
- * Attract takes the instantaneous gradient, scaled by Heat Gain and Heat Strength.
- * Push Away reads the field with memory, which is already stored in screen-height
- * fractions and calibrated on the CPU — so `× 2 × halfH` lands it exactly where
- * Solidity says it should go, with no further scaling.
+ * Heat takes the instantaneous gradient, scaled by Heat Gain and Heat Strength.
+ * Push reads the field with memory, already stored in screen-height fractions and
+ * calibrated on the CPU, so `× 2 × halfH` lands it exactly where Solidity says.
  */
 export const HEAT_DISPLACE_GLSL = /* glsl */ `
   uniform sampler2D uHeatMap;
   uniform sampler2D uPushField;
-  uniform float     uHeatMode;    // 0 = Attract, 1 = Push Away
+  uniform float     uPushMode;    // 1 = the Push sensor is driving
   uniform float     uHeatGain;
   uniform float     uHeatStrength;
 
   vec2 heatDisplace(vec2 uv) {
-    if (uHeatMode > 0.5) return texture2D(uPushField, uv).rg * 2.0;
+    if (uPushMode > 0.5) return texture2D(uPushField, uv).rg * 2.0;
     vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
     float hL = texture2D(uHeatMap, uv - vec2(eps.x, 0.0)).r;
     float hR = texture2D(uHeatMap, uv + vec2(eps.x, 0.0)).r;
     float hD = texture2D(uHeatMap, uv - vec2(0.0, eps.y)).r;
     float hU = texture2D(uHeatMap, uv + vec2(0.0, eps.y)).r;
     return vec2(hR - hL, hU - hD) * uHeatGain * uHeatStrength;
+  }
+`;
+
+/**
+ * GLSL for the full-screen patterns, whose heat effect is a UV or position warp in
+ * a space where 1.0 spans the screen height (Parallel Lines, Tunnel, Shader
+ * Gradient, Warp Surfaces, Curl Orbs, Static Images…).
+ *
+ * Each of those hand-tuned its own gradient multiplier, so `k` keeps that tuning on
+ * the Heat path. Push ignores `k`: the field already carries an absolute distance,
+ * and honouring it is the whole point — Solidity 1 has to clear the area whatever a
+ * pattern's taste for gradient strength happened to be.
+ *
+ * `uv` is in heat-map space (the caller applies its own mirror/flip first).
+ * `pushScale` is how many of the caller's own units span one screen height — 1.0 for
+ * a UV space normalised to the screen height, 2.0 for a -1..1 space, and so on.
+ */
+export const HEAT_WARP_GLSL = /* glsl */ `
+  uniform sampler2D uHeatMap;
+  uniform sampler2D uPushField;
+  uniform float     uPushMode;    // 1 = the Push sensor is driving
+  uniform float     uHeatStrength;
+
+  vec2 heatWarp(vec2 uv, float k, float pushScale) {
+    if (uPushMode > 0.5) return texture2D(uPushField, clamp(uv, 0.0, 1.0)).rg * pushScale;
+    vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+    float hL = texture2D(uHeatMap, clamp(uv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
+    float hR = texture2D(uHeatMap, clamp(uv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
+    float hD = texture2D(uHeatMap, clamp(uv - vec2(0.0, eps.y), 0.0, 1.0)).r;
+    float hU = texture2D(uHeatMap, clamp(uv + vec2(0.0, eps.y), 0.0, 1.0)).r;
+    return vec2(hR - hL, hU - hD) * uHeatStrength * k;
   }
 `;

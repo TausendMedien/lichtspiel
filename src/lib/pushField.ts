@@ -44,7 +44,7 @@ export const OCCUPANCY = 0.35;
 
 export interface PushOpts {
   /** How hard the heat GRADIENT shoves the field — soft and cumulative. 0 = off. */
-  pushStrength: number;
+  strength: number;
   /** How solid your silhouette is. 1 = a covered cell is displaced exactly to the
    *  edge of the silhouette, so one sweep clears the area. 0 = gradient only. */
   solidity: number;
@@ -52,42 +52,63 @@ export interface PushOpts {
   returnSpeed: number;
   /** Lateral diffusion — neighbours roll back in from the sides. */
   spread: number;
+  /** How much movement counts as your body — amplifies the gradient term and sets
+   *  the occupancy threshold for eviction. */
+  sensitivity: number;
   /** Viewport aspect (w/h) — the field is stored per screen-height, so the
    *  horizontal component of a cell offset has to be scaled by it. */
   aspect: number;
-  /** Pattern's Heat Gain: amplifies the gradient term and sets what counts as solid. */
-  heatGain: number;
-  /** Pattern's Heat Strength: scales the gradient term (Solidity ignores it). */
-  heatStrength: number;
 }
 
 /**
- * Separable box blur. src → (H pass) → tmp → (V pass) → dst.
- * O(W*H) per pass via a sliding window sum — safe at 60 fps.
+ * Separable box blur with a FRACTIONAL radius. src → (H pass) → tmp → (V pass) → dst.
+ *
+ * The whole-number part rides a sliding window sum (O(W*H) per pass, safe at 60 fps);
+ * the fraction adds the two cells just past each end at partial weight. Without that,
+ * a radius of 2.4 blurred exactly like 2.0 and the slider's decimals did nothing —
+ * which also made preset sweeps step instead of morph.
  */
 export function boxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r < 1) { dst.set(src); return; }
+  if (r <= 0) { dst.set(src); return; }
+  const r0 = Math.floor(r);
+  const f  = r - r0;
+
   // Horizontal pass: src → tmp
   for (let y = 0; y < HEAT_H; y++) {
     const yo = y * HEAT_W;
     let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, HEAT_W - 1); k++) { sum += src[yo + k]; cnt++; }
-    tmp[yo] = sum / cnt;
-    for (let x = 1; x < HEAT_W; x++) {
-      if (x + r < HEAT_W)  { sum += src[yo + x + r];     cnt++; }
-      if (x - r - 1 >= 0)  { sum -= src[yo + x - r - 1]; cnt--; }
-      tmp[yo + x] = sum / cnt;
+    for (let k = 0; k <= Math.min(r0, HEAT_W - 1); k++) { sum += src[yo + k]; cnt++; }
+    for (let x = 0; x < HEAT_W; x++) {
+      if (x > 0) {
+        if (x + r0 < HEAT_W)  { sum += src[yo + x + r0];     cnt++; }
+        if (x - r0 - 1 >= 0)  { sum -= src[yo + x - r0 - 1]; cnt--; }
+      }
+      let s = sum, c = cnt;
+      if (f > 0) {
+        const lo = x - r0 - 1, hi = x + r0 + 1;
+        if (lo >= 0)     { s += f * src[yo + lo]; c += f; }
+        if (hi < HEAT_W) { s += f * src[yo + hi]; c += f; }
+      }
+      tmp[yo + x] = s / c;
     }
   }
+
   // Vertical pass: tmp → dst
   for (let x = 0; x < HEAT_W; x++) {
     let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, HEAT_H - 1); k++) { sum += tmp[k * HEAT_W + x]; cnt++; }
-    dst[x] = sum / cnt;
-    for (let y = 1; y < HEAT_H; y++) {
-      if (y + r < HEAT_H)  { sum += tmp[(y + r) * HEAT_W + x];     cnt++; }
-      if (y - r - 1 >= 0)  { sum -= tmp[(y - r - 1) * HEAT_W + x]; cnt--; }
-      dst[y * HEAT_W + x] = sum / cnt;
+    for (let k = 0; k <= Math.min(r0, HEAT_H - 1); k++) { sum += tmp[k * HEAT_W + x]; cnt++; }
+    for (let y = 0; y < HEAT_H; y++) {
+      if (y > 0) {
+        if (y + r0 < HEAT_H)  { sum += tmp[(y + r0) * HEAT_W + x];     cnt++; }
+        if (y - r0 - 1 >= 0)  { sum -= tmp[(y - r0 - 1) * HEAT_W + x]; cnt--; }
+      }
+      let s = sum, c = cnt;
+      if (f > 0) {
+        const lo = y - r0 - 1, hi = y + r0 + 1;
+        if (lo >= 0)     { s += f * tmp[lo * HEAT_W + x]; c += f; }
+        if (hi < HEAT_H) { s += f * tmp[hi * HEAT_W + x]; c += f; }
+      }
+      dst[y * HEAT_W + x] = s / c;
     }
   }
 }
@@ -171,20 +192,19 @@ export function stepPushField(
   tmpA: Float32Array, tmpB: Float32Array,
   dt: number, opts: PushOpts,
 ) {
-  // Gradient term, converted into screen-height fractions: the old chain was
-  // grad · gain · strength · halfH, and world = field · 2 · halfH downstream.
-  const acc   = opts.pushStrength * PUSH_ACC * dt * opts.heatGain * opts.heatStrength * 0.5;
+  // Gradient term, in screen-height fractions.
+  const acc   = opts.strength * PUSH_ACC * dt * opts.sensitivity * 0.25;
   // Exponential relaxation, framerate independent.
   const keep  = Math.exp(-opts.returnSpeed * dt);
   const blend = opts.spread > 0 ? Math.min(1, opts.spread * SPREAD_RATE * dt) : 0;
-  const max   = Math.max(opts.pushStrength * PUSH_MAX_BASE, opts.solidity * MAX_EVICT);
+  const max   = Math.max(opts.strength * PUSH_MAX_BASE, opts.solidity * MAX_EVICT);
 
   // Solid-body eviction: mark everything the camera reads as "you", then find the
   // way out of it for every covered cell.
   const evicting = opts.solidity > 0;
   if (evicting) {
     if (!_mask) { _mask = new Uint8Array(HEAT_N); _edx = new Float32Array(HEAT_N); _edy = new Float32Array(HEAT_N); }
-    const thr = OCCUPANCY / Math.max(opts.heatGain, 0.001);
+    const thr = OCCUPANCY / Math.max(opts.sensitivity, 0.001);
     for (let i = 0; i < HEAT_N; i++) _mask[i] = heat[i] > thr ? 1 : 0;
     evictionOffsets(_mask, _edx!, _edy!);
   }

@@ -40,8 +40,8 @@ const at = (s: State, x: number, y: number) => {
 
 /** Defaults as shipped: Solidity 1, Push Strength 1.2, 16:9. */
 const OPTS: PushOpts = {
-  pushStrength: 1.2, solidity: 1, returnSpeed: 0.35, spread: 0.4,
-  aspect: 16 / 9, heatGain: 11, heatStrength: 0.5,
+  strength: 1.2, solidity: 1, returnSpeed: 0.35, spread: 0.4,
+  sensitivity: 11, aspect: 16 / 9,
 };
 const GRADIENT_ONLY: PushOpts = { ...OPTS, solidity: 0 };
 
@@ -107,7 +107,7 @@ describe("solid-body eviction", () => {
     const heat = blob(80, 45, 0.3, 14);
     const soft = makeState(), solid = makeState();
     run(soft,  heat, 0.5, GRADIENT_ONLY);
-    run(solid, heat, 0.5, { ...OPTS, pushStrength: 0 });
+    run(solid, heat, 0.5, { ...OPTS, strength: 0 });
     // Sample at the rim, where the gradient is strong enough to have a clear sign.
     const a = at(soft, 90, 45), b = at(solid, 90, 45);
     expect(Math.sign(a.x)).toBe(Math.sign(b.x));
@@ -116,7 +116,7 @@ describe("solid-body eviction", () => {
   test("stays within the ceiling", () => {
     const s = makeState();
     run(s, blob(80, 45, 0.9, 40), 20, OPTS);
-    const ceiling = Math.max(OPTS.pushStrength * PUSH_MAX_BASE, OPTS.solidity * MAX_EVICT);
+    const ceiling = Math.max(OPTS.strength * PUSH_MAX_BASE, OPTS.solidity * MAX_EVICT);
     for (let i = 0; i < HEAT_N; i++) {
       expect(Math.hypot(s.fx[i], s.fy[i])).toBeLessThanOrEqual(ceiling + 1e-6);
     }
@@ -172,7 +172,7 @@ describe("push field", () => {
   test("sustained motion saturates at the clamp instead of running away", () => {
     const s = makeState();
     run(s, blob(80, 45, 0.3, 16), 30, GRADIENT_ONLY);
-    const max = OPTS.pushStrength * PUSH_MAX_BASE;
+    const max = OPTS.strength * PUSH_MAX_BASE;
     let peak = 0;
     for (let i = 0; i < HEAT_N; i++) peak = Math.max(peak, Math.hypot(s.fx[i], s.fy[i]));
     expect(peak).toBeLessThanOrEqual(max + 1e-6);
@@ -216,7 +216,7 @@ describe("push field", () => {
 
   test("both forces at zero (Attract mode) leaves the field untouched", () => {
     const s = makeState();
-    run(s, blob(80, 45, 0.3, 16), 2, { ...OPTS, pushStrength: 0, solidity: 0 });
+    run(s, blob(80, 45, 0.3, 16), 2, { ...OPTS, strength: 0, solidity: 0 });
     for (let i = 0; i < HEAT_N; i++) expect(s.fx[i]).toBe(0);
   });
 
@@ -263,10 +263,48 @@ describe("boxBlur", () => {
     expect(sum(dst)).toBeCloseTo(sum(src), 3);
   });
 
-  test("radius below 1 is a pass-through", () => {
+  test("radius 0 is a pass-through", () => {
     const src = new Float32Array(HEAT_N).fill(0.5);
     const tmp = new Float32Array(HEAT_N), dst = new Float32Array(HEAT_N);
     boxBlur(src, tmp, dst, 0);
     expect(dst[0]).toBe(0.5);
+  });
+
+  test("fractional radii actually blur — the slider's decimals do something", () => {
+    // A radius of 2.4 used to behave exactly like 2.0, so dragging the knob between
+    // whole numbers changed nothing on screen and preset sweeps stepped.
+    const spike = () => { const a = new Float32Array(HEAT_N); a[45 * HEAT_W + 80] = 1; return a; };
+    const peak = (r: number) => {
+      const tmp = new Float32Array(HEAT_N), dst = new Float32Array(HEAT_N);
+      boxBlur(spike(), tmp, dst, r);
+      return dst[45 * HEAT_W + 80];
+    };
+    const p20 = peak(2.0), p24 = peak(2.4), p30 = peak(3.0);
+    expect(p24).toBeLessThan(p20);      // 2.4 is blurrier than 2.0...
+    expect(p24).toBeGreaterThan(p30);   // ...and sharper than 3.0
+  });
+
+  test("a sub-1 radius blurs instead of being ignored", () => {
+    const src = new Float32Array(HEAT_N);
+    src[45 * HEAT_W + 80] = 1;
+    const tmp = new Float32Array(HEAT_N), dst = new Float32Array(HEAT_N);
+    boxBlur(src, tmp, dst, 0.5);
+    expect(dst[45 * HEAT_W + 80]).toBeLessThan(1);
+    expect(dst[45 * HEAT_W + 81]).toBeGreaterThan(0);
+  });
+
+  test("whole-number radii are unchanged by the fractional path", () => {
+    const src = new Float32Array(HEAT_N);
+    for (let i = 0; i < HEAT_N; i++) src[i] = Math.abs(Math.sin(i * 0.37));
+    const tmp = new Float32Array(HEAT_N), dst = new Float32Array(HEAT_N);
+    boxBlur(src, tmp, dst, 4);
+    // Hand-computed reference for the interior, where no clamping applies.
+    const ref = (x: number, y: number) => {
+      let sum = 0, n = 0;
+      for (let j = y - 4; j <= y + 4; j++)
+        for (let i = x - 4; i <= x + 4; i++) { sum += src[j * HEAT_W + i]; n++; }
+      return sum / n;
+    };
+    expect(dst[45 * HEAT_W + 80]).toBeCloseTo(ref(80, 45), 5);
   });
 });

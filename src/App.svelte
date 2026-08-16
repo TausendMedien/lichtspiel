@@ -26,6 +26,7 @@
   import { listDemoConfigs, saveDemoConfig, deleteDemoConfig, type DemoConfig } from "./lib/demo-configs";
   import { poseState, poseSettings, startPoseTracking, stopPoseTracking, setPoseInterruptedHandler, recheckPoseHealth } from "./lib/pose";
   import { cameraState, enumerateCameras, detectCameras, saveCameraDevice, savePatternMotionEnabled, getVisibleDevices, setShowVirtualCameras, setCameraResolution, CAMERA_RES_OPTIONS, probeCameras, type CameraProbe } from "./lib/globalCameraSettings.svelte";
+  import { pushState, savePushSettings, PUSH_DEFAULTS } from "./lib/pushSettings.svelte";
   import { triggerMotionCameraStart, recheckMotionCameraHealth } from "./lib/motionCameraWrapper";
   import { audioState, enumerateMicrophones, savePatternAudioEnabled } from "./lib/globalAudioSettings.svelte";
   import { privacyMode } from "./lib/privacyMode.svelte";
@@ -590,6 +591,17 @@
   // Interactive section per-pattern state
   const _perPatternInteractiveOn = new Map<string, boolean>();
   const _perPatternInteractiveCollapsed = new Map<string, boolean>();
+
+  // Push sensor controls. Global rather than per-pattern (like Motion's Sensitivity),
+  // so the feel of the interaction survives a pattern change under it.
+  const PUSH_CONTROLS = [
+    { key: 'solidity'    as const, label: 'Solidity',     min: 0,    max: 1.5, step: 0.05, def: PUSH_DEFAULTS.solidity,    tip: 'How solid your body is. 1 = one sweep clears what you cover, out to the edge of your silhouette. 0 leaves only a soft nudge from your outline.' },
+    { key: 'strength'    as const, label: 'Push Strength', min: 0,   max: 3,   step: 0.05, def: PUSH_DEFAULTS.strength,    tip: 'Soft cumulative shove from your outline, on top of Solidity.' },
+    { key: 'returnSpeed' as const, label: 'Return Speed',  min: 0.05, max: 2,  step: 0.05, def: PUSH_DEFAULTS.returnSpeed, tip: 'How fast the cleared area fills back in. Lower = it stays open longer.' },
+    { key: 'spread'      as const, label: 'Softness',      min: 0,   max: 1,   step: 0.05, def: PUSH_DEFAULTS.spread,      tip: "How softly the cleared area's edge melts back as neighbours roll in from the sides." },
+    { key: 'sensitivity' as const, label: 'Sensitivity',   min: 4,   max: 20,  step: 0.5,  def: PUSH_DEFAULTS.sensitivity, tip: 'How much movement counts as your body. Higher = subtler motion registers as solid.' },
+  ];
+
   let interactiveOn = $state(false);
   let interactiveCollapsed = $state(true);
   // Reactive fullscreen flag — updated by fullscreenchange event so template re-renders
@@ -767,6 +779,7 @@
         cameraState.motionEnabled = false;
         cameraState.enabled = false;
         audioState.enabled = false;
+        if (pushState.enabled) { pushState.enabled = false; savePushSettings(); }
         // Use untrack so poseActive changes don't re-trigger this effect.
         if (untrack(() => poseActive)) { stopPoseTracking(); poseActive = false; poseError = null; }
         // Turn off per-pattern camera toggles (e.g. Light Trail / Light Paint)
@@ -1568,6 +1581,12 @@
       snap[`__evoMin:${label}`] = cfg.min;
       snap[`__evoMax:${label}`] = cfg.max;
     }
+    snap['__pushEnabled']     = pushState.enabled;
+    snap['__pushSolidity']    = pushState.solidity;
+    snap['__pushStrength']    = pushState.strength;
+    snap['__pushReturnSpeed'] = pushState.returnSpeed;
+    snap['__pushSpread']      = pushState.spread;
+    snap['__pushSensitivity'] = pushState.sensitivity;
     snap['__evoActive']     = evolving.active;
     snap['__evoSpeed']      = evolving.speed;
     snap['__evoConcurrent'] = evolving.maxConcurrent;
@@ -1665,6 +1684,21 @@
         nextEvo[ctrl.label] = { on: !!on, min, max };
       }
     }
+    // Push sensor — restored whenever the preset carries it (older presets don't).
+    {
+      let touched = false;
+      if (typeof snap['__pushEnabled']     === 'boolean') { pushState.enabled     = snap['__pushEnabled'] as boolean;     touched = true; }
+      if (typeof snap['__pushSolidity']    === 'number')  { pushState.solidity    = snap['__pushSolidity'] as number;     touched = true; }
+      if (typeof snap['__pushStrength']    === 'number')  { pushState.strength    = snap['__pushStrength'] as number;     touched = true; }
+      if (typeof snap['__pushReturnSpeed'] === 'number')  { pushState.returnSpeed = snap['__pushReturnSpeed'] as number;  touched = true; }
+      if (typeof snap['__pushSpread']      === 'number')  { pushState.spread      = snap['__pushSpread'] as number;       touched = true; }
+      if (typeof snap['__pushSensitivity'] === 'number')  { pushState.sensitivity = snap['__pushSensitivity'] as number;  touched = true; }
+      if (touched) {
+        if (pushState.enabled) { cameraState.enabled = true; enumerateCameras(); }
+        savePushSettings();
+      }
+    }
+
     if (Object.keys(nextEvo).length > 0) {
       evoConfig = nextEvo;
       if (typeof snap['__evoActive']     === 'boolean') evolving.active = snap['__evoActive'] as boolean;
@@ -4411,6 +4445,47 @@
                       {/each}
                     </div>
                   {/if}
+                {/if}
+              {/if}
+
+              <!-- Push — its own sensor, sharing the camera stream with Heat -->
+              {#if patterns[index].pushReactive}
+                <div class="{privacyMode.active ? 'opacity-40 pointer-events-none' : ''} flex items-center justify-between text-xs text-white/70">
+                  <span title="Treats your body as a solid object moving through the picture: what you sweep through is pushed clear and only slowly fills in again.">Push</span>
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <div
+                    data-knob
+                    class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {pushState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+                    onclick={() => {
+                      const next = !pushState.enabled;
+                      pushState.enabled = next;
+                      savePushSettings();
+                      if (next) { cameraState.enabled = true; enumerateCameras(); triggerMotionCameraStart(patterns[index].id); }
+                      else if (!cameraState.heatEnabled && !cameraState.motionEnabled) cameraState.enabled = false;
+                    }}
+                  >
+                    <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {pushState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+                {#if pushState.enabled}
+                  <div class="flex flex-col gap-1.5 pl-1">
+                    {#each PUSH_CONTROLS as pc}
+                      <div>
+                        <div class="flex justify-between mb-1 text-xs text-white/70">
+                          <span class="cursor-pointer hover:text-white transition-colors select-none"
+                            onclick={() => { pushState[pc.key] = pc.def; savePushSettings(); }}
+                            title={pc.tip + ' · Click to reset'}
+                          >{pc.label}</span>
+                          <span class="font-mono text-white/40">{pushState[pc.key].toFixed(pc.step < 1 ? 2 : 0)}</span>
+                        </div>
+                        <input type="range" min={pc.min} max={pc.max} step={pc.step}
+                          value={pushState[pc.key]}
+                          oninput={(e) => { pushState[pc.key] = parseFloat((e.target as HTMLInputElement).value); }}
+                          onchange={() => savePushSettings()}
+                          class="w-full accent-white cursor-pointer" />
+                      </div>
+                    {/each}
+                  </div>
                 {/if}
               {/if}
 

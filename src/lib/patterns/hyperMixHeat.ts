@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
-import { createHeatField, HEAT_DISPLACE_GLSL, type HeatField } from "../heatField";
+import { createHeatField, HEAT_DISPLACE_GLSL, pushActive, heatOrPushActive, type HeatField } from "../heatField";
 
 const BASE_COUNT = 25000;
 const _c1 = new THREE.Color();
@@ -23,12 +23,6 @@ const params = {
 
 let blurRadius = 2.0;
 let mirrorX    = true;
-// Heat Mode: 0 = Attract (instantaneous), 1 = Push Away (persistent, relaxes back)
-let heatMode     = 0;
-let pushStrength = 1.2;
-let solidity     = 1.0;
-let returnSpeed  = 0.35;
-let pushSpread   = 0.4;
 let currentAspect = 1;
 
 let qualityLow = false;
@@ -332,50 +326,6 @@ export const hyperMixHeat: Pattern = {
       get: () => blurRadius,
       set: (v) => { blurRadius = v; },
     },
-    {
-      label: "Push Away",
-      type: "toggle",
-      interactive: 'heat' as const,
-      tip: "Off: the cloud follows your motion and snaps back the moment you stop. On: your movement shoves it aside and the gap only slowly fills in again. Requires Heat.",
-      get: () => heatMode === 1,
-      set: (v: boolean) => { heatMode = v ? 1 : 0; heatField?.reset(); },
-    },
-    {
-      label: "Solidity",
-      type: "range", min: 0, max: 1.5, step: 0.05,
-      default: 1,
-      interactive: 'heat' as const,
-      tip: "How solid your body is as it sweeps through. 1 = everything you cover is cleared out to the edge of your silhouette in one pass. 0 = only a soft nudge from your outline. Push Away only.",
-      get: () => solidity,
-      set: (v) => { solidity = v; },
-    },
-    {
-      label: "Push Strength",
-      type: "range", min: 0, max: 3, step: 0.05,
-      default: 1.2,
-      interactive: 'heat' as const,
-      tip: "Extra soft shove from your outline, on top of Solidity — it builds up over repeated passes. Push Away only.",
-      get: () => pushStrength,
-      set: (v) => { pushStrength = v; },
-    },
-    {
-      label: "Return Speed",
-      type: "range", min: 0.05, max: 2, step: 0.05,
-      default: 0.35,
-      interactive: 'heat' as const,
-      tip: "How fast the gap fills back in — lower = it stays open longer. Push Away only.",
-      get: () => returnSpeed,
-      set: (v) => { returnSpeed = v; },
-    },
-    {
-      label: "Spread",
-      type: "range", min: 0, max: 1, step: 0.05,
-      default: 0.4,
-      interactive: 'heat' as const,
-      tip: "How softly the gap's edge melts back — neighbours roll in from the sides. Push Away only.",
-      get: () => pushSpread,
-      set: (v) => { pushSpread = v; },
-    },
   ],
 
   init(ctx: PatternContext) {
@@ -403,7 +353,7 @@ export const hyperMixHeat: Pattern = {
         uColor2:       { value: new THREE.Color(0xff00cc) },
         uHeatMap:      { value: heatField.heatTexture },
         uPushField:    { value: heatField.pushTexture },
-        uHeatMode:     { value: 0 },
+        uPushMode:     { value: 0 },
         uHeatStrength: { value: params.heatStrength },
         uHeatGain:     { value: params.heatGain },
         uMirrorX:      { value: mirrorX ? 1.0 : 0.0 },
@@ -429,25 +379,14 @@ export const hyperMixHeat: Pattern = {
     // Heat reactivity must respect the "Heat" toggle — without this gate the pattern
     // keeps responding to heatMap data as long as the camera is running at all (e.g.
     // via Motion being on), even while Heat is explicitly switched off.
-    if (cameraState.heatEnabled) {
-      material.uniforms.uHeatStrength.value = params.heatStrength;
+    if (heatOrPushActive()) {
+      material.uniforms.uPushMode.value     = pushActive() ? 1 : 0;
+      material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? params.heatStrength : 0;
       material.uniforms.uHeatGain.value     = params.heatGain;
-      material.uniforms.uHeatMode.value     = heatMode;
-      heatField?.update(dt, {
-        blurRadius,
-        pushStrength: heatMode === 1 ? pushStrength : 0,
-        solidity:     heatMode === 1 ? solidity : 0,
-        returnSpeed,
-        spread: pushSpread,
-        aspect: currentAspect,
-        heatGain:     params.heatGain,
-        heatStrength: params.heatStrength,
-      });
+      heatField?.update(dt, blurRadius, currentAspect);
       heatWasOn = true;
     } else {
-      // Push Away reads the field directly, so zeroing gain/strength isn't enough
-      // to switch it off — fall back to Attract, which they do gate.
-      material.uniforms.uHeatMode.value     = 0;
+      material.uniforms.uPushMode.value     = 0;
       material.uniforms.uHeatStrength.value = 0;
       material.uniforms.uHeatGain.value     = 0;
       // Drop any gap still open when Heat is switched off, so re-enabling it later

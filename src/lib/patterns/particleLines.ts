@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { createHeatField, HEAT_WARP_GLSL, pushActive, heatOrPushActive, type HeatField } from "../heatField";
 
 // Each line rendered as a screen-space quad (2 triangles) for real pixel-width control.
 // A second glow-points pass adds per-particle blur and size variation like Particle Field.
@@ -21,10 +22,9 @@ let heatBlurR     = 1;
 let heatYaw       = 0;
 let heatTilt      = 0;
 
-let heatSmoothed = new Float32Array(W * H);
-let heatTmp      = new Float32Array(W * H);
-let heatTexData: Float32Array | null = null;
-let heatTex:     THREE.DataTexture | null = null;
+let heatField: HeatField | null = null;
+let heatWasOn = false;
+let vpAspect = 1;
 
 function computeHeatCentroid() {
   const map = cameraState.heatMap;
@@ -39,28 +39,6 @@ function computeHeatCentroid() {
     : { cx: 0.5, cy: 0.5, total: 0 };
 }
 
-function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r <= 0) { dst.set(src); return; }
-  const inv = 1 / (2 * r + 1);
-  for (let y = 0; y < H; y++) {
-    let s = 0;
-    for (let x = -r; x <= r; x++) s += src[y * W + Math.max(0, Math.min(W - 1, x))];
-    for (let x = 0; x < W; x++) {
-      tmp[y * W + x] = s * inv;
-      s += src[y * W + Math.max(0, Math.min(W - 1, x + r + 1))]
-         - src[y * W + Math.max(0, Math.min(W - 1, x - r))];
-    }
-  }
-  for (let x = 0; x < W; x++) {
-    let s = 0;
-    for (let y = -r; y <= r; y++) s += tmp[Math.max(0, Math.min(H - 1, y)) * W + x];
-    for (let y = 0; y < H; y++) {
-      dst[y * W + x] = s * inv;
-      s += tmp[Math.max(0, Math.min(H - 1, y + r + 1)) * W + x]
-         - tmp[Math.max(0, Math.min(H - 1, y - r)) * W + x];
-    }
-  }
-}
 
 let lineMesh:   THREE.Mesh   | null = null;
 let glowPoints: THREE.Points | null = null;
@@ -144,9 +122,8 @@ const lineVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uLineWidth;
   uniform vec2  uResolution;
-  uniform sampler2D uHeatMap;
-  uniform float uHeatStrength;
-  uniform vec2  uHeatEps;
+
+  ${HEAT_WARP_GLSL}
   attribute vec3  aOtherPos;
   attribute float aSeed;
   attribute float aOtherSeed;
@@ -164,22 +141,14 @@ const lineVertShader = /* glsl */ `
     vec4 clipThis  = projectionMatrix * modelViewMatrix * vec4(thisWorld,  1.0);
     vec4 clipOther = projectionMatrix * modelViewMatrix * vec4(otherWorld, 1.0);
 
-    // Sobel-displace each endpoint in clip space based on heat gradient at its screen position.
-    if (uHeatStrength > 0.0) {
+    // Displace each endpoint in clip space by Heat (gradient) or Push (field).
+    if (uHeatStrength > 0.0 || uPushMode > 0.5) {
       vec2 hUvT = vec2(1.0 - (clipThis.x/clipThis.w   * 0.5 + 0.5),
                        1.0 - (clipThis.y/clipThis.w   * 0.5 + 0.5));
       vec2 hUvO = vec2(1.0 - (clipOther.x/clipOther.w * 0.5 + 0.5),
                        1.0 - (clipOther.y/clipOther.w * 0.5 + 0.5));
-      float gxT = texture2D(uHeatMap, clamp(hUvT + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
-                - texture2D(uHeatMap, clamp(hUvT - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
-      float gyT = texture2D(uHeatMap, clamp(hUvT + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
-                - texture2D(uHeatMap, clamp(hUvT - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
-      float gxO = texture2D(uHeatMap, clamp(hUvO + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
-                - texture2D(uHeatMap, clamp(hUvO - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
-      float gyO = texture2D(uHeatMap, clamp(hUvO + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
-                - texture2D(uHeatMap, clamp(hUvO - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
-      clipThis.xy  += vec2(gxT, gyT) * uHeatStrength * 0.25 * clipThis.w;
-      clipOther.xy += vec2(gxO, gyO) * uHeatStrength * 0.25 * clipOther.w;
+      clipThis.xy  += heatWarp(hUvT, 0.25, 2.0) * clipThis.w;
+      clipOther.xy += heatWarp(hUvO, 0.25, 2.0) * clipOther.w;
     }
 
     vec2 ndcDir = (clipOther.xy / clipOther.w) - (clipThis.xy / clipThis.w);
@@ -219,9 +188,8 @@ const lineFragShader = /* glsl */ `
 const glowVertShader = /* glsl */ `
   uniform float uTime;
   uniform float uSize;
-  uniform sampler2D uHeatMap;
-  uniform float uHeatStrength;
-  uniform vec2  uHeatEps;
+
+  ${HEAT_WARP_GLSL}
   attribute float aSeed;
   varying float vSeed;
 
@@ -232,14 +200,10 @@ const glowVertShader = /* glsl */ `
     vec3 p  = _animPt(position, aSeed, uTime);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    if (uHeatStrength > 0.0) {
+    if (uHeatStrength > 0.0 || uPushMode > 0.5) {
       vec2 hUv = vec2(1.0 - (gl_Position.x/gl_Position.w * 0.5 + 0.5),
                       1.0 - (gl_Position.y/gl_Position.w * 0.5 + 0.5));
-      float gx = texture2D(uHeatMap, clamp(hUv + vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r
-               - texture2D(uHeatMap, clamp(hUv - vec2(uHeatEps.x, 0.0), 0.0, 1.0)).r;
-      float gy = texture2D(uHeatMap, clamp(hUv + vec2(0.0, uHeatEps.y), 0.0, 1.0)).r
-               - texture2D(uHeatMap, clamp(hUv - vec2(0.0, uHeatEps.y), 0.0, 1.0)).r;
-      gl_Position.xy += vec2(gx, gy) * uHeatStrength * 0.25 * gl_Position.w;
+      gl_Position.xy += heatWarp(hUv, 0.25, 2.0) * gl_Position.w;
     }
     float sizeVar = 0.5 + fract(aSeed * 7.317) * 1.5;
     gl_PointSize  = uSize * sizeVar * (6.0 / -mv.z);
@@ -383,12 +347,9 @@ export const particleLines: Pattern = {
     needsRebuild    = false;
     needsTailUpdate = false;
 
-    heatSmoothed = new Float32Array(W * H);
-    heatTmp      = new Float32Array(W * H);
-    heatTexData  = new Float32Array(W * H);
-    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
-    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
-    heatTex.needsUpdate = true;
+    heatField = createHeatField();
+    heatWasOn = false;
+    vpAspect  = vpWidth / Math.max(vpHeight, 1);
 
     lineMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -397,9 +358,10 @@ export const particleLines: Pattern = {
         uResolution:   { value: new THREE.Vector2(vpWidth, vpHeight) },
         uColorRange:   { value: colorC2.colorsV2 },
         uLineOpacity:  { value: 1.0 },
-        uHeatMap:      { value: heatTex },
+        uHeatMap:      { value: heatField.heatTexture },
+        uPushField:    { value: heatField.pushTexture },
+        uPushMode:     { value: 0 },
         uHeatStrength: { value: 0 },
-        uHeatEps:      { value: new THREE.Vector2(1 / W, 1 / H) },
       },
       vertexShader:   lineVertShader,
       fragmentShader: lineFragShader,
@@ -415,9 +377,10 @@ export const particleLines: Pattern = {
         uSize:         { value: 10.0 },
         uColorRange:   { value: colorC2.colorsV2 },
         uLineOpacity:  { value: 1.0 },
-        uHeatMap:      { value: heatTex },
+        uHeatMap:      { value: heatField.heatTexture },
+        uPushField:    { value: heatField.pushTexture },
+        uPushMode:     { value: 0 },
         uHeatStrength: { value: 0 },
-        uHeatEps:      { value: new THREE.Vector2(1 / W, 1 / H) },
       },
       vertexShader:   glowVertShader,
       fragmentShader: glowFragShader,
@@ -433,14 +396,15 @@ export const particleLines: Pattern = {
     if (!lineMat || !glowMat) return;
     accTime += dt * flowSpeed;
 
-    if (cameraState.heatEnabled) {
-      const raw = cameraState.heatMap;
-      for (let i = 0; i < W * H; i++)
-        heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-      heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
-      heatTex!.needsUpdate = true;
-      lineMat.uniforms.uHeatStrength.value = heatStrength;
-      glowMat.uniforms.uHeatStrength.value = heatStrength;
+    if (heatOrPushActive()) {
+      heatField?.update(dt, heatBlurR, vpAspect);
+      heatWasOn = true;
+      const hs = cameraState.heatEnabled ? heatStrength : 0;
+      const pm = pushActive() ? 1 : 0;
+      lineMat.uniforms.uHeatStrength.value = hs;
+      glowMat.uniforms.uHeatStrength.value = hs;
+      lineMat.uniforms.uPushMode.value     = pm;
+      glowMat.uniforms.uPushMode.value     = pm;
 
       const { cx, cy, total } = computeHeatCentroid();
       const targetYaw  = (0.5 - cx) * 0.6 * heatTiltStr;
@@ -452,6 +416,9 @@ export const particleLines: Pattern = {
     } else {
       lineMat.uniforms.uHeatStrength.value = 0;
       glowMat.uniforms.uHeatStrength.value = 0;
+      lineMat.uniforms.uPushMode.value     = 0;
+      glowMat.uniforms.uPushMode.value     = 0;
+      if (heatWasOn) { heatField?.reset(); heatWasOn = false; }
       heatYaw  *= Math.max(0, 1 - dt * 3);
       heatTilt *= Math.max(0, 1 - dt * 3);
     }
@@ -492,16 +459,14 @@ export const particleLines: Pattern = {
     if (glowPoints && sceneRef) sceneRef.remove(glowPoints);
     lineGeo?.dispose(); glowGeo?.dispose();
     lineMat?.dispose(); glowMat?.dispose();
-    heatTex?.dispose();
+    heatField?.dispose();
     lineMesh = null; glowPoints = null;
     lineGeo  = null; glowGeo    = null;
     lineMat  = null; glowMat    = null;
-    heatTex  = null; heatTexData = null;
+    heatField = null; heatWasOn = false;
     camera   = null; sceneRef   = null;
     accTime  = 0; needsRebuild = false; needsTailUpdate = false;
     heatYaw = 0; heatTilt = 0;
-    heatSmoothed = new Float32Array(W * H);
-    heatTmp      = new Float32Array(W * H);
     lineStore    = [];
     posAttr      = null;
     otherPosAttr = null;

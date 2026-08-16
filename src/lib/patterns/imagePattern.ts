@@ -4,33 +4,10 @@ import { poseState } from '../pose';
 import { audioState } from '../globalAudioSettings.svelte';
 import { colorC2 } from '../colorC2.svelte';
 import { cameraState } from '../globalCameraSettings.svelte';
+import { createHeatField, HEAT_WARP_GLSL, pushActive, heatOrPushActive, type HeatField } from '../heatField';
 
 const HW = 160, HH = 90;
 
-function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r < 1) { dst.set(src); return; }
-  for (let y = 0; y < HH; y++) {
-    const yo = y * HW;
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, HW - 1); k++) { sum += src[yo + k]; cnt++; }
-    tmp[yo] = sum / cnt;
-    for (let x = 1; x < HW; x++) {
-      if (x + r < HW)      { sum += src[yo + x + r];     cnt++; }
-      if (x - r - 1 >= 0)  { sum -= src[yo + x - r - 1]; cnt--; }
-      tmp[yo + x] = sum / cnt;
-    }
-  }
-  for (let x = 0; x < HW; x++) {
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, HH - 1); k++) { sum += tmp[k * HW + x]; cnt++; }
-    dst[x] = sum / cnt;
-    for (let y = 1; y < HH; y++) {
-      if (y + r < HH)      { sum += tmp[(y + r) * HW + x];     cnt++; }
-      if (y - r - 1 >= 0)  { sum -= tmp[(y - r - 1) * HW + x]; cnt--; }
-      dst[y * HW + x] = sum / cnt;
-    }
-  }
-}
 
 // ─── Vertex shader ────────────────────────────────────────────────────────────
 
@@ -66,8 +43,8 @@ const fragmentShader = /* glsl */`
   uniform float uFitMode;        // 0=cover, 1=fitWidth
   uniform float uColorsV2;
   uniform vec3  uMainColor;
-  uniform sampler2D uHeatMap;
-  uniform float uHeatStrength;   // 0 when heat off
+
+  ${HEAT_WARP_GLSL}
 
   varying vec2 vUv;
 
@@ -160,16 +137,10 @@ const fragmentShader = /* glsl */`
     }
 
     // 6b. Heat-haze distortion (Sobel gradient of heat map → UV push toward hot zone)
-    if (uHeatStrength > 0.001) {
-      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+    if (uHeatStrength > 0.001 || uPushMode > 0.5) {
       // Mirror X + flip Y to match camera orientation (front-facing, Three.js UV y=0 = bottom)
       vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
-      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
-      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
-      vec2 grad = vec2(hR - hL, hU - hD);
-      uv += grad * uHeatStrength * 0.08;
+      uv += heatWarp(hUv, 0.08, 1.0);
     }
 
     // 7. Pose distort (joints push UV outward)
@@ -284,10 +255,9 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
   // Heat haze
   let heatStrength  = 1.8;
   let heatBlurR     = 1;
-  let heatTexData: Float32Array | null = null;
-  let heatSmoothed: Float32Array | null = null;
-  let heatTmp: Float32Array | null = null;
-  let heatTex: THREE.DataTexture | null = null;
+  let heatField: HeatField | null = null;
+  let heatWasOn = false;
+  let vpAspect  = 1;
 
   let mesh: THREE.Mesh | null = null;
   let material: THREE.ShaderMaterial | null = null;
@@ -341,13 +311,9 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
       imgAspect = cached.aspect;
 
       // Heat haze buffers
-      heatTexData = new Float32Array(HW * HH);
-      heatSmoothed = new Float32Array(HW * HH);
-      heatTmp = new Float32Array(HW * HH);
-      heatTex = new THREE.DataTexture(heatTexData, HW, HH, THREE.RedFormat, THREE.FloatType);
-      heatTex.minFilter = THREE.LinearFilter;
-      heatTex.magFilter = THREE.LinearFilter;
-      heatTex.needsUpdate = true;
+      heatField = createHeatField();
+      heatWasOn = false;
+      vpAspect  = ctx.size.width / Math.max(ctx.size.height, 1);
 
       geometry = new THREE.PlaneGeometry(2, 2);
       material = new THREE.ShaderMaterial({
@@ -371,7 +337,9 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
           uFitMode:      { value: fitMode === 'fitWidth' ? 1.0 : 0.0 },
           uColorsV2:     { value: colorC2.colorsV2 },
           uMainColor:    { value: new THREE.Vector3() },
-          uHeatMap:      { value: heatTex },
+          uHeatMap:      { value: heatField.heatTexture },
+          uPushField:    { value: heatField.pushTexture },
+          uPushMode:     { value: 0 },
           uHeatStrength: { value: 0 },
         },
         vertexShader,
@@ -387,21 +355,19 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
 
     update(dt: number, elapsed: number) {
       if (!material) return;
-      void dt;
 
       const u = material.uniforms;
 
-      // Heat haze: upload blurred heat map each frame when active
-      if (cameraState.heatEnabled && heatSmoothed && heatTmp && heatTexData && heatTex) {
-        const raw = cameraState.heatMap;
-        for (let i = 0; i < HW * HH; i++) {
-          heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-        }
-        heatBoxBlur(heatSmoothed, heatTmp, heatTexData, heatBlurR);
-        heatTex.needsUpdate = true;
-        u.uHeatStrength.value = heatStrength;
+      // Heat haze / Push: refresh the shared field each frame while either is on
+      if (heatOrPushActive()) {
+        heatField?.update(dt, heatBlurR, vpAspect);
+        u.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
+        u.uPushMode.value     = pushActive() ? 1 : 0;
+        heatWasOn = true;
       } else {
         u.uHeatStrength.value = 0;
+        u.uPushMode.value     = 0;
+        if (heatWasOn) { heatField?.reset(); heatWasOn = false; }
       }
 
       u.uTime.value          = elapsed;
@@ -470,12 +436,12 @@ export function makeImagePattern(id: string, name: string, src: string, fitMode:
     },
 
     dispose() {
-      heatTex?.dispose();
+      heatField?.dispose();
       geometry?.dispose();
       material?.dispose();
       // texture stays in _textureCache — do not dispose it
       mesh = null; geometry = null; material = null; texture = null;
-      heatTex = null; heatTexData = null; heatSmoothed = null; heatTmp = null;
+      heatField = null; heatWasOn = false;
     },
   };
 

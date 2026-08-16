@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.260816-0204 — Push is its own sensor
+
+**Push stands on its own.** It used to be a knob buried under Heat; now it sits in the Interactive panel next to Motion, Heat and Audio, with its own toggle and its own settings — Solidity, Push Strength, Return Speed, Softness and Sensitivity. Those settings are global rather than per-pattern, like Motion's Sensitivity, so the feel of the interaction stays put as patterns change under it. Heat and Push are independent: run either, both, or neither. With both on, Push drives the picture and Heat's displacement steps aside.
+
+**Push now works across the app** — Particle Field, Hyper Mix, Gravity Lines, Particle Lines, Parallel Lines, Parallel Waves, Tunnel, Shader Gradient, Warped Surfaces, Curl Orbs and all nine Static Images. Every one of those already moved with the heat map, so your body clears a path through each of them. Left out are the patterns where heat does something a push has no meaning for: a camera tilt toward whoever is moving (Tunnel Edge, 3D Typography, 3D Lines, Crystal Gem, Wavy Sphere) or a bend of a flow angle rather than a position (Baroque Swirls, Flow Lines).
+
+**Blur Radius honours its decimals.** The knob offered 0.1 steps but the blur quantised them, so 2.4 looked exactly like 2.0 and preset sweeps stepped between whole numbers instead of morphing. Fractional radii now blur properly, and a radius under 1 blurs a little instead of doing nothing at all.
+
+**Under the hood** — eleven patterns each carried their own copy of the heat map's smoothing and blur; that now lives in one module, which is also what let Push reach all of them.
+
 ## v0.7.260815-1022 — Solidity
 
 **Solidity** — Push Away now treats your body as a real object. Until now the push came from the *outline* of your movement, which meant the middle of your hand barely pushed at all and you had to sweep an area several times to clear it. Now everything the camera reads as you is vacated in one pass: sweep once and you carve an empty path, the way a hand sweeps balls off a floor. The slider sets how solid you are — 1 clears what you cover out to the edge of your silhouette, higher piles it up beyond that, 0 goes back to the old soft nudge. On Particle Field, Hyper Mix and Gravity Lines, starting at 1.

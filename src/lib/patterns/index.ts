@@ -39,6 +39,20 @@ const imgRootWave      = makeImagePattern('img-rootWave',      'Root Wave',     
 const imgPurpleOrnate  = makeImagePattern('img-purpleOrnate',  'Purple Ornate',  `${_base}images/purple-ornate.webp`);
 const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',   `${_base}images/flowing-dots.webp`);
 
+// Patterns whose heat effect is a positional displacement, so the Push sensor can
+// drive it instead: your body clears a path through them. Left out are the patterns
+// that use heat for something Push has no meaning for — a camera tilt toward the
+// person (Tunnel Edge, 3D Typography, 3D Lines, Crystal Gem, Wavy Sphere) or a bend
+// of a flow angle rather than a position (Baroque Swirls, Flow Lines).
+const PUSH_IDS = new Set([
+  'particlesHeat', 'hyperMixHeat', 'gravityLines', 'particleLines',
+  'parallelLinesStraight', 'parallelLinesWave', 'tunnel', 'shaderGradient',
+  'warpedSurfaces', 'curlOrbsBody',
+  'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines',
+  'img-thinVerticals', 'img-twoFeather', 'img-rootWave', 'img-purpleOrnate',
+  'img-flowingDots',
+]);
+
 // Patterns that must NOT get the generic motion camera wrapper:
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
@@ -88,6 +102,7 @@ const rawPatterns: Pattern[] = [
 ];
 
 export const patterns: Pattern[] = rawPatterns
+  .map(p => PUSH_IDS.has(p.id) ? { ...p, pushReactive: true } : p)
   .map(p => NO_MOTION_CAMERA.has(p.id) ? p : addMotionCamera(p))
   .map(addAudioReactivity)
   .map(wrapWithPersist)

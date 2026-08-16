@@ -3,6 +3,7 @@ import type { Pattern, PatternContext } from "./types";
 import { poseState } from "../pose";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { createHeatField, HEAT_WARP_GLSL, pushActive, heatOrPushActive, type HeatField } from "../heatField";
 
 const W = 160, H = 90;
 
@@ -29,36 +30,9 @@ let lineCountDisplay = lineCount; // eased toward lineCount so slider drags morp
 // Heat state — DataTexture Sobel displaces base position, bending orb flow toward body
 let heatStrength  = 1.8;
 let heatBlurR     = 1;
-let heatSmoothed: Float32Array | null = null;
-let heatTmp:      Float32Array | null = null;
-let heatTexData:  Float32Array | null = null;
-let heatTex:      THREE.DataTexture | null = null;
-
-function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r < 1) { dst.set(src); return; }
-  for (let y = 0; y < H; y++) {
-    const yo = y * W;
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
-    tmp[yo] = sum / cnt;
-    for (let x = 1; x < W; x++) {
-      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
-      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
-      tmp[yo + x] = sum / cnt;
-    }
-  }
-  for (let x = 0; x < W; x++) {
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
-    dst[x] = sum / cnt;
-    for (let y = 1; y < H; y++) {
-      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
-      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
-      dst[y * W + x] = sum / cnt;
-    }
-  }
-}
-
+let heatField: HeatField | null = null;
+let heatWasOn = false;
+let vpAspect = 1;
 const MORPH_RATE = 5; // ~0.2 s time-constant for frame-rate-independent easing
 
 // Pre-allocated pool for person-point uniforms (up to 15 points: 5 persons × 3 points each)
@@ -84,8 +58,8 @@ const fragmentShader = /* glsl */ `
   uniform float uRotAngle;
   uniform vec2  uPersonPoints[15];
   uniform int   uPersonCount;
-  uniform sampler2D uHeatMap;
-  uniform float uHeatStrength;
+
+  ${HEAT_WARP_GLSL}
 
   float hash1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
   float hash(vec2 p)   { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -108,15 +82,10 @@ const fragmentShader = /* glsl */ `
     vec2 c = (vUv - 0.5) * vec2(aspect, 1.0);
     float cosR = cos(uRotAngle), sinR = sin(uRotAngle);
     vec2 p = vec2(c.x*cosR - c.y*sinR, c.x*sinR + c.y*cosR);
-    // Heat Sobel: displaces base position toward motion zones (like Particle Field)
-    if (uHeatStrength > 0.001) {
-      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+    // Heat displaces the sampling point toward motion; Push clears a path.
+    if (uHeatStrength > 0.001 || uPushMode > 0.5) {
       vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
-      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
-      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
-      p += vec2(hR - hL, hU - hD) * uHeatStrength;
+      p += heatWarp(hUv, 1.0, 1.0);
     }
 
     float t = uTime;
@@ -219,12 +188,9 @@ export const curlOrbsBody: Pattern = {
 
   init(ctx: PatternContext) {
     currentAspect = ctx.size.width / Math.max(ctx.size.height, 1);
-    heatSmoothed = new Float32Array(W * H);
-    heatTmp      = new Float32Array(W * H);
-    heatTexData  = new Float32Array(W * H);
-    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
-    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
-    heatTex.needsUpdate = true;
+    heatField = createHeatField();
+    heatWasOn = false;
+    vpAspect  = ctx.size.width / Math.max(ctx.size.height, 1);
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
       uniforms: {
@@ -240,7 +206,9 @@ export const curlOrbsBody: Pattern = {
         uRotAngle:     { value: rotAngle },
         uPersonPoints: { value: personPoints },
         uPersonCount:  { value: 0 },
-        uHeatMap:      { value: heatTex },
+        uHeatMap:      { value: heatField.heatTexture },
+        uPushField:   { value: heatField.pushTexture },
+        uPushMode:    { value: 0 },
         uHeatStrength: { value: 0 },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false,
@@ -252,7 +220,7 @@ export const curlOrbsBody: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material || !heatSmoothed || !heatTmp || !heatTex) return;
+    if (!material) return;
     accTime    += dt * flowSpeed;
     colorPhase += dt * colorSpeed * 0.5;
     rotAngle   += dt * rotateSpeed * 1.5;
@@ -275,11 +243,13 @@ export const curlOrbsBody: Pattern = {
       }
     }
 
-    const raw = cameraState.heatMap;
-    for (let i = 0; i < W * H; i++)
-      heatSmoothed![i] = heatSmoothed![i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-    heatBoxBlur(heatSmoothed!, heatTmp!, heatTexData!, heatBlurR);
-    heatTex!.needsUpdate = true;
+    if (heatOrPushActive()) {
+      heatField?.update(dt, heatBlurR, vpAspect);
+      heatWasOn = true;
+    } else if (heatWasOn) {
+      heatField?.reset();
+      heatWasOn = false;
+    }
 
     material.uniforms.uTime.value       = accTime;
     material.uniforms.uLineCount.value  = lineCountDisplay;
@@ -291,7 +261,7 @@ export const curlOrbsBody: Pattern = {
     material.uniforms.uColorPhase.value = colorPhase;
     material.uniforms.uRotAngle.value   = rotAngle;
     material.uniforms.uPersonCount.value = count;
-    material.uniforms.uHeatMap.value     = heatTex;
+    material.uniforms.uPushMode.value      = pushActive() ? 1 : 0;
     material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
   },
 
@@ -301,9 +271,9 @@ export const curlOrbsBody: Pattern = {
   },
 
   dispose() {
-    geometry?.dispose(); material?.dispose(); heatTex?.dispose();
+    geometry?.dispose(); material?.dispose(); heatField?.dispose();
     mesh = null; geometry = null; material = null;
-    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
+    heatField = null; heatWasOn = false;
     accTime = 0; rotAngle = 0; colorPhase = 0;
     lineCountDisplay = lineCount;
   },

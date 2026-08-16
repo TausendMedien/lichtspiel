@@ -41,6 +41,9 @@ export interface Pattern {
   usesCameraBlend?: boolean;
   /** True if this pattern uses the heat map from camera motion detection. */
   heatReactive?: boolean;
+  /** True if this pattern supports the Push sensor — your body clearing a path
+   *  through it. Set in patterns/index.ts from PUSH_IDS. */
+  pushReactive?: boolean;
   /** True if the camera is the pattern's primary content (e.g. Heat Map). Keeps the
    *  camera running even when the Interactive section is toggled off. */
   requiresCamera?: boolean;

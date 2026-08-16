@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
+import { createHeatField, HEAT_WARP_GLSL, pushActive, heatOrPushActive, type HeatField } from "../heatField";
 
 const W = 160, H = 90;
 
@@ -25,11 +26,9 @@ const heatOffset  = new THREE.Vector2();
 // DataTexture Sobel — locally bends rings where motion edges are
 let heatStrength  = 1.8;
 let heatBlurR     = 1;
-let heatSmoothed: Float32Array | null = null;
-let heatTmp:      Float32Array | null = null;
-let heatTexData:  Float32Array | null = null;
-let heatTex:      THREE.DataTexture | null = null;
-
+let heatField: HeatField | null = null;
+let heatWasOn = false;
+let vpAspect = 1;
 function computeHeatCentroid() {
   const map = cameraState.heatMap;
   let wx = 0, wy = 0, total = 0;
@@ -43,30 +42,6 @@ function computeHeatCentroid() {
     : { cx: 0.5, cy: 0.5, total: 0 };
 }
 
-function heatBoxBlur(src: Float32Array, tmp: Float32Array, dst: Float32Array, r: number) {
-  if (r < 1) { dst.set(src); return; }
-  for (let y = 0; y < H; y++) {
-    const yo = y * W;
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, W - 1); k++) { sum += src[yo + k]; cnt++; }
-    tmp[yo] = sum / cnt;
-    for (let x = 1; x < W; x++) {
-      if (x + r < W)     { sum += src[yo + x + r];     cnt++; }
-      if (x - r - 1 >= 0) { sum -= src[yo + x - r - 1]; cnt--; }
-      tmp[yo + x] = sum / cnt;
-    }
-  }
-  for (let x = 0; x < W; x++) {
-    let sum = 0, cnt = 0;
-    for (let k = 0; k <= Math.min(r, H - 1); k++) { sum += tmp[k * W + x]; cnt++; }
-    dst[x] = sum / cnt;
-    for (let y = 1; y < H; y++) {
-      if (y + r < H)     { sum += tmp[(y + r) * W + x];     cnt++; }
-      if (y - r - 1 >= 0) { sum -= tmp[(y - r - 1) * W + x]; cnt--; }
-      dst[y * W + x] = sum / cnt;
-    }
-  }
-}
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -87,8 +62,8 @@ const fragmentShader = /* glsl */ `
   uniform float uColorPhase;
   uniform float uColorSpread;
   uniform vec2  uHeatOffset;
-  uniform sampler2D uHeatMap;
-  uniform float uHeatStrength;
+
+  ${HEAT_WARP_GLSL}
 
   vec3 hsl2rgb(float h, float s, float l) {
     vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -100,14 +75,9 @@ const fragmentShader = /* glsl */ `
     vec2 uv = (vUv - 0.5 - uHeatOffset) * vec2(aspect, 1.0);
 
     // Heat Sobel: locally warps rings at body edges — each pixel bends independently
-    if (uHeatStrength > 0.001) {
-      vec2 eps = vec2(1.5 / 160.0, 1.5 / 90.0);
+    if (uHeatStrength > 0.001 || uPushMode > 0.5) {
       vec2 hUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
-      float hL = texture2D(uHeatMap, clamp(hUv - vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hR = texture2D(uHeatMap, clamp(hUv + vec2(eps.x, 0.0), 0.0, 1.0)).r;
-      float hD = texture2D(uHeatMap, clamp(hUv - vec2(0.0, eps.y), 0.0, 1.0)).r;
-      float hU = texture2D(uHeatMap, clamp(hUv + vec2(0.0, eps.y), 0.0, 1.0)).r;
-      uv += vec2(hR - hL, hU - hD) * uHeatStrength * 0.3;
+      uv += heatWarp(hUv, 0.3, 1.0);
     }
 
     float r = length(uv);
@@ -165,12 +135,9 @@ export const tunnel: Pattern = {
   ],
 
   init(ctx: PatternContext) {
-    heatSmoothed = new Float32Array(W * H);
-    heatTmp      = new Float32Array(W * H);
-    heatTexData  = new Float32Array(W * H);
-    heatTex = new THREE.DataTexture(heatTexData, W, H, THREE.RedFormat, THREE.FloatType);
-    heatTex.minFilter = heatTex.magFilter = THREE.LinearFilter;
-    heatTex.needsUpdate = true;
+    heatField = createHeatField();
+    heatWasOn = false;
+    vpAspect  = ctx.size.width / Math.max(ctx.size.height, 1);
 
     geometry = new THREE.PlaneGeometry(2, 2);
     material = new THREE.ShaderMaterial({
@@ -183,7 +150,9 @@ export const tunnel: Pattern = {
         uColorPhase:  { value: colorPhase },
         uColorSpread: { value: colorC2.colorsV2 },
         uHeatOffset:  { value: new THREE.Vector2(0, 0) },
-        uHeatMap:     { value: heatTex },
+        uHeatMap:     { value: heatField.heatTexture },
+        uPushField:   { value: heatField.pushTexture },
+        uPushMode:    { value: 0 },
         uHeatStrength:{ value: 0 },
       },
       vertexShader,
@@ -199,15 +168,17 @@ export const tunnel: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    if (!material || !heatSmoothed || !heatTmp || !heatTex) return;
+    if (!material) return;
     accTime    += dt * speed;
     colorPhase += dt * colorSpeed * 2.0;
 
-    const raw = cameraState.heatMap;
-    for (let i = 0; i < W * H; i++)
-      heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;
-    heatBoxBlur(heatSmoothed, heatTmp, heatTexData!, heatBlurR);
-    heatTex.needsUpdate = true;
+    if (heatOrPushActive()) {
+      heatField?.update(dt, heatBlurR, vpAspect);
+      heatWasOn = true;
+    } else if (heatWasOn) {
+      heatField?.reset();
+      heatWasOn = false;
+    }
 
     if (cameraState.heatEnabled) {
       const { cx, cy } = computeHeatCentroid();
@@ -229,7 +200,7 @@ export const tunnel: Pattern = {
     material.uniforms.uColorPhase.value   = colorPhase;
     material.uniforms.uColorSpread.value  = colorC2.colorsV2;
     material.uniforms.uHeatOffset.value.copy(heatOffset);
-    material.uniforms.uHeatMap.value      = heatTex;
+    material.uniforms.uPushMode.value     = pushActive() ? 1 : 0;
     material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
   },
 
@@ -240,9 +211,9 @@ export const tunnel: Pattern = {
   dispose() {
     geometry?.dispose();
     material?.dispose();
-    heatTex?.dispose();
+    heatField?.dispose();
     mesh = null; geometry = null; material = null;
-    heatTex = null; heatSmoothed = null; heatTmp = null; heatTexData = null;
+    heatField = null; heatWasOn = false;
     accTime = 0;
     heatOffset.set(0, 0);
   },
