@@ -19,6 +19,7 @@ import { tunnelEdgePalette } from "./tunnelEdgePalette";
 import { heatMap } from "./heatMap";
 import { particlesHeat } from "./particlesHeat";
 import { gravityLines } from "./gravityLines";
+import { volcano } from "./volcano";
 import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
@@ -45,7 +46,7 @@ const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',  
 // person (Tunnel Edge, 3D Typography, 3D Lines, Crystal Gem, Wavy Sphere) or a bend
 // of a flow angle rather than a position (Baroque Swirls, Flow Lines).
 const PUSH_IDS = new Set([
-  'particlesHeat', 'hyperMixHeat', 'gravityLines', 'particleLines',
+  'particlesHeat', 'hyperMixHeat', 'gravityLines', 'volcano', 'particleLines',
   'parallelLinesStraight', 'parallelLinesWave', 'tunnel', 'shaderGradient',
   'warpedSurfaces', 'curlOrbsBody',
   'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines',
@@ -63,6 +64,7 @@ const rawPatterns: Pattern[] = [
   hyperMixHeat,
   particlesHeat,
   gravityLines,
+  volcano,
   heatMap,
   particleLines,
   parallelLinesStraight,

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.260816-0839 — Volcano
+
+**Volcano** — a new Generative pattern, idea from Loretta: magma erupts from a crater, arcs back down under **Gravity**, and slides down the cone into braided channels — **Meander** decides how much they wander instead of running straight down, **Downhill Flow** how much they keep accelerating once landed, **Cooling** how fast they dim from white-hot to dark as they age. **Pulse** and **Pulse Rate** give the fountain a Strombolian surge instead of a steady jet. A fraction of the ejecta rises as a buoyant **Ash** plume instead of falling, drifting on **Wind**. The mountain itself is a solid occluder — flip **Mountain** off to see straight through it. Takes its colours from the palette like every other pattern; a **Lava Colors** slider crossfades to a built-in white-gold → ember incandescent ramp for the literal look. Reacts to motion, audio and heat exactly like Particle Field and Gravity Lines.
+
 ## v0.7.260816-0930 — Text Overlay · Demo fixes
 
 **Text Overlay** — 3D text drawn on top of whichever pattern is running, set up once in Options and left alone. It stays put as patterns change and through Demo, and because it is rendered into the picture rather than laid over it in the interface, it appears in screenshots and recordings and on a projector fed by the canvas. Text, Align, Style, Size, Depth, Line Spacing, Position X/Y, Opacity and Spin. The text is not touched by the colour grade or the flicker guard, so titles stay crisp and the colour you pick is the colour you get.
