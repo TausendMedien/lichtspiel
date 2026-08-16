@@ -59,9 +59,31 @@ const DEMO_KEY = "lichtspiel-demo";
 const DEMO_START_BEHAVIORS = ['default', 'slot1', 'slot2', 'slot3', 'random'] as const;
 export type DemoStartBehavior = typeof DEMO_START_BEHAVIORS[number];
 
+// Dwell time runs 5 s … 15 min. The slider is exponential so the short end stays
+// fine-grained, then snaps to readable stops. Keep DWELL_MIN/MAX and the schema
+// bound below in step — a value outside the schema makes the whole demo blob fail
+// to parse, which silently resets every demo setting.
+export const DWELL_MIN = 5;
+export const DWELL_MAX = 900;
+
+/** Slider position 0..1 → seconds. 5 s at 0, 900 s at 1, snapped to readable stops:
+ *  5 s steps below a minute, 15 s up to five minutes, 1 min beyond. */
+export function dwellFromSlider(p: number): number {
+  const clamped = Math.min(1, Math.max(0, p));
+  const raw = DWELL_MIN * Math.pow(DWELL_MAX / DWELL_MIN, clamped);
+  const step = raw < 60 ? 5 : raw < 300 ? 15 : 60;
+  return Math.min(DWELL_MAX, Math.max(DWELL_MIN, Math.round(raw / step) * step));
+}
+
+/** Seconds → slider position 0..1. Inverse of the curve above (before snapping). */
+export function dwellToSlider(seconds: number): number {
+  const s = Math.min(DWELL_MAX, Math.max(DWELL_MIN, seconds));
+  return Math.log(s / DWELL_MIN) / Math.log(DWELL_MAX / DWELL_MIN);
+}
+
 const DemoSchema = z.object({
   demoActive: z.boolean(),
-  demoDwell: z.number().min(5).max(240),
+  demoDwell: z.number().min(DWELL_MIN).max(DWELL_MAX),
   pedalDwell: z.number().min(10).max(600).optional(),
   demoPatternIds: z.array(z.string()).optional(),
   demoStartBehavior: z.enum(DEMO_START_BEHAVIORS).optional(),

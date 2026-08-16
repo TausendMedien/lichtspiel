@@ -10,7 +10,7 @@
   import { patterns, LIGHT_IDS } from "./lib/patterns";
   import * as fs from "./lib/fullscreen";
   import { createWakeLock } from "./lib/wakelock";
-  import { loadSettings, saveSettings, loadDemoSettings, saveDemoSettings } from "./lib/settings";
+  import { loadSettings, saveSettings, loadDemoSettings, saveDemoSettings, dwellFromSlider, dwellToSlider } from "./lib/settings";
   import type { DemoStartBehavior } from "./lib/settings";
   import type { Pattern, PatternControl } from "./lib/patterns/types";
   import { restoreFromKeys } from "./lib/persist";
@@ -269,8 +269,12 @@
   const DEMO_AUTORESTART_TIME_KEY = 'pp:demo-autorestart-time';
   // Default ON: an idle kiosk relaunches the demo automatically. Respect a stored choice.
   let demoAutoRestart = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_KEY) ?? 'true') === 'true' : true);
-  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:06') : '00:06');
+  let demoAutoRestartTime = $state(typeof localStorage !== 'undefined' ? (localStorage.getItem(DEMO_AUTORESTART_TIME_KEY) ?? '00:05') : '00:05');
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  // True while the running demo was started by the idle timer rather than by the user.
+  // Such a demo is a fallback for an empty room, so the first real interaction ends it
+  // outright instead of merely postponing the next pattern.
+  let demoAutoStarted = $state(false);
 
   // Start straight into Demo Mode when the app is first opened. Default OFF — opt-in for kiosks.
   const DEMO_AUTOSTART_KEY = 'pp:demo-autostart';
@@ -734,6 +738,14 @@
   // Reactive mirror of current pattern's control values so the display
   // updates live as the user drags a slider (or types in a text field).
   let ctrlVals = $state<Record<string, number | string>>({});
+  // Bumped whenever a toggle/section/select value changes. A control's disabled()
+  // predicate reads plain pattern-module variables that Svelte cannot track, and
+  // writes to ctrlVals are per-key, so the greyed-out state would otherwise go stale
+  // after Undo, a preset restore or a remote push — the knob self-healed each frame
+  // while the greying did not. controlMeta reads this so it re-evaluates too.
+  // Ranges are deliberately excluded: they change every frame during a drag or
+  // Evolving drift, and no disabled() predicate depends on one.
+  let ctrlRev = $state(0);
   // Track which slider the user is actively dragging to avoid liveSync
   // overwriting the value attribute mid-drag (breaks touch/pointer on iPad/Mac).
   let draggingLabel: string | null = null;
@@ -867,10 +879,14 @@
   }
 
   function poke() {
-    // While a demo runs, explicit interaction keeps the current pattern up — reset the
-    // dwell countdown so an engaged visitor isn't yanked to the next pattern mid-play.
+    // An idle auto-start is a fallback for an empty room, so the first real interaction
+    // ends it and hands the HUD straight back — otherwise patterns keep changing under
+    // someone who is plainly using the app. A demo the user started is a deliberate
+    // performance mode: interaction only resets the dwell countdown so an engaged
+    // visitor isn't yanked to the next pattern mid-play.
     // (Passive camera motion / audio don't call poke(), so a noisy empty room still advances.)
-    if (demoActive) resetDemoTimer();
+    if (demoActive && demoAutoStarted) stopDemo();
+    else if (demoActive) resetDemoTimer();
     if (demoActive && demoHideHud) { scheduleAutoRestart(); return; } // HUD hidden in demo mode
     hudVisible = true;
     overlayHidden = false;
@@ -975,7 +991,7 @@
   function demoPoke() {
     demoPointerVisible = true;
     if (demoPointerTimer) clearTimeout(demoPointerTimer);
-    demoPointerTimer = setTimeout(() => (demoPointerVisible = false), 3000);
+    demoPointerTimer = setTimeout(() => (demoPointerVisible = false), 6000);
   }
 
   function parseAutoRestartMs(): number {
@@ -990,7 +1006,7 @@
     if (!demoAutoRestart || demoActive) return;
     const ms = parseAutoRestartMs();
     if (ms <= 0) return;
-    autoRestartTimer = setTimeout(() => { autoRestartTimer = null; startDemo(); }, ms);
+    autoRestartTimer = setTimeout(() => { autoRestartTimer = null; startDemo(true); }, ms);
   }
 
   function cancelAutoRestart() {
@@ -1135,6 +1151,9 @@
   function scheduleNext() {
     demoTimer = setTimeout(async () => {
       await crossFadeTo(nextDemoIndex(index));
+      // The crossfade is awaited, so demo may have been stopped meanwhile — in that
+      // window stopDemo()'s clearTimeout is a no-op and this would re-arm behind it.
+      if (!demoActive) return;
       scheduleNext();
     }, demoDwell * 1000);
   }
@@ -1146,14 +1165,18 @@
     return index; // nothing selected — stay put
   }
 
-  function startDemo() {
+  function startDemo(auto = false) {
     demoActive = true;
+    demoAutoStarted = auto;
     cancelAutoRestart(); // stop any pending auto-restart countdown
     hudVisible = false;
     if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
     demoVisible = false; // close the demo modal
-    fs.enter(document.documentElement).catch(() => {}); // go fullscreen when demo starts
-    saveDemoSettings(true, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
+    // Fullscreen needs a user gesture; from the idle timer it just rejects silently.
+    if (!auto) fs.enter(document.documentElement).catch(() => {});
+    // Persist demoActive only for a demo the user started. Saving it for an idle
+    // auto-start made the next launch boot straight back into an invisible demo.
+    saveDemoSettings(!auto, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) clearTimeout(demoTimer);
 
     const startIdx = firstDemoIndex();
@@ -1172,6 +1195,7 @@
 
   function stopDemo() {
     demoActive = false;
+    demoAutoStarted = false;
     saveDemoSettings(false, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
     if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
     scheduleAutoRestart(); // begin idle countdown after demo stops
@@ -1184,6 +1208,10 @@
   }
 
   function handleAction(action: KeyAction) {
+    // A key press proves someone is here, so end an idle auto-started demo before the
+    // action runs and let the rest of the app behave as if it had never started.
+    // Escape stops there, matching what it does for a user-started demo.
+    if (demoActive && demoAutoStarted) { stopDemo(); poke(); if (action.type === 'escape') return; }
     // Any action dismisses modals first
     if (cheatsheetVisible) { cheatsheetVisible = false; return; }
     if (optionsVisible)    { optionsVisible = false; return; }
@@ -1510,6 +1538,7 @@
     else if (ctrl.type === 'text' || ctrl.type === 'color') ctrl.set(String(entry.value));
     else ctrl.set(entry.value as number);
     ctrlVals[entry.label] = entry.value as number | string;
+    syncCtrlVals(); // a restored toggle can enable/disable siblings — refresh their greying now
     saveSettings(patterns);
     setUndoing(false);
   }
@@ -1649,6 +1678,7 @@
         ctrlVals[ctrl.label] = ctrl.get() as number | string;
       }
     }
+    syncCtrlVals(); // restored toggles can enable/disable siblings — refresh their greying now
     // Restore per-pattern colour state
     if (typeof snap['__colorEnabled'] === 'boolean') colorShuffle.enabled = snap['__colorEnabled'];
     if (typeof snap['__colorAssign'] === 'string') {
@@ -2261,11 +2291,11 @@
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'toggle' || c.type === 'section') {
             const v = c.get() ? 1 : 0;
-            if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
+            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
           } else if (c.type === 'select') {
             // Keep current index in sync; re-reading also lets Svelte re-evaluate ctrl.options()
             const v = c.get();
-            if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
+            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
           } else if (c.type === 'text' || c.type === 'color') {
             const v = c.get();
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
@@ -2358,7 +2388,9 @@
     function onMouseMove() {
       if (touchRecently()) return; // iPadOS synthesizes mousemove on tap
       pokeCursor();
-      (demoActive && demoHideHud) ? demoPoke() : poke();
+      // An auto-started demo goes through poke(), which ends it — moving the mouse is
+      // proof someone is here. Only a user-started demo keeps the minimal demoPoke path.
+      (demoActive && demoHideHud && !demoAutoStarted) ? demoPoke() : poke();
     }
     if (!isTouch) window.addEventListener("mousemove", onMouseMove);
 
@@ -2452,7 +2484,7 @@
   onclick={() => { if (appState !== "overview" && !touchRecently()) hudVisible = false; }}
   ontouchstart={() => {
     lastTouchAt = performance.now();
-    if (appState !== "overview" && demoActive && demoHideHud) demoPoke();
+    if (appState !== "overview" && demoActive && demoHideHud) { demoAutoStarted ? poke() : demoPoke(); }
     // Hide/show is decided on touchend by the "tap" action, so swipes and
     // scrolls do not toggle the HUD.
   }}
@@ -2474,9 +2506,10 @@
 <!-- ─── Demo pointer dismiss button ──────────────────────────────────── -->
 {#if demoActive && demoPointerVisible && remoteMode !== 'display'}
   <button
-    class="fixed top-4 right-4 z-[70] rounded-full bg-black/60 px-3 py-1.5 text-sm text-white/80 hover:bg-black/80 transition-colors cursor-pointer"
+    class="fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-sm text-white/80 hover:bg-black/80 transition-colors cursor-pointer"
     onclick={() => { stopDemo(); demoPointerVisible = false; poke(); }}
-  >✕</button>
+    title="Demo is running — click to stop (or press Escape)"
+  ><span class="text-white/50">● Demo</span><span class="text-white/30">—</span><span>✕ Stop</span></button>
 {/if}
 
 <!-- ─── Overview overlay ──────────────────────────────────────────────── -->
@@ -3473,9 +3506,9 @@
           <span class="font-mono text-white/40">{demoDwell < 60 ? demoDwell + ' s' : Math.floor(demoDwell / 60) + 'm' + (demoDwell % 60 ? ' ' + (demoDwell % 60) + 's' : '')}</span>
         </div>
         <input
-          type="range" min={5} max={240} step={5} value={demoDwell}
+          type="range" min={0} max={1} step={0.001} value={dwellToSlider(demoDwell)}
           oninput={(e) => {
-            demoDwell = parseInt((e.target as HTMLInputElement).value);
+            demoDwell = dwellFromSlider(parseFloat((e.target as HTMLInputElement).value));
             saveDemoSettings(demoActive, demoDwell, pedalDwell, [...demoPatternIds], demoStartBehavior, demoRandomizeOrder, demoFavoritesOnly);
             if (demoActive) resetDemoTimer();
             if (remoteMode === 'remote') broadcastDemoDwell(demoDwell); // live-overrides an already-running Display demo too
@@ -3897,6 +3930,7 @@
       </div>
       {#if patterns[index].controls?.length}
         {@const controlMeta = (() => {
+          void ctrlRev; // dependency: re-evaluate disabled() when any toggle/select changes
           let sectionOn = true;
           let currentSection: string | null = null;
           return (patterns[index].controls ?? []).map(ctrl => {
