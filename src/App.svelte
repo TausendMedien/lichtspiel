@@ -33,6 +33,8 @@
   import { killAllStreams } from "./lib/sensorGuard";
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
+  import { overlayState, saveOverlaySettings } from "./lib/textOverlay.svelte";
+  import { ALIGN_OPTIONS, STYLE_OPTIONS } from "./lib/overlayText";
   import { flickerGuard, saveFlickerGuard } from "./lib/flickerGuard.svelte";
   import {
     remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
@@ -571,13 +573,13 @@
   let demoPickerFilter = $state<PatternFilter>('all');
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
-    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
+    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [
-    'hyperMixHeat', 'particlesHeat', 'gravityLines', 'heatMap', 'particleLines', 'parallelLinesWave',
+    'hyperMixHeat', 'particlesHeat', 'gravityLines', 'volcano', 'heatMap', 'particleLines', 'parallelLinesWave',
     'tunnelEdge', 'baroqueSwirlsBody', 'shaderGradient', 'asciiSwirls',
     'wavySphere', 'crystalGem', 'typography3d',
     'lightPaint', 'lightPaintBlack', 'lightFly', 'lightMirror', 'lightKaleido', 'lightGlitch',
@@ -876,6 +878,20 @@
     saveColorC2();
     savePatternColor(patterns[index].id);
     saveSettings(patterns);
+  }
+
+  // Same exponential feel as the Dwell slider, for any seconds range: fine control
+  // at the short end where a second matters, coarse where it doesn't.
+  function sliderToSec(p: number, min: number, max: number): number {
+    const raw = min * Math.pow(max / min, Math.min(1, Math.max(0, p)));
+    const step = raw < 60 ? 1 : raw < 300 ? 15 : 60;
+    return Math.min(max, Math.max(min, Math.round(raw / step) * step));
+  }
+  function secToSlider(s: number, min: number, max: number): number {
+    return Math.log(Math.min(max, Math.max(min, s)) / min) / Math.log(max / min);
+  }
+  function fmtSeconds(s: number): string {
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)}m${s % 60 ? ' ' + (s % 60) + 's' : ''}`;
   }
 
   function poke() {
@@ -3069,6 +3085,111 @@
         {/if}
       </div>
 
+      <!-- Text Overlay section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Text Overlay</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <p class="text-[11px] text-white/40">3D text drawn on top of whichever pattern is running. Stays put as patterns change, and appears in screenshots and recordings.</p>
+          <div class="flex items-center justify-between text-xs text-white/70">
+            <span>Show text over patterns</span>
+            <div
+              data-knob
+              class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {overlayState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+              onclick={() => { overlayState.enabled = !overlayState.enabled; saveOverlaySettings(); }}
+            >
+              <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {overlayState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          {#if overlayState.enabled}
+            <label class="flex flex-col gap-1">
+              <span class="text-[11px] text-white/50">Text — press Enter for a new line</span>
+              <textarea
+                rows="2"
+                value={overlayState.text}
+                onkeydown={(e) => e.stopPropagation()}
+                oninput={(e) => { overlayState.text = (e.target as HTMLTextAreaElement).value; saveOverlaySettings(); }}
+                class="w-full resize-y rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
+              ></textarea>
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50">Align</span>
+                <select
+                  value={overlayState.align}
+                  onchange={(e) => { overlayState.align = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
+                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                >{#each ALIGN_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50">Style</span>
+                <select
+                  value={overlayState.style}
+                  onchange={(e) => { overlayState.style = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
+                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                >{#each STYLE_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
+              </label>
+            </div>
+            {#each [
+              { k: 'size',        label: 'Size',         min: 0.1, max: 2,   step: 0.01 },
+              { k: 'depth',       label: 'Depth',        min: 0,   max: 1,   step: 0.01 },
+              { k: 'lineSpacing', label: 'Line Spacing', min: 0.6, max: 3,   step: 0.05 },
+              { k: 'posX',        label: 'Position X',   min: -1,  max: 1,   step: 0.01 },
+              { k: 'posY',        label: 'Position Y',   min: -1,  max: 1,   step: 0.01 },
+              { k: 'opacity',     label: 'Opacity',      min: 0,   max: 1,   step: 0.01 },
+              { k: 'spin',        label: 'Spin',         min: -2,  max: 2,   step: 0.05 },
+            ] as s}
+              <div>
+                <div class="flex justify-between mb-1 text-xs text-white/70">
+                  <span>{s.label}</span>
+                  <span class="font-mono text-white/40">{(overlayState as any)[s.k].toFixed(2)}</span>
+                </div>
+                <input
+                  type="range" min={s.min} max={s.max} step={s.step} value={(overlayState as any)[s.k]}
+                  oninput={(e) => { (overlayState as any)[s.k] = parseFloat((e.target as HTMLInputElement).value); saveOverlaySettings(); }}
+                  class="w-full accent-white cursor-pointer"
+                />
+              </div>
+            {/each}
+            <div class="flex items-center justify-between text-xs text-white/70">
+              <span title="Show the text for a while, then hide it, over and over.">Cycle show / hide</span>
+              <div
+                data-knob
+                class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {overlayState.cycle ? 'bg-white/70' : 'bg-white/20'}"
+                onclick={() => { overlayState.cycle = !overlayState.cycle; saveOverlaySettings(); }}
+              >
+                <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {overlayState.cycle ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+              </div>
+            </div>
+            {#if overlayState.cycle}
+              {#each [
+                { k: 'showFor', label: 'Show for', min: 1, max: 300 },
+                { k: 'hideFor', label: 'Hide for', min: 5, max: 1800 },
+              ] as s}
+                <div>
+                  <div class="flex justify-between mb-1 text-xs text-white/70">
+                    <span>{s.label}</span>
+                    <span class="font-mono text-white/40">{fmtSeconds((overlayState as any)[s.k])}</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={1} step={0.001}
+                    value={secToSlider((overlayState as any)[s.k], s.min, s.max)}
+                    oninput={(e) => {
+                      (overlayState as any)[s.k] = sliderToSec(parseFloat((e.target as HTMLInputElement).value), s.min, s.max);
+                      saveOverlaySettings();
+                    }}
+                    class="w-full accent-white cursor-pointer"
+                  />
+                </div>
+              {/each}
+            {/if}
+          {/if}
+        </div>
+      </div>
+
       <!-- Remote Control section -->
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
@@ -4164,6 +4285,20 @@
                       class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 font-mono text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
                     />
                   </div>
+                {:else if ctrl.type === "text" && (ctrl as any).multiline}
+                  <!-- Enter must insert a newline, so keep keystrokes off the global
+                       shortcut handler while this field has focus. -->
+                  <textarea
+                    rows="2"
+                    placeholder={ctrl.placeholder ?? ''}
+                    onkeydown={(e) => e.stopPropagation()}
+                    oninput={(e) => {
+                      const v = (e.target as HTMLTextAreaElement).value;
+                      ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns);
+                    }}
+                    value={String(ctrlVals[ctrl.label] ?? ctrl.get())}
+                    class="w-full resize-y rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
+                  ></textarea>
                 {:else if ctrl.type === "text"}
                   <input
                     type="text"

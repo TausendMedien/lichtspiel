@@ -3,6 +3,11 @@ import type { Pattern, PatternContext } from "./patterns/types";
 import { colorC2, colorShuffle, getColorByIndex } from "./colorC2.svelte";
 import { interactionState } from "./interactionState.svelte";
 import { keepCameraAlive } from "./motionCameraWrapper";
+import { overlayState } from "./textOverlay.svelte";
+import {
+  loadFont, getFont, buildTextGroup as buildOverlayGroup, disposeTextGroup,
+  applyTextOpacity, cycleAlpha,
+} from "./overlayText";
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -158,6 +163,99 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
 
   const ctx: PatternContext = { scene, camera, renderer, size };
 
+  // ── Text overlay ───────────────────────────────────────────────────────────
+  // Drawn after the post pass, in its own scene with its own camera, so the text
+  // is neither colour-graded nor damped by the flicker guard and is immune to
+  // whatever the active pattern does with the shared camera. It lives here rather
+  // than in a pattern because setPattern() wipes the shared scene on every switch.
+  const overlayScene = new THREE.Scene();
+  const overlayCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  overlayCamera.position.set(0, 0, 5);
+  overlayCamera.lookAt(0, 0, 0);
+  let overlayGroup: THREE.Group | null = null;
+  let overlayPhase = 0;
+  let overlaySpinYaw = 0;
+  let overlayFontRequested = false;
+  // Rebuild only when something that changes the geometry changes.
+  let overlayKey = "";
+
+  function overlayColors(): { primary: string; glow: string } {
+    const ph1 = Math.min(1.0, colorC2.colorsV2);
+    const ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+    const p = new THREE.Color().lerpColors(new THREE.Color(1, 1, 1), new THREE.Color(colorC2.main), ph1);
+    const g = new THREE.Color().lerpColors(p, new THREE.Color(colorC2.contrast), ph2);
+    return { primary: '#' + p.getHexString(), glow: '#' + g.getHexString() };
+  }
+
+  function disposeOverlay() {
+    if (!overlayGroup) return;
+    disposeTextGroup(overlayGroup);
+    overlayScene.remove(overlayGroup);
+    overlayGroup = null;
+    overlayKey = "";
+  }
+
+  function renderOverlay(dt: number) {
+    if (!overlayState.enabled) {
+      if (overlayGroup) disposeOverlay();
+      return;
+    }
+    if (!getFont()) {
+      if (!overlayFontRequested) {
+        overlayFontRequested = true;
+        loadFont().catch(err => console.error('[overlay] font load failed:', err));
+      }
+      return;
+    }
+
+    const c = overlayColors();
+    const key = [overlayState.text, overlayState.size, overlayState.depth, overlayState.style,
+                 overlayState.align, overlayState.lineSpacing, c.primary, c.glow].join('|');
+    if (key !== overlayKey) {
+      // Build first, swap only on success — a degenerate geometry must not blank the text.
+      let next: THREE.Group;
+      try {
+        next = buildOverlayGroup({
+          text: overlayState.text, size: overlayState.size, depth: overlayState.depth,
+          style: overlayState.style, align: overlayState.align,
+          lineSpacing: overlayState.lineSpacing, primaryColor: c.primary, glowColor: c.glow,
+        });
+      } catch (err) {
+        console.error('[overlay] build failed — keeping previous text', err);
+        overlayKey = key; // don't retry the same broken input every frame
+        return;
+      }
+      if (overlayGroup) { disposeTextGroup(overlayGroup); overlayScene.remove(overlayGroup); }
+      overlayScene.add(next);
+      overlayGroup = next;
+      overlayKey = key;
+    }
+    if (!overlayGroup) return;
+
+    overlaySpinYaw += dt * overlayState.spin;
+    overlayGroup.rotation.y = overlaySpinYaw;
+    // posX/posY are -1..1 of the half-view, so the text can be parked anywhere.
+    const halfH = Math.tan((overlayCamera.fov * Math.PI / 180) / 2) * overlayCamera.position.z;
+    overlayGroup.position.set(overlayState.posX * halfH * overlayCamera.aspect, overlayState.posY * halfH, 0);
+
+    let alpha = overlayState.opacity;
+    if (overlayState.cycle) {
+      overlayPhase += dt;
+      alpha *= cycleAlpha(overlayPhase, overlayState.showFor, overlayState.hideFor);
+    } else if (overlayPhase !== 0) {
+      overlayPhase = 0;
+    }
+    applyTextOpacity(overlayGroup, alpha);
+    if (!overlayGroup.visible) return;
+
+    // autoClear would wipe the frame the post pass just composited.
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(overlayScene, overlayCamera);
+    renderer.autoClear = prevAutoClear;
+  }
+
   // ── Post-process pass (MSAA render target for smoother lines) ─────────────
   let rt = new THREE.WebGLRenderTarget(1, 1, {
     minFilter: THREE.LinearFilter,
@@ -298,6 +396,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     histB.setSize(width, height);
     camera.aspect = width / Math.max(1, height);
     camera.updateProjectionMatrix();
+    overlayCamera.aspect = camera.aspect;
+    overlayCamera.updateProjectionMatrix();
     current.resize(width, height);
   }
 
@@ -482,6 +582,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCamera);
     }
+
+    // Text overlay last, straight onto the canvas, so it escapes the colour grade
+    // and the flicker guard and lands in screenshots and recordings.
+    renderOverlay(dt);
   }
   raf = requestAnimationFrame(loop);
 
@@ -507,6 +611,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       ro.disconnect();
       current.dispose();
       clearScene();
+      disposeOverlay();
       renderer.dispose();
       rt.dispose();
       histA.dispose();

@@ -20,7 +20,11 @@ export type PatternControl =
   | { label: string; type: "separator" }
   | { label: string; type: "button"; tip?: string; action(): void }
   | { label: string; type: "color"; get(): string; set(v: string): void }
-  | { label: string; type: "text"; placeholder?: string; get(): string; set(v: string): void };
+  | { label: string; type: "text"; placeholder?: string; tip?: string;
+      /** Render a textarea so Enter inserts a newline. The value stays a plain
+       *  string, so persist / preset / share / broadcast are unaffected. */
+      multiline?: boolean;
+      get(): string; set(v: string): void };
 
 export interface Pattern {
   id: string;

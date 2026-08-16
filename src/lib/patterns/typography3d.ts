@@ -1,7 +1,9 @@
 import * as THREE from "three";
-import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
-import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import type { Pattern, PatternContext } from "./types";
+import {
+  loadFont, getFont, buildTextGroup as buildSharedTextGroup, disposeTextGroup,
+  applyTextOpacity, cycleAlpha, ALIGN_OPTIONS, STYLE_OPTIONS,
+} from "../overlayText";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
 import { audioState } from "../globalAudioSettings.svelte";
@@ -20,11 +22,26 @@ let rotSpeed   = 0.6;
 let floatSpeed = 0.4;
 let rotLocked  = false;
 let styleIndex = 0;  // 0=Solid 1=Wireframe 2=Neon
+let alignIndex = 1;  // 0=left 1=center 2=right
+let lineSpacing = 1.3;
+
+// Show / hide cycle — off by default, so the text simply stays up.
+let cycleOn   = false;
+let showForS  = 10;
+let hideForS  = 120;
+let cyclePhase = 0;
 
 // Heat centroid tracking state
 let baseYaw        = 0;
 let heatYawOffset  = 0;
 let heatTiltOffset = 0;
+// Face Camera: eased turn to front. `facing` is the transient turn, `rotLocked` the
+// steady state that keeps update() from writing spin or tilt afterwards.
+const FACE_TURN_S = 0.4;
+let facing      = false;
+let faceT       = 0;
+let faceFromYaw = 0;
+let faceToYaw   = 0;
 let heatTrackingStrength = 1.0;
 let heatFloatBoost       = 1.0;
 
@@ -92,15 +109,8 @@ let _lastPrimary  = "";
 let _lastGlow     = "";
 let _lastColorsV2 = -1;
 
-let fontCache: ReturnType<FontLoader["parse"]> | null = null;
-const loader = new FontLoader();
-
-function hexToColor(hex: string): THREE.Color {
-  return new THREE.Color(hex);
-}
-
 function buildText() {
-  if (!scene || !fontCache) return;
+  if (!scene || !getFont()) return;
   const _ph1 = Math.min(1.0, colorC2.colorsV2);
   const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
   const _cW  = new THREE.Color(1, 1, 1);
@@ -115,20 +125,17 @@ function buildText() {
   // scene empty, since update() has no other way to bring the text back.
   let group: THREE.Group;
   try {
-    group = buildTextGroup(primaryColor, glowColor);
+    group = buildSharedTextGroup({
+      text: textStr, size: textSize, depth: textDepth, style: styleIndex,
+      align: alignIndex, lineSpacing, primaryColor, glowColor,
+    });
   } catch (err) {
     console.error('[typo] buildText failed — keeping previous text', err);
     return;
   }
 
   if (textGroup) {
-    textGroup.traverse(obj => {
-      if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
-      }
-    });
+    disposeTextGroup(textGroup);
     scene.remove(textGroup);
     textGroup = null;
   }
@@ -138,74 +145,6 @@ function buildText() {
   _lastPrimary  = colorC2.main;
   _lastGlow     = colorC2.contrast;
   _lastColorsV2 = colorC2.colorsV2;
-}
-
-function buildTextGroup(primaryColor: string, glowColor: string): THREE.Group {
-  const geo = new TextGeometry(textStr || "Burn", {
-    font: fontCache!,
-    size: textSize,
-    // Depth 0 with bevel produces degenerate/NaN extrusion; stored settings and
-    // presets may still carry 0, so clamp here rather than at the control.
-    depth: Math.max(0.01, textDepth),
-    curveSegments: 6,
-    bevelEnabled: true,
-    bevelThickness: 0.02,
-    bevelSize: 0.02,
-    bevelSegments: 3,
-  });
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x) || !isFinite(bb.min.y) || !isFinite(bb.max.y)) {
-    geo.dispose();
-    throw new Error('degenerate text geometry (non-finite bounding box)');
-  }
-  const cx = (bb.max.x - bb.min.x) / 2;
-  const cy = (bb.max.y - bb.min.y) / 2;
-  geo.translate(-cx, -cy, 0);
-
-  const group = new THREE.Group();
-
-  if (styleIndex === 1) {
-    // Wireframe
-    const glowEdges = new THREE.EdgesGeometry(geo);
-    const glowMat = new THREE.LineBasicMaterial({ color: hexToColor(glowColor) });
-    group.add(new THREE.LineSegments(glowEdges, glowMat));
-    const primaryEdges = new THREE.EdgesGeometry(geo);
-    const primaryMat = new THREE.LineBasicMaterial({
-      color: hexToColor(primaryColor),
-      transparent: true,
-      opacity: 0.7,
-      blending: THREE.AdditiveBlending,
-    });
-    group.add(new THREE.LineSegments(primaryEdges, primaryMat));
-    geo.dispose();
-  } else if (styleIndex === 2) {
-    // Neon
-    const matInner = new THREE.MeshBasicMaterial({ color: hexToColor(primaryColor) });
-    group.add(new THREE.Mesh(geo, matInner));
-    const outerGeo = geo.clone();
-    const matGlow = new THREE.MeshBasicMaterial({
-      color: hexToColor(glowColor),
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-    });
-    outerGeo.scale(1.04, 1.04, 1.04);
-    group.add(new THREE.Mesh(outerGeo, matGlow));
-  } else {
-    // Solid
-    const mat = new THREE.MeshBasicMaterial({ color: hexToColor(primaryColor) });
-    group.add(new THREE.Mesh(geo, mat));
-    const edges = new THREE.EdgesGeometry(geo);
-    const edgeMat = new THREE.LineBasicMaterial({
-      color: hexToColor(glowColor),
-      depthTest: false,
-    });
-    group.add(new THREE.LineSegments(edges, edgeMat));
-  }
-
-  return group;
 }
 
 let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -226,8 +165,15 @@ export const typography3d: Pattern = {
   motionControlLabels: [],
   audioControlLabels:  [],
   controls: [
-    { label: "Text",          type: "text",  placeholder: "Burn", get: () => textStr,
+    { label: "Text",          type: "text",  multiline: true, placeholder: "Burn", get: () => textStr,
+      tip: "The text to show. Press Enter for a new line.",
       set: v => { textStr = v; scheduleRebuild(); } },
+    { label: "Align",         type: "select", options: [...ALIGN_OPTIONS],
+      tip: "How the lines line up with each other.",
+      get: () => alignIndex, set: v => { alignIndex = v; scheduleRebuild(); } },
+    { label: "Line Spacing",  type: "range", min: 0.6, max: 3.0, step: 0.05, default: 1.3,
+      tip: "Gap between lines, as a multiple of the text size.",
+      get: () => lineSpacing, set: v => { lineSpacing = v; scheduleRebuild(); } },
     { label: "Size",          type: "range", min: 0.2, max: 2.0, step: 0.01, default: 0.82,
       tip: "Overall size of the 3D text.",
       get: () => textSize,   set: v => { textSize = v; scheduleRebuild(); } },
@@ -236,19 +182,40 @@ export const typography3d: Pattern = {
       get: () => textDepth,  set: v => { textDepth = v; scheduleRebuild(); } },
     { label: "Rotate Speed",  type: "range", min: 0.0, max: 5.0, step: 0.1, default: 0.6,
       tip: "How fast the text spins. Set to 0 to stop rotation.",
-      get: () => rotSpeed,   set: v => { rotSpeed = v; rotLocked = false; } },
+      // Only a real move off zero releases the lock. Persist/preset/share restores all
+      // call set() on load, and clearing the lock there silently undid Face Camera.
+      get: () => rotSpeed,   set: v => { rotSpeed = v; if (v > 0) rotLocked = false; } },
     { label: "⊙ Face Camera", type: "button",
-      tip: "Snap the text to face directly at the camera and stop rotating.",
+      tip: "Turn the text to face directly at the camera and stop rotating.",
       action: () => {
-        rotSpeed = 0; rotLocked = true;
-        if (textGroup) textGroup.rotation.set(0, 0, 0);
+        // Turn to front over FACE_TURN_S rather than snapping, taking the short way
+        // round. update() drives the easing; it must also stop writing the spin, or
+        // the accumulated baseYaw would overwrite this on the very next frame.
+        rotSpeed = 0;
+        rotLocked = true;
+        facing = true;
+        faceFromYaw = baseYaw;
+        // Nearest full turn, so a text at 359° eases 1° forward instead of 359° back.
+        faceToYaw = Math.round(baseYaw / (Math.PI * 2)) * Math.PI * 2;
+        faceT = 0;
       } },
     { label: "Float Speed",   type: "range", min: 0.0, max: 1.0, step: 0.01, default: 0.4,
       tip: "How fast the text bobs up and down.",
       get: () => floatSpeed, set: v => { floatSpeed = v; } },
-    { label: "Style",         type: "select", options: ["Solid", "Wireframe", "Neon"],
+    { label: "Style",         type: "select", options: [...STYLE_OPTIONS],
       tip: "Visual style — Solid, Wireframe (lattice), or Neon (edge glow).",
       get: () => styleIndex, set: v => { styleIndex = v; buildText(); } },
+    { label: "Cycle",         type: "toggle",
+      tip: "Show the text for a while, then hide it, over and over.",
+      get: () => cycleOn, set: v => { cycleOn = !!v; cyclePhase = 0; } },
+    { label: "Show for",      type: "range", min: 1, max: 300, step: 1, default: 10,
+      disabled: () => !cycleOn,
+      tip: "Seconds the text stays visible each time round.",
+      get: () => showForS, set: v => { showForS = v; } },
+    { label: "Hide for",      type: "range", min: 5, max: 1800, step: 5, default: 120,
+      disabled: () => !cycleOn,
+      tip: "Seconds the text stays hidden before it comes back.",
+      get: () => hideForS, set: v => { hideForS = v; } },
     { label: "Tracking Strength", type: "range", min: 0, max: 2,   step: 0.1, default: 1.0,
       interactive: 'heat' as const,
       tip: "How much heat-map motion rotates the text toward the person. Requires Heat.",
@@ -289,14 +256,8 @@ export const typography3d: Pattern = {
     ctx.camera.lookAt(0, 0, 0);
     ctx.camera.updateProjectionMatrix();
 
-    if (fontCache) {
-      buildText();
-    } else {
-      fetch(import.meta.env.BASE_URL + 'helvetiker_bold.typeface.json')
-        .then(r => r.json())
-        .then(data => { fontCache = loader.parse(data); buildText(); })
-        .catch(err => console.error('[typo] font load failed:', err));
-    }
+    if (getFont()) buildText();
+    else loadFont().then(() => buildText()).catch(err => console.error('[typo] font load failed:', err));
   },
 
   update(dt: number, _elapsed: number) {
@@ -323,8 +284,28 @@ export const typography3d: Pattern = {
     const depthScale = 1 + audioDepthAmt * 1.5;  // up to 2.5× extrusion depth at full level
     textGroup.scale.set(sizeScale, sizeScale, sizeScale * depthScale);
 
+    // Show / hide cycle — fade rather than remove, so nothing pops.
+    if (cycleOn) {
+      cyclePhase += dt;
+      applyTextOpacity(textGroup, cycleAlpha(cyclePhase, showForS, hideForS));
+    } else if (cyclePhase !== 0) {
+      cyclePhase = 0;
+      applyTextOpacity(textGroup, 1);
+    }
+
     // Accumulate idle spin separately so heat offset is additive, not compounding
-    baseYaw += dt * rotSpeed * 0.8;
+    if (!rotLocked) baseYaw += dt * rotSpeed * 0.8;
+
+    // Face Camera: ease the accumulated yaw to the nearest full turn, then hold.
+    if (facing) {
+      faceT = Math.min(1, faceT + dt / FACE_TURN_S);
+      const e = faceT * faceT * (3 - 2 * faceT); // smoothstep
+      baseYaw = faceFromYaw + (faceToYaw - faceFromYaw) * e;
+      const decay = Math.max(0, 1 - dt * 6);
+      heatYawOffset  *= decay;
+      heatTiltOffset *= decay;
+      if (faceT >= 1) { baseYaw = faceToYaw; heatYawOffset = 0; heatTiltOffset = 0; facing = false; }
+    }
 
     if (heatSmoothed && heatTmp && heatTexData) {
       const raw = cameraState.heatMap;
@@ -338,8 +319,11 @@ export const typography3d: Pattern = {
       const targetYaw  = (0.5 - cx) * Math.PI * 0.6 * heatTrackingStrength;
       const targetTilt = (cy - 0.5) * 0.3 * heatTrackingStrength;
       const speed = Math.min(1, dt * 2.5);
-      heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
-      heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
+      // Face Camera holds the text still: heat must not keep swinging it afterwards.
+      if (!rotLocked) {
+        heatYawOffset  += (targetYaw  - heatYawOffset)  * speed;
+        heatTiltOffset += (targetTilt - heatTiltOffset) * speed;
+      }
       const ampBoost = (cameraState.level / 100) * heatFloatBoost;
 
       // Local heat push: gradient at text's current screen position nudges text sideways
@@ -353,7 +337,9 @@ export const typography3d: Pattern = {
       }
 
       textGroup.rotation.y = baseYaw + heatYawOffset;
-      if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.rotation.x = rotLocked
+        ? heatTiltOffset   // decays to 0 through the Face Camera turn, then holds flat
+        : Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
       textGroup.position.x = heatXPush;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * (0.3 + ampBoost * 0.5);
     } else {
@@ -362,7 +348,9 @@ export const typography3d: Pattern = {
       heatTiltOffset *= decay;
       heatXPush      *= decay;
       textGroup.rotation.y = baseYaw + heatYawOffset;
-      if (!rotLocked) textGroup.rotation.x = Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
+      textGroup.rotation.x = rotLocked
+        ? heatTiltOffset   // decays to 0 through the Face Camera turn, then holds flat
+        : Math.sin(animTime * 0.3) * 0.15 + heatTiltOffset;
       textGroup.position.x = heatXPush;
       textGroup.position.y = Math.sin(animTime * floatSpeed) * 0.3;
     }
@@ -395,6 +383,8 @@ export const typography3d: Pattern = {
     camera = null;
     animTime = 0;
     rotLocked = false;
+    facing = false;
+    faceT = 0;
     baseYaw = 0;
     heatYawOffset  = 0;
     heatTiltOffset = 0;

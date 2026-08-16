@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7.260816-0930 — Text Overlay · Demo fixes
+
+**Text Overlay** — 3D text drawn on top of whichever pattern is running, set up once in Options and left alone. It stays put as patterns change and through Demo, and because it is rendered into the picture rather than laid over it in the interface, it appears in screenshots and recordings and on a projector fed by the canvas. Text, Align, Style, Size, Depth, Line Spacing, Position X/Y, Opacity and Spin. The text is not touched by the colour grade or the flicker guard, so titles stay crisp and the colour you pick is the colour you get.
+
+**Several lines of text** — both the overlay and the 3D Typography pattern take multi-line text: press Enter for a new line. New **Align** (left / centre / right) and **Line Spacing** controls. A long-standing centring bug is fixed along the way — the block was positioned by half its extent rather than its true centre, which was invisible on one line and pushed a multi-line block half its own height too low.
+
+**Show / hide cycle** — optional on both: the text appears for a while, disappears for a while, and comes back, fading at each edge rather than popping. Off by default; when switched on it starts at 10 seconds visible, 2 minutes hidden.
+
+**Face Camera actually faces the camera.** It used to stop the spin and freeze the text at whatever angle it had reached, because the accumulated rotation was never cleared and was written straight back on the next frame — and the lock only ever held the tilt, not the turn. It now eases to face front, taking the shorter way round, and holds there even with Heat running.
+
+**Demo no longer takes over while you work.** After the idle time, Demo starts on its own — that part is intended — but moving the mouse only flashed a small ✕ and never postponed the next pattern, the interface stayed hidden so nothing said Demo was running, and the state was saved, so the next launch booted straight back into an invisible demo. Now any real interaction ends an idle-started demo and hands the controls straight back, the exit reads **● Demo — ✕ Stop** instead of a bare ✕ and stays up longer, and an idle start is no longer remembered. A demo you started yourself still behaves as before: interacting only postpones the next pattern. Default idle time is now 5 minutes. To leave Demo at any time: **Escape**, the ✕ pill, or **D** for the Demo panel.
+
+**Dwell time** now runs from 5 seconds to 15 minutes, on a slider that steps in 5 seconds at the short end and a minute at the long end, so both a quick cycle and a slow gallery loop are easy to dial in.
+
+**Greyed-out controls tell the truth.** A control that switches others on and off — Kaleidoscope, Mirror Fold, Cycle — left them greyed and unclickable after an Undo, a preset recall or a change pushed from a Remote, even though the effect was plainly running. The knob corrected itself every frame while the greying did not; both now do.
+
 ## v0.7.260816-0204 — Push is its own sensor
 
 **Push stands on its own.** It used to be a knob buried under Heat; now it sits in the Interactive panel next to Motion, Heat and Audio, with its own toggle and its own settings — Solidity, Push Strength, Return Speed, Softness and Sensitivity. Those settings are global rather than per-pattern, like Motion's Sensitivity, so the feel of the interaction stays put as patterns change under it. Heat and Push are independent: run either, both, or neither. With both on, Push drives the picture and Heat's displacement steps aside.
