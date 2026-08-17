@@ -14,38 +14,44 @@ import { createHeatField, HEAT_DISPLACE_GLSL, pushActive, heatOrPushActive, type
 // a fake trail buffer. Nothing is integrated on the CPU; a particle's age simply
 // loops every LIFE seconds, so the eruption is a continuous, self-recycling
 // fountain rather than a one-shot burst.
+//
+// Launch time (vy, vr, r0) and the flight→slide transition (tHit, rHit) are solved
+// once per particle in solveLaunch(); both the flight and slide branches of
+// particlePos() are built to agree exactly at t = tHit (same r, same y, same theta),
+// so a streak sampled across that boundary never tears.
 
 const MAX_PARTICLES = 30000;
 const LIFE = 6.0;             // seconds per particle life cycle
-const VENT_Y = 0.75;
 const RV = 0.16;              // vent radius
-const R_MAX = 3.2;            // flows rest once they reach this radius
+const R_MAX = 3.2;            // roughly where flows come to rest
 const CAM_Z = 6.0;
+const LOOKAT_Y = -0.1;
 const HALF_H = CAM_Z * Math.tan((60 * Math.PI) / 360);   // renderer fov is 60°
 
-let particleCount = 16000;
-let trail         = 4.0;
-let lineWidth     = 3.0;   // pixels
-let jetPower      = 1.8;
-let spread        = 0.5;   // radians, max angle off vertical
-let gravity       = 1.6;
-let pulse         = 0.35;
-let pulseRate     = 0.35;  // Hz, capped well under flicker territory
-let eruptionSpeed = 1.0;   // capped at 2.0 — photosensitivity: speed, not contrast
-let coneSlope     = 0.42;
-let downhillFlow  = 0.6;
-let meander       = 0.5;
-let cooling       = 0.6;
-let ash           = 0.12;
-let wind          = 0.15;
+let particleCount = 24000;
+let trail         = 1.0;
+let lineWidth     = 3.5;   // pixels
+let jetPower      = 2.1;
+let spread        = 0.54;  // radians, max angle off vertical
+let gravity       = 1.8;
+let pulse         = 0.9;
+let pulseRate     = 0.5;   // Hz, capped well under flicker territory
+let eruptionSpeed = 0.15;  // capped at 2.0 — photosensitivity: speed, not contrast
+let coneSlope     = 0.62;
+let downhillFlow  = 0.0;
+let meander       = 0.18;
+let cooling       = 0.55;
+let ash           = 0.48;
+let wind          = 0.66;
+let craterHeight  = -0.1;  // fraction of half-frame-height above/below screen centre
 let mountainOn    = true;
-let coneGlow      = 0.6;
-let rotate        = 0.03;
-let lavaColors    = 0.0;
+let coneGlow      = 0.3;
+let rotate        = 0.02;
+let lavaColors    = 1.0;
 
-let heatStrength = 0.5;
-let heatGain     = 11.0;
-let blurRadius   = 4.0;
+let heatStrength = 0.8;
+let heatGain     = 14.0;
+let blurRadius   = 3.0;
 let mirrorX      = true;
 
 let group:        THREE.Group | null = null;
@@ -60,6 +66,10 @@ let heatField:    HeatField | null = null;
 let heatWasOn     = false;
 let accTime       = 0;
 let vpWidth = 1, vpHeight = 1;
+
+function currentVentY(): number {
+  return LOOKAT_Y + craterHeight * HALF_H;
+}
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +89,7 @@ const vertexShader = /* glsl */ `
   uniform float uCooling;
   uniform float uAsh;
   uniform float uWind;
+  uniform float uVentY;
   uniform float uHeatActive;
   uniform float uMirrorX;
 
@@ -92,7 +103,6 @@ const vertexShader = /* glsl */ `
   varying float vHalfLenPx;
 
   const float LIFE   = ${LIFE.toFixed(1)};
-  const float VENT_Y = ${VENT_Y.toFixed(2)};
   const float RV     = ${RV.toFixed(2)};
   const float R_MAX  = ${R_MAX.toFixed(2)};
   const float ASH_RISE = 0.55;
@@ -101,38 +111,58 @@ const vertexShader = /* glsl */ `
 
   ${HEAT_DISPLACE_GLSL}
 
-  void launch(vec4 rnd, float tL, out float vy, out float vr, out float r0) {
+  // Launch velocity and the flight→slide transition, solved once per particle.
+  // The transition time is where the ballistic arc y = uVentY + vy*t - 0.5*g*t^2
+  // meets the cone surface y = uVentY - s*(r - RV); solving that intersection for t
+  // gives the quadratic below (note the MINUS inside the discriminant — the plus
+  // gives a spurious early root where the arc crosses the cone surface's own
+  // upward extension through the crater bowl, landing the particle almost
+  // instantly instead of after a real arc).
+  void solveLaunch(vec4 rnd, float tL, out float vy, out float vr, out float r0, out float tHit, out float rHit) {
     float phi   = uSpread * sqrt(rnd.z);
     float pulse = 1.0 + uPulse * (pow(0.5 + 0.5 * sin(TAU * uPulseRate * tL), 4.0) - 0.3);
     float v     = uJet * max(pulse, 0.05) * (0.65 + 0.35 * rnd.w);
     vy = v * cos(phi);
     vr = v * sin(phi);
     r0 = RV * sqrt(rnd.z);
-  }
 
-  // Magma flight + downhill slide, blended with a buoyant ash rise by isAsh.
-  vec3 particlePos(float t, float vy, float vr, float r0, float theta0, vec4 rnd, float isAsh, out float T, out float sizeScale) {
     float g = max(uGravity, 0.01);
     float s = uSlope;
     float A = vy + s * vr;
-    float disc = max(A * A + 2.0 * g * s * (RV - r0), 0.0);
-    float tHit = (A + sqrt(disc)) / g;
+    float disc = max(A * A - 2.0 * g * s * (RV - r0), 0.0);
+    tHit = (A + sqrt(disc)) / g;
+    rHit = r0 + vr * tHit;
+  }
 
-    float rFlight, yFlight;
+  // Magma flight + downhill slide, blended with a buoyant ash rise by isAsh.
+  // The slide branch's r and theta are written as offsets from (rHit, theta0) that
+  // are exactly zero at tau = 0, so it always meets the flight branch continuously.
+  vec3 particlePos(float t, float vy, float vr, float r0, float tHit, float rHit, float theta0, vec4 rnd, float isAsh, out float T, out float sizeScale) {
+    float g = max(uGravity, 0.01);
+    float s = uSlope;
+
+    float rFlight, yFlight, thetaFlight;
     if (t < tHit) {
-      rFlight = r0 + vr * t;
-      yFlight = VENT_Y + vy * t - 0.5 * g * t * t;
+      rFlight     = r0 + vr * t;
+      yFlight     = uVentY + vy * t - 0.5 * g * t * t;
+      thetaFlight = theta0;
     } else {
-      float tau  = t - tHit;
-      float rHit = r0 + vr * tHit;
-      rFlight = min(rHit + vr * SLIDE_FRICTION * tau + 0.5 * uFlow * tau * tau, R_MAX);
-      yFlight = VENT_Y - s * (rFlight - RV);
+      float tau    = t - tHit;
+      float vSlide = vr * SLIDE_FRICTION;
+      float decay  = 0.6;
+      // Impact speed bleeds off asymptotically; Downhill Flow adds a slow, unbounded
+      // creep on top so landed material keeps meandering rather than freezing solid.
+      float creep  = uFlow * tau;
+      float wobble = sin(uTime * 0.12 + rnd.y * 53.0) * uMeander * 0.12;
+      rFlight     = rHit + vSlide * (1.0 - exp(-tau * decay)) / decay + creep;
+      rFlight     = min(rFlight, R_MAX * 1.2);
+      yFlight     = uVentY - s * (rFlight - RV);
+      thetaFlight = theta0 + sin(rnd.y * 37.0 + rFlight * 3.0) * uMeander * (rFlight - rHit) + wobble;
     }
-    float thetaFlight = theta0 + sin(rnd.y * 37.0 + rFlight * 3.0) * uMeander * max(rFlight - RV, 0.0) * step(tHit, t);
     float Tflight = exp(-max(t - 0.3, 0.0) * uCooling);
 
     float rAsh     = r0 * 0.5 + uWind * pow(t, 1.5);
-    float yAsh     = VENT_Y + ASH_RISE * pow(t, 0.6);
+    float yAsh     = uVentY + ASH_RISE * pow(t, 0.6);
     float thetaAsh = theta0 + sin(rnd.y * 13.0 + t * 2.0) * 0.4;
     float Tash     = exp(-t * uCooling * 2.0);
 
@@ -140,7 +170,12 @@ const vertexShader = /* glsl */ `
     float y     = mix(yFlight, yAsh, isAsh);
     float theta = mix(thetaFlight, thetaAsh, isAsh);
     T = mix(Tflight, Tash, isAsh);
-    sizeScale = mix(1.0, 1.0 + t * 0.6, isAsh);
+
+    // Landed, cooled magma shrinks into small dark grains rather than staying a
+    // bright active-flow streak — the visual cue that it has come to rest.
+    float landed     = step(tHit, t);
+    float coolShrink = mix(1.0, 0.55, clamp(1.0 - Tflight, 0.0, 1.0) * landed);
+    sizeScale = mix(coolShrink, 1.0 + t * 0.6, isAsh);
 
     return vec3(r * cos(theta), y, r * sin(theta));
   }
@@ -150,16 +185,20 @@ const vertexShader = /* glsl */ `
     float tL  = uTime - age;
     float isAsh = step(aRand.w, uAsh);
 
-    float vy, vr, r0;
-    launch(aRand, tL, vy, vr, r0);
+    float vy, vr, r0, tHit, rHit;
+    solveLaunch(aRand, tL, vy, vr, r0, tHit, rHit);
     float theta0 = aRand.y * TAU;
 
-    float trailBack = mix(uTrail * 0.08, 0.0, isAsh);
-    float ageTail = max(age - trailBack, 0.0);
+    // Cooled/landed material gets a shorter streak — specks, not flowing lines.
+    float landedNow    = step(tHit, age);
+    float coolNow      = exp(-max(age - 0.3, 0.0) * uCooling);
+    float trailShrink  = mix(1.0, 0.35, clamp(1.0 - coolNow, 0.0, 1.0) * landedNow);
+    float trailBack    = mix(uTrail * 0.08 * trailShrink, 0.0, isAsh);
+    float ageTail      = max(age - trailBack, 0.0);
 
     float Thead, sizeHead, Ttail, sizeTail;
-    vec3 posHead = particlePos(age,     vy, vr, r0, theta0, aRand, isAsh, Thead, sizeHead);
-    vec3 posTail = particlePos(ageTail, vy, vr, r0, theta0, aRand, isAsh, Ttail, sizeTail);
+    vec3 posHead = particlePos(age,     vy, vr, r0, tHit, rHit, theta0, aRand, isAsh, Thead, sizeHead);
+    vec3 posTail = particlePos(ageTail, vy, vr, r0, tHit, rHit, theta0, aRand, isAsh, Ttail, sizeTail);
 
     vT   = Thead;
     vAsh = isAsh;
@@ -252,10 +291,15 @@ const fragmentShader = /* glsl */ `
     vec3 ashCol = vec3(0.5, 0.47, 0.45) * (0.35 + 0.4 * vT);
     col = mix(col, ashCol, vAsh);
 
-    float bright = mix(0.55 + 0.9 * vT, 0.5, vAsh);
+    // Kept deliberately dim relative to a plain multiply, then soft-tonemapped —
+    // additive blending stacks dozens of overlapping streaks right at the vent,
+    // and without this it blows straight to a flat white blob.
+    float bright  = mix(0.32 + 0.55 * vT, 0.32, vAsh);
+    vec3  outCol  = col * bright;
+    outCol = outCol / (1.0 + outCol * 0.5);
     float alpha  = cover * uOpacity * mix(1.0, 0.45, vAsh);
 
-    gl_FragColor = vec4(col * bright, alpha);
+    gl_FragColor = vec4(outCol, alpha);
   }
 `;
 
@@ -263,8 +307,19 @@ const mountainVertexShader = /* glsl */ `
   varying vec3 vNormalV;
   varying vec3 vViewDir;
   void main() {
+    // Break up the perfect circular cross-section with a few overlaid angular
+    // waves so the silhouette reads as an eroded, organic ridge line rather than
+    // a geometric cone. Tapered out near the apex so the tip stays a clean point.
+    vec3 pos = position;
+    float angle = atan(pos.z, pos.x);
+    float bump = sin(angle * 3.0 + 1.3) * 0.05
+               + sin(angle * 7.0 - 0.6) * 0.028
+               + sin(angle * 11.0 + 2.7) * 0.016;
+    float taper = smoothstep(-0.5, 0.25, pos.y);
+    pos.xz *= 1.0 + bump * taper;
+
     vNormalV = normalize(normalMatrix * normal);
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     vViewDir = normalize(-mv.xyz);
     gl_Position = projectionMatrix * mv;
   }
@@ -272,13 +327,21 @@ const mountainVertexShader = /* glsl */ `
 
 const mountainFragmentShader = /* glsl */ `
   uniform float uGlow;
+  uniform vec2  uResolution;
   varying vec3 vNormalV;
   varying vec3 vViewDir;
   void main() {
     float fres = pow(1.0 - max(dot(normalize(vNormalV), normalize(vViewDir)), 0.0), 2.5);
-    vec3 base = vec3(0.03, 0.02, 0.02);
+    vec3 base = vec3(0.025, 0.018, 0.02);
     vec3 rim  = vec3(1.0, 0.4, 0.1) * uGlow;
-    gl_FragColor = vec4(base + rim * fres, 1.0);
+    vec3 col  = base + rim * fres;
+
+    // Dissolve into darkness toward the bottom of the screen instead of showing a
+    // hard elliptical base edge.
+    float yFrac = gl_FragCoord.y / max(uResolution.y, 1.0);
+    col *= smoothstep(0.0, 0.22, yFrac);
+
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -330,8 +393,9 @@ function buildGeometry(): THREE.BufferGeometry {
 
 function layoutMountain() {
   if (!mountainMesh) return;
+  const ventY  = currentVentY();
   const height = coneSlope * R_MAX;
-  const apexY  = VENT_Y + coneSlope * RV;
+  const apexY  = ventY + coneSlope * RV;
   const baseY  = apexY - height;
   mountainMesh.scale.set(R_MAX, height, R_MAX);
   mountainMesh.position.y = (apexY + baseY) / 2;
@@ -342,8 +406,8 @@ export const volcano: Pattern = {
   name: "Volcano",
   attribution: "Idea — Loretta",
   heatReactive: true,
-  motionControlLabels: ['Jet Power', 'Pulse'],
-  audioControlLabels:  ['Jet Power', 'Pulse', 'Heat Strength'],
+  motionControlLabels: ['Eruption Speed'],
+  audioControlLabels:  ['Eruption Speed'],
   colorDefaults: { saturation: 1.0, brightness: 1.3 },
 
   activate() {
@@ -352,31 +416,32 @@ export const volcano: Pattern = {
   },
 
   controls: [
-    { label: "Particle Count", type: "range", min: 3000, max: MAX_PARTICLES, step: 500, default: 16000, tip: "Number of magma and ash particles. More = denser eruption, heavier on GPU.", get: () => particleCount, set: v => { particleCount = Math.round(v); geometry?.setDrawRange(0, particleCount * 6); } },
-    { label: "Trail",          type: "range", min: 0,    max: 10,  step: 0.5,  default: 4,    tip: "Streak length behind each particle. 0 = round embers instead of streaks.", get: () => trail,         set: v => { trail = v; } },
-    { label: "Streak Width",   type: "range", min: 1,    max: 8,   step: 0.5,  default: 3,    tip: "Thickness of each streak, in pixels.",                                   get: () => lineWidth,     set: v => { lineWidth = v; } },
-    { label: "Jet Power",      type: "range", min: 0.5,  max: 4,   step: 0.1,  default: 1.8,  tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
-    { label: "Spread",         type: "range", min: 0,    max: 1.2, step: 0.02, default: 0.5,  tip: "Cone angle of the jet — 0 = a narrow vertical fountain, higher = a wide fan.", get: () => spread,       set: v => { spread = v; } },
-    { label: "Gravity",        type: "range", min: 0.5,  max: 4,   step: 0.1,  default: 1.6,  tip: "How hard trajectories arc back down.",                                   get: () => gravity,       set: v => { gravity = v; } },
-    { label: "Pulse",          type: "range", min: 0,    max: 1,   step: 0.02, default: 0.35, tip: "How strongly the eruption surges and eases, like a Strombolian burst.",  get: () => pulse,         set: v => { pulse = v; } },
-    { label: "Pulse Rate",     type: "range", min: 0.05, max: 1.2, step: 0.05, default: 0.35, tip: "Speed of the surge cycle, in hertz.",                                    get: () => pulseRate,     set: v => { pulseRate = v; } },
-    { label: "Eruption Speed", type: "range", min: 0,    max: 2,   step: 0.05, default: 1,    tip: "Overall time scale of the eruption.",                                    get: () => eruptionSpeed, set: v => { eruptionSpeed = v; } },
-    { label: "Cone Slope",     type: "range", min: 0.15, max: 0.7, step: 0.01, default: 0.42, tip: "Steepness of the volcano's flank.",                                      get: () => coneSlope,     set: v => { coneSlope = v; } },
-    { label: "Downhill Flow",  type: "range", min: 0,    max: 2,   step: 0.05, default: 0.6,  tip: "How much landed magma keeps accelerating down the slope.",              get: () => downhillFlow,  set: v => { downhillFlow = v; } },
-    { label: "Meander",        type: "range", min: 0,    max: 1.5, step: 0.02, default: 0.5,  tip: "How much the flows braid into channels instead of running straight down.", get: () => meander,      set: v => { meander = v; } },
-    { label: "Cooling",        type: "range", min: 0.15, max: 2,   step: 0.05, default: 0.6,  tip: "How fast magma dims from white-hot to dark as it ages.",                get: () => cooling,       set: v => { cooling = v; } },
-    { label: "Ash",            type: "range", min: 0,    max: 0.6, step: 0.01, default: 0.12, tip: "Fraction of particles that rise as a buoyant ash plume instead of falling as magma.", get: () => ash, set: v => { ash = v; } },
-    { label: "Wind",           type: "range", min: -1,   max: 1,   step: 0.02, default: 0.15, tip: "Sideways drift on the ash plume.",                                       get: () => wind,          set: v => { wind = v; } },
+    { label: "Particle Count", type: "range", min: 3000, max: MAX_PARTICLES, step: 500, default: 24000, tip: "Number of magma and ash particles. More = denser eruption, heavier on GPU.", get: () => particleCount, set: v => { particleCount = Math.round(v); geometry?.setDrawRange(0, particleCount * 6); } },
+    { label: "Trail",          type: "range", min: 0,     max: 10,  step: 0.5,  default: 1,     tip: "Streak length behind each particle. 0 = round embers instead of streaks.", get: () => trail,         set: v => { trail = v; } },
+    { label: "Streak Width",   type: "range", min: 1,     max: 8,   step: 0.5,  default: 3.5,   tip: "Thickness of each streak, in pixels.",                                   get: () => lineWidth,     set: v => { lineWidth = v; } },
+    { label: "Jet Power",      type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 2.1,   tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
+    { label: "Spread",         type: "range", min: 0,     max: 1.2, step: 0.02, default: 0.54,  tip: "Cone angle of the jet — 0 = a narrow vertical fountain, higher = a wide fan.", get: () => spread,       set: v => { spread = v; } },
+    { label: "Gravity",        type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 1.8,   tip: "How hard trajectories arc back down.",                                   get: () => gravity,       set: v => { gravity = v; } },
+    { label: "Pulse",          type: "range", min: 0,     max: 1,   step: 0.02, default: 0.9,   tip: "How strongly the eruption surges and eases, like a Strombolian burst.",  get: () => pulse,         set: v => { pulse = v; } },
+    { label: "Pulse Rate",     type: "range", min: 0.05,  max: 1.2, step: 0.05, default: 0.5,   tip: "Speed of the surge cycle, in hertz.",                                    get: () => pulseRate,     set: v => { pulseRate = v; } },
+    { label: "Eruption Speed", type: "range", min: 0,     max: 2,   step: 0.05, default: 0.15,  tip: "Overall time scale of the eruption. Motion and Audio drive this.",      get: () => eruptionSpeed, set: v => { eruptionSpeed = v; } },
+    { label: "Crater Height",  type: "range", min: -1,    max: 1,   step: 0.01, default: -0.1,  tip: "Vertical position of the crater — 0 is screen centre, negative is lower.", get: () => craterHeight,  set: v => { craterHeight = v; } },
+    { label: "Cone Slope",     type: "range", min: 0.15,  max: 0.7, step: 0.01, default: 0.62,  tip: "Steepness of the volcano's flank.",                                      get: () => coneSlope,     set: v => { coneSlope = v; } },
+    { label: "Downhill Flow",  type: "range", min: 0,     max: 2,   step: 0.05, default: 0,     tip: "How much landed magma keeps slowly creeping down the slope, forever.",  get: () => downhillFlow,  set: v => { downhillFlow = v; } },
+    { label: "Meander",        type: "range", min: 0,     max: 1.5, step: 0.02, default: 0.18,  tip: "How much the flows braid into channels — and gently sway once landed — instead of running straight down.", get: () => meander, set: v => { meander = v; } },
+    { label: "Cooling",        type: "range", min: 0.15,  max: 2,   step: 0.05, default: 0.55,  tip: "How fast magma dims and shrinks from white-hot to dark, cooled grains.", get: () => cooling,       set: v => { cooling = v; } },
+    { label: "Ash",            type: "range", min: 0,     max: 0.6, step: 0.01, default: 0.48,  tip: "Fraction of particles that rise as a buoyant ash plume instead of falling as magma.", get: () => ash, set: v => { ash = v; } },
+    { label: "Wind",           type: "range", min: -1,    max: 1,   step: 0.02, default: 0.66,  tip: "Sideways drift on the ash plume.",                                       get: () => wind,          set: v => { wind = v; } },
     { label: "", type: "separator" },
     { label: "Mountain",   type: "toggle", tip: "Show the cone as a solid occluder.", get: () => mountainOn, set: v => { mountainOn = v; if (mountainMesh) mountainMesh.visible = v; } },
-    { label: "Cone Glow",  type: "range", min: 0, max: 2, step: 0.05, default: 0.6, tip: "Warm rim light on the volcano's silhouette.", get: () => coneGlow, set: v => { coneGlow = v; } },
-    { label: "Rotate",     type: "range", min: -0.3, max: 0.3, step: 0.01, default: 0.03, tip: "Slow orbit of the whole scene around the vent.", get: () => rotate, set: v => { rotate = v; } },
-    { label: "Lava Colors", type: "range", min: 0, max: 1, step: 0.05, default: 0, tip: "Crossfade from the app palette to a built-in white-hot → ember incandescent ramp.", get: () => lavaColors, set: v => { lavaColors = v; } },
+    { label: "Cone Glow",  type: "range", min: 0, max: 2, step: 0.05, default: 0.3,  tip: "Warm rim light on the volcano's silhouette.", get: () => coneGlow, set: v => { coneGlow = v; } },
+    { label: "Rotate",     type: "range", min: -0.3, max: 0.3, step: 0.01, default: 0.02, tip: "Slow orbit of the whole scene around the vent.", get: () => rotate, set: v => { rotate = v; } },
+    { label: "Lava Colors", type: "range", min: 0, max: 1, step: 0.05, default: 1, tip: "Crossfade from the app palette to a built-in white-hot → ember incandescent ramp.", get: () => lavaColors, set: v => { lavaColors = v; } },
     { label: "", type: "separator" },
     { label: "Colors v2",     type: "range", min: 0,    max: 3,    step: 0.1,  default: 3,   interactive: 'internal' as const, get: () => colorC2.colorsV2, set: v => { colorC2.colorsV2 = v; } },
-    { label: "Heat Strength", type: "range", min: 0,    max: 1.5,  step: 0.05, default: 0.5, interactive: 'heat' as const, tip: "How strongly the heat map shoves the flows aside. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
-    { label: "Heat Gain",     type: "range", min: 4,    max: 20,   step: 0.5,  default: 11,  interactive: 'heat' as const, tip: "Amplify the heat signal — higher = reacts to subtler motion.",    get: () => heatGain,     set: v => { heatGain = v; } },
-    { label: "Blur Radius",   type: "range", min: 0,    max: 10,   step: 0.1,  default: 4,   interactive: 'heat' as const, tip: "Blur applied to the heat map before it drives the flows.",        get: () => blurRadius,   set: v => { blurRadius = v; } },
+    { label: "Heat Strength", type: "range", min: 0,    max: 1.5,  step: 0.05, default: 0.8, interactive: 'heat' as const, tip: "How strongly the heat map shoves the flows aside. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Heat Gain",     type: "range", min: 4,    max: 20,   step: 0.5,  default: 14,  interactive: 'heat' as const, tip: "Amplify the heat signal — higher = reacts to subtler motion.",    get: () => heatGain,     set: v => { heatGain = v; } },
+    { label: "Blur Radius",   type: "range", min: 0,    max: 10,   step: 0.1,  default: 3,   interactive: 'heat' as const, tip: "Blur applied to the heat map before it drives the flows.",        get: () => blurRadius,   set: v => { blurRadius = v; } },
   ],
 
   init(ctx: PatternContext) {
@@ -384,7 +449,7 @@ export const volcano: Pattern = {
     vpWidth  = ctx.size.width;
     vpHeight = ctx.size.height;
     ctx.camera.position.set(0, 0.35, CAM_Z);
-    ctx.camera.lookAt(0, -0.1, 0);
+    ctx.camera.lookAt(0, LOOKAT_Y, 0);
 
     heatField = createHeatField();
     heatWasOn = false;
@@ -412,6 +477,7 @@ export const volcano: Pattern = {
         uCooling:      { value: cooling },
         uAsh:          { value: ash },
         uWind:         { value: wind },
+        uVentY:        { value: currentVentY() },
         uOpacity:      { value: 1.0 },
         uColorsV2:     { value: colorC2.colorsV2 },
         uColors:       { value: Array.from({ length: 6 }, () => new THREE.Vector3()) },
@@ -439,7 +505,10 @@ export const volcano: Pattern = {
 
     mountainGeo = new THREE.ConeGeometry(1, 1, 72, 1, false);
     mountainMat = new THREE.ShaderMaterial({
-      uniforms: { uGlow: { value: coneGlow } },
+      uniforms: {
+        uGlow:       { value: coneGlow },
+        uResolution: { value: new THREE.Vector2(vpWidth, vpHeight) },
+      },
       vertexShader: mountainVertexShader,
       fragmentShader: mountainFragmentShader,
     });
@@ -471,6 +540,7 @@ export const volcano: Pattern = {
     u.uCooling.value    = cooling;
     u.uAsh.value        = ash;
     u.uWind.value       = wind;
+    u.uVentY.value      = currentVentY();
     u.uColorsV2.value   = colorC2.colorsV2;
     u.uLavaColors.value = lavaColors;
     u.uMirrorX.value    = mirrorX ? 1.0 : 0.0;
@@ -506,6 +576,7 @@ export const volcano: Pattern = {
   resize(w: number, h: number) {
     vpWidth = w; vpHeight = h;
     if (material) (material.uniforms.uResolution.value as THREE.Vector2).set(w, h);
+    if (mountainMat) (mountainMat.uniforms.uResolution.value as THREE.Vector2).set(w, h);
   },
 
   dispose() {

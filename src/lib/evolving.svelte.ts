@@ -118,9 +118,19 @@ function bandsToConfig(bands: Bands): EvoConfig {
   return cfg;
 }
 
+// Volcano — moderate ±20%-of-value drift, same band at every Pattern-Start slot.
+// Wider bands (e.g. on Eruption Speed) would make the eruption's pace visibly
+// lurch; this keeps the drift readable as "breathing" rather than a mode switch.
+const VOLCANO_BANDS: Bands = {
+  'Lava Colors':    [0.80, 1.00],
+  'Eruption Speed': [0.12, 0.18],
+  'Trail':          [0.80, 1.20],
+};
+
 /** Factory evolving config for a light* pattern at a Pattern-Start slot (0=Default,
  *  1/2/3 = Chilled/Balanced/Active), or null if the pattern has no factory bands. */
 export function evoFactory(patternId: string, slotIdx: number): EvoConfig | null {
+  if (patternId === 'volcano') return bandsToConfig(VOLCANO_BANDS);
   if (!LIGHT_PAINT_IDS.has(patternId)) return null;
   const bands = LP_BANDS[slotIdx];
   return bands ? bandsToConfig(bands) : null;
