@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.260818-1707 — Volcano: slow lava flow, organic cone
+
+**Volcano** — landed magma's downhill creep no longer inherits speed from the launch, so raising **Jet Power** no longer makes the slow lava flow vanish into the general chaos: **Downhill Flow** is now the sole, steady driver of how fast it creeps, on by default. A freshly landed flow also renders thicker and with a longer streak than the airborne jet — reading as a continuous stream — before shrinking to a small cooled grain once it actually stops. The cone's silhouette and shading are properly organic now: an eroded ridge pattern with rougher terrain toward the base, and the surface is mottled with blotchy rock-like variation instead of a smooth gradient, so the rim glow no longer traces a perfectly uniform ring.
+
 ## v0.7.260818-1630 — Volcano tuning
 
 **Volcano** — the default and all three presets now launch with a stronger **Jet Power** (3) and a lower **Crater Height** (-0.39). Preset 3 drops **Lava Colors** back to the app palette and dims **Cone Glow** to 0.25.

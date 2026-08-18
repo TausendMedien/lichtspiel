@@ -38,7 +38,7 @@ let pulse         = 0.9;
 let pulseRate     = 0.5;   // Hz, capped well under flicker territory
 let eruptionSpeed = 0.15;  // capped at 2.0 — photosensitivity: speed, not contrast
 let coneSlope     = 0.62;
-let downhillFlow  = 0.0;
+let downhillFlow  = 0.12;
 let meander       = 0.18;
 let cooling       = 0.55;
 let ash           = 0.48;
@@ -106,7 +106,6 @@ const vertexShader = /* glsl */ `
   const float RV     = ${RV.toFixed(2)};
   const float R_MAX  = ${R_MAX.toFixed(2)};
   const float ASH_RISE = 0.55;
-  const float SLIDE_FRICTION = 0.35;
   const float TAU = 6.28318530718;
 
   ${HEAT_DISPLACE_GLSL}
@@ -147,15 +146,15 @@ const vertexShader = /* glsl */ `
       yFlight     = uVentY + vy * t - 0.5 * g * t * t;
       thetaFlight = theta0;
     } else {
-      float tau    = t - tHit;
-      float vSlide = vr * SLIDE_FRICTION;
-      float decay  = 0.6;
-      // Impact speed bleeds off asymptotically; Downhill Flow adds a slow, unbounded
-      // creep on top so landed material keeps meandering rather than freezing solid.
-      float creep  = uFlow * tau;
-      float wobble = sin(uTime * 0.12 + rnd.y * 53.0) * uMeander * 0.12;
-      rFlight     = rHit + vSlide * (1.0 - exp(-tau * decay)) / decay + creep;
-      rFlight     = min(rFlight, R_MAX * 1.2);
+      float tau = t - tHit;
+      // A brief post-impact skid that decays hard within about a fifth of a second —
+      // kept small and fast-damped so Jet Power (which sets vr) barely reaches the
+      // slide at all. The sustained downhill creep is uFlow alone, at its own steady
+      // pace, so raising Jet Power no longer erases the slow lava flow — it only
+      // changes how far the fountain throws material before it lands and joins it.
+      float splash = vr * 0.06 * exp(-tau * 5.0);
+      float wobble  = sin(uTime * 0.12 + rnd.y * 53.0) * uMeander * 0.12;
+      rFlight     = min(rHit + splash + uFlow * tau, R_MAX * 1.2);
       yFlight     = uVentY - s * (rFlight - RV);
       thetaFlight = theta0 + sin(rnd.y * 37.0 + rFlight * 3.0) * uMeander * (rFlight - rHit) + wobble;
     }
@@ -171,11 +170,15 @@ const vertexShader = /* glsl */ `
     float theta = mix(thetaFlight, thetaAsh, isAsh);
     T = mix(Tflight, Tash, isAsh);
 
-    // Landed, cooled magma shrinks into small dark grains rather than staying a
-    // bright active-flow streak — the visual cue that it has come to rest.
-    float landed     = step(tHit, t);
-    float coolShrink = mix(1.0, 0.55, clamp(1.0 - Tflight, 0.0, 1.0) * landed);
-    sizeScale = mix(coolShrink, 1.0 + t * 0.6, isAsh);
+    // Freshly landed magma stays prominent — a touch thicker than the airborne
+    // streak, reading as an active flow — for a couple of seconds, then shrinks
+    // into a small dark grain once it has actually come to rest. Driven by time
+    // since landing, not temperature, so a flow stays visible while it is still
+    // visibly creeping even after it has mostly cooled.
+    float landed  = step(tHit, t);
+    float settle  = smoothstep(1.5, 5.0, t - tHit) * landed;
+    float flowSize = mix(1.15, 0.5, settle);
+    sizeScale = mix(flowSize, 1.0 + t * 0.6, isAsh);
 
     return vec3(r * cos(theta), y, r * sin(theta));
   }
@@ -189,11 +192,14 @@ const vertexShader = /* glsl */ `
     solveLaunch(aRand, tL, vy, vr, r0, tHit, rHit);
     float theta0 = aRand.y * TAU;
 
-    // Cooled/landed material gets a shorter streak — specks, not flowing lines.
-    float landedNow    = step(tHit, age);
-    float coolNow      = exp(-max(age - 0.3, 0.0) * uCooling);
-    float trailShrink  = mix(1.0, 0.35, clamp(1.0 - coolNow, 0.0, 1.0) * landedNow);
-    float trailBack    = mix(uTrail * 0.08 * trailShrink, 0.0, isAsh);
+    // A freshly landed flow gets a LONGER streak than the airborne jet — that's
+    // what reads as a continuous lava stream rather than a spray of dashes. It
+    // only shrinks to a short speck once it has actually stopped creeping,
+    // driven by time since landing rather than temperature.
+    float landedNow   = step(tHit, age);
+    float settleNow   = smoothstep(1.5, 5.0, age - tHit) * landedNow;
+    float trailShrink = mix(1.3, 0.3, settleNow);
+    float trailBack   = mix(uTrail * 0.08 * trailShrink, 0.0, isAsh);
     float ageTail      = max(age - trailBack, 0.0);
 
     float Thead, sizeHead, Ttail, sizeTail;
@@ -306,19 +312,35 @@ const fragmentShader = /* glsl */ `
 const mountainVertexShader = /* glsl */ `
   varying vec3 vNormalV;
   varying vec3 vViewDir;
+  varying vec3 vLocalPos;
+
+  float bumpFn(float angle, float taper) {
+    return (sin(angle * 3.0 + 1.3) * 0.09
+          + sin(angle * 7.0 - 0.6) * 0.05
+          + sin(angle * 13.0 + 2.7) * 0.03
+          + sin(angle * 23.0 + 4.1) * 0.016) * taper;
+  }
+
   void main() {
-    // Break up the perfect circular cross-section with a few overlaid angular
-    // waves so the silhouette reads as an eroded, organic ridge line rather than
-    // a geometric cone. Tapered out near the apex so the tip stays a clean point.
+    // Break up the perfect circular cross-section with several overlaid angular
+    // waves so the silhouette AND the shading read as an eroded, organic ridge
+    // line rather than a geometric cone — rougher toward the base (scree and
+    // gullies), smoothing out near the apex so the tip stays a clean point.
     vec3 pos = position;
     float angle = atan(pos.z, pos.x);
-    float bump = sin(angle * 3.0 + 1.3) * 0.05
-               + sin(angle * 7.0 - 0.6) * 0.028
-               + sin(angle * 11.0 + 2.7) * 0.016;
-    float taper = smoothstep(-0.5, 0.25, pos.y);
-    pos.xz *= 1.0 + bump * taper;
+    float taper = smoothstep(-0.5, 0.3, pos.y);
+    float radius = length(pos.xz);
+    pos.xz *= 1.0 + bumpFn(angle, taper);
+    vLocalPos = pos;
 
-    vNormalV = normalize(normalMatrix * normal);
+    // Tilt the normal by the bump field's angular slope, so the ridges actually
+    // shade like ridges instead of a smooth cone with a wobbly outline.
+    float deps = 0.015;
+    float dB = (bumpFn(angle + deps, taper) - bumpFn(angle - deps, taper)) / (2.0 * deps);
+    vec3 tangent = vec3(-sin(angle), 0.0, cos(angle));
+    vec3 bumpedNormal = normalize(normal - tangent * dB * radius * 0.5);
+
+    vNormalV = normalize(normalMatrix * bumpedNormal);
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     vViewDir = normalize(-mv.xyz);
     gl_Position = projectionMatrix * mv;
@@ -330,10 +352,26 @@ const mountainFragmentShader = /* glsl */ `
   uniform vec2  uResolution;
   varying vec3 vNormalV;
   varying vec3 vViewDir;
+  varying vec3 vLocalPos;
+
+  float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+  float noise2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash2(i), b = hash2(i + vec2(1.0, 0.0)), c = hash2(i + vec2(0.0, 1.0)), d = hash2(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
   void main() {
-    float fres = pow(1.0 - max(dot(normalize(vNormalV), normalize(vViewDir)), 0.0), 2.5);
-    vec3 base = vec3(0.025, 0.018, 0.02);
-    vec3 rim  = vec3(1.0, 0.4, 0.1) * uGlow;
+    // Blotchy rock-texture mottling — without it the rim glow traces a perfectly
+    // uniform ring regardless of the underlying bumpy mesh.
+    float angle = atan(vLocalPos.z, vLocalPos.x);
+    vec2 p = vec2(angle * 3.0, vLocalPos.y * 2.5);
+    float mottle = noise2(p * 3.0) * 0.6 + noise2(p * 9.0) * 0.3 + noise2(p * 21.0) * 0.15;
+
+    float fres = pow(1.0 - max(dot(normalize(vNormalV), normalize(vViewDir)), 0.0), 2.0 + mottle * 1.4);
+    vec3 base = vec3(0.025, 0.018, 0.02) * (0.55 + 0.7 * mottle);
+    vec3 rim  = vec3(1.0, 0.4, 0.1) * uGlow * (0.45 + 0.75 * mottle);
     vec3 col  = base + rim * fres;
 
     // Dissolve into darkness toward the bottom of the screen instead of showing a
@@ -427,7 +465,7 @@ export const volcano: Pattern = {
     { label: "Eruption Speed", type: "range", min: 0,     max: 2,   step: 0.05, default: 0.15,  tip: "Overall time scale of the eruption. Motion and Audio drive this.",      get: () => eruptionSpeed, set: v => { eruptionSpeed = v; } },
     { label: "Crater Height",  type: "range", min: -1,    max: 1,   step: 0.01, default: -0.39, tip: "Vertical position of the crater — 0 is screen centre, negative is lower.", get: () => craterHeight,  set: v => { craterHeight = v; } },
     { label: "Cone Slope",     type: "range", min: 0.15,  max: 0.7, step: 0.01, default: 0.62,  tip: "Steepness of the volcano's flank.",                                      get: () => coneSlope,     set: v => { coneSlope = v; } },
-    { label: "Downhill Flow",  type: "range", min: 0,     max: 2,   step: 0.05, default: 0,     tip: "How much landed magma keeps slowly creeping down the slope, forever.",  get: () => downhillFlow,  set: v => { downhillFlow = v; } },
+    { label: "Downhill Flow",  type: "range", min: 0,     max: 1,   step: 0.02, default: 0.12,  tip: "Steady speed of the lava creeping down the cone once landed — independent of Jet Power, so it stays slow even in a tall fountain.", get: () => downhillFlow, set: v => { downhillFlow = v; } },
     { label: "Meander",        type: "range", min: 0,     max: 1.5, step: 0.02, default: 0.18,  tip: "How much the flows braid into channels — and gently sway once landed — instead of running straight down.", get: () => meander, set: v => { meander = v; } },
     { label: "Cooling",        type: "range", min: 0.15,  max: 2,   step: 0.05, default: 0.55,  tip: "How fast magma dims and shrinks from white-hot to dark, cooled grains.", get: () => cooling,       set: v => { cooling = v; } },
     { label: "Ash",            type: "range", min: 0,     max: 0.6, step: 0.01, default: 0.48,  tip: "Fraction of particles that rise as a buoyant ash plume instead of falling as magma.", get: () => ash, set: v => { ash = v; } },
