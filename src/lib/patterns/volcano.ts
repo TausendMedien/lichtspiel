@@ -31,7 +31,7 @@ const HALF_H = CAM_Z * Math.tan((60 * Math.PI) / 360);   // renderer fov is 60°
 let particleCount = 24000;
 let trail         = 1.0;
 let lineWidth     = 3.5;   // pixels
-let jetPower      = 2.1;
+let jetPower      = 3.0;
 let spread        = 0.54;  // radians, max angle off vertical
 let gravity       = 1.8;
 let pulse         = 0.9;
@@ -43,7 +43,7 @@ let meander       = 0.18;
 let cooling       = 0.55;
 let ash           = 0.48;
 let wind          = 0.66;
-let craterHeight  = -0.1;  // fraction of half-frame-height above/below screen centre
+let craterHeight  = -0.39; // fraction of half-frame-height above/below screen centre
 let mountainOn    = true;
 let coneGlow      = 0.3;
 let rotate        = 0.02;
@@ -419,13 +419,13 @@ export const volcano: Pattern = {
     { label: "Particle Count", type: "range", min: 3000, max: MAX_PARTICLES, step: 500, default: 24000, tip: "Number of magma and ash particles. More = denser eruption, heavier on GPU.", get: () => particleCount, set: v => { particleCount = Math.round(v); geometry?.setDrawRange(0, particleCount * 6); } },
     { label: "Trail",          type: "range", min: 0,     max: 10,  step: 0.5,  default: 1,     tip: "Streak length behind each particle. 0 = round embers instead of streaks.", get: () => trail,         set: v => { trail = v; } },
     { label: "Streak Width",   type: "range", min: 1,     max: 8,   step: 0.5,  default: 3.5,   tip: "Thickness of each streak, in pixels.",                                   get: () => lineWidth,     set: v => { lineWidth = v; } },
-    { label: "Jet Power",      type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 2.1,   tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
+    { label: "Jet Power",      type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 3,     tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
     { label: "Spread",         type: "range", min: 0,     max: 1.2, step: 0.02, default: 0.54,  tip: "Cone angle of the jet — 0 = a narrow vertical fountain, higher = a wide fan.", get: () => spread,       set: v => { spread = v; } },
     { label: "Gravity",        type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 1.8,   tip: "How hard trajectories arc back down.",                                   get: () => gravity,       set: v => { gravity = v; } },
     { label: "Pulse",          type: "range", min: 0,     max: 1,   step: 0.02, default: 0.9,   tip: "How strongly the eruption surges and eases, like a Strombolian burst.",  get: () => pulse,         set: v => { pulse = v; } },
     { label: "Pulse Rate",     type: "range", min: 0.05,  max: 1.2, step: 0.05, default: 0.5,   tip: "Speed of the surge cycle, in hertz.",                                    get: () => pulseRate,     set: v => { pulseRate = v; } },
     { label: "Eruption Speed", type: "range", min: 0,     max: 2,   step: 0.05, default: 0.15,  tip: "Overall time scale of the eruption. Motion and Audio drive this.",      get: () => eruptionSpeed, set: v => { eruptionSpeed = v; } },
-    { label: "Crater Height",  type: "range", min: -1,    max: 1,   step: 0.01, default: -0.1,  tip: "Vertical position of the crater — 0 is screen centre, negative is lower.", get: () => craterHeight,  set: v => { craterHeight = v; } },
+    { label: "Crater Height",  type: "range", min: -1,    max: 1,   step: 0.01, default: -0.39, tip: "Vertical position of the crater — 0 is screen centre, negative is lower.", get: () => craterHeight,  set: v => { craterHeight = v; } },
     { label: "Cone Slope",     type: "range", min: 0.15,  max: 0.7, step: 0.01, default: 0.62,  tip: "Steepness of the volcano's flank.",                                      get: () => coneSlope,     set: v => { coneSlope = v; } },
     { label: "Downhill Flow",  type: "range", min: 0,     max: 2,   step: 0.05, default: 0,     tip: "How much landed magma keeps slowly creeping down the slope, forever.",  get: () => downhillFlow,  set: v => { downhillFlow = v; } },
     { label: "Meander",        type: "range", min: 0,     max: 1.5, step: 0.02, default: 0.18,  tip: "How much the flows braid into channels — and gently sway once landed — instead of running straight down.", get: () => meander, set: v => { meander = v; } },

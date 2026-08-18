@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.260818-1630 — Volcano tuning
+
+**Volcano** — the default and all three presets now launch with a stronger **Jet Power** (3) and a lower **Crater Height** (-0.39). Preset 3 drops **Lava Colors** back to the app palette and dims **Cone Glow** to 0.25.
+
 ## v0.7.260817-0212 — Volcano refinements
 
 **Volcano** — the saved "good" settings become the new default (and preset 2); presets 1 and 3 are now a calmer, slower eruption and a bigger, faster one. **Crater Height** is a new slider for the vent's vertical position, defaulting 10% below screen centre. Motion and Audio now drive **Eruption Speed** instead of Jet Power/Pulse. The cone is no longer a perfect circle — its silhouette gets an organic, eroded wobble — and it dissolves into darkness toward the bottom of the screen instead of showing a hard base edge. The fountain is dimmer overall (soft-tonemapped so the vent no longer blows out to a flat white blob). Landed magma cools into small dark grains instead of staying a bright streak, and keeps a gentle perpetual sway (**Downhill Flow** now drives a slow, unbounded creep rather than stopping dead at the base). **Evolving Ranges** ships a factory band on Lava Colors, Eruption Speed and Trail, drifting a moderate ±20%. Fixed a sign error in the flight→landing transition that occasionally sent a streak's trailing end miles off in the wrong direction.
