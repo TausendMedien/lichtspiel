@@ -23,10 +23,14 @@ import { volcano } from "./volcano";
 import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
+import { makeLustspielPattern } from "./lustspielPattern";
 import { wrapWithPersist } from "../persist";
 import { wrapWithBroadcast } from "../remote/broadcastWrap";
 import { addMotionCamera } from "../motionCameraWrapper";
 import { addAudioReactivity } from "../audioReactivityWrapper";
+
+// Lustspiel — one entry per phase; elements are toggles inside the pattern
+const lspA = makeLustspielPattern('lsp-a', 'Lustspiel A', 'A');
 
 // Static image patterns (one per artwork)
 const _base = import.meta.env.BASE_URL;
@@ -98,6 +102,7 @@ const rawPatterns: Pattern[] = [
   imgRootWave,
   imgPurpleOrnate,
   imgFlowingDots,
+  lspA,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,
