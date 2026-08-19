@@ -2994,97 +2994,6 @@
         </div>
       </div>
 
-      <!-- Camera section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Camera</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <!-- Capture resolution (camera-feed patterns: Light Painting / ASCII) -->
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <span class="shrink-0 text-xs text-white/70" title="Camera resolution used for Light Painting and ASCII Swirls. Motion/Pose always run at low resolution for performance.">Capture resolution</span>
-          <select
-            value={cameraState.resWidth}
-            onchange={(e) => setCameraResolution(parseInt((e.target as HTMLSelectElement).value))}
-            class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-          >
-            {#each CAMERA_RES_OPTIONS as o}
-              <option value={o.w}>{o.label}</option>
-            {/each}
-          </select>
-        </div>
-        <div class="mb-2 text-[10px] leading-snug text-white/30">Applies to Light Painting &amp; ASCII. Motion / Pose stay low-res for performance.</div>
-
-        <!-- Show virtual multi-lens cameras toggle -->
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-white/70" title="Show combined dual/triple-lens virtual cameras. Disabled by default — they can auto-switch lenses and cause patterns to use different cameras.">Show virtual multi-lens cameras</span>
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div
-            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.showVirtual ? 'bg-white/70' : 'bg-white/20'}"
-            onclick={() => setShowVirtualCameras(!cameraState.showVirtual)}
-            role="switch"
-            aria-checked={cameraState.showVirtual}
-            tabindex="0"
-          >
-            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.showVirtual ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
-          </div>
-        </div>
-        <div class="mb-3 text-[10px] leading-snug text-white/30">Off by default. Real lenses (wide / ultra-wide / telephoto) are stable. Virtual “Dual/Triple” cameras auto-switch lens by zoom &amp; lighting — handy creatively, but they can make different patterns use a different lens.</div>
-
-        <!-- Test cameras -->
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-white/70">Test cameras</span>
-          <button
-            onclick={() => runCameraTest()}
-            disabled={cameraTesting}
-            class="rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/60 hover:border-white/40 hover:text-white/90 transition-colors cursor-pointer disabled:opacity-40"
-          >{cameraTesting ? 'Testing…' : 'Run test'}</button>
-        </div>
-        {#if cameraProbes.length > 0}
-          <div class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
-            <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
-              {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
-            </div>
-            {#each cameraProbes as p}
-              <div class="flex justify-between gap-2 text-white/60">
-                <span class="shrink-0">{p.name}</span>
-                <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- MIDI section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">MIDI</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-white/70">Enable MIDI</span>
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div
-            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {midiEnabled ? 'bg-white/60' : 'bg-white/20'}"
-            onclick={() => {
-              midiEnabled = !midiEnabled;
-              localStorage.setItem(MIDI_ENABLED_KEY, String(midiEnabled));
-              if (midiEnabled) _midiStart?.(); else _midiStop?.();
-            }}
-            role="switch"
-            aria-checked={midiEnabled}
-            tabindex="0"
-          >
-            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {midiEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
-          </div>
-        </div>
-        {#if midiEnabled}
-          <div class="mt-2 text-[11px] text-white/40">{midiConnected ? '♪ Device connected' : 'No device detected'}</div>
-        {/if}
-      </div>
-
       <!-- Text Overlay section -->
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
@@ -3189,6 +3098,97 @@
           {/if}
         </div>
       </div>
+      <!-- Camera section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Camera</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <!-- Capture resolution (camera-feed patterns: Light Painting / ASCII) -->
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <span class="shrink-0 text-xs text-white/70" title="Camera resolution used for Light Painting and ASCII Swirls. Motion/Pose always run at low resolution for performance.">Capture resolution</span>
+          <select
+            value={cameraState.resWidth}
+            onchange={(e) => setCameraResolution(parseInt((e.target as HTMLSelectElement).value))}
+            class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+          >
+            {#each CAMERA_RES_OPTIONS as o}
+              <option value={o.w}>{o.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="mb-2 text-[10px] leading-snug text-white/30">Applies to Light Painting &amp; ASCII. Motion / Pose stay low-res for performance.</div>
+
+        <!-- Show virtual multi-lens cameras toggle -->
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70" title="Show combined dual/triple-lens virtual cameras. Disabled by default — they can auto-switch lenses and cause patterns to use different cameras.">Show virtual multi-lens cameras</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {cameraState.showVirtual ? 'bg-white/70' : 'bg-white/20'}"
+            onclick={() => setShowVirtualCameras(!cameraState.showVirtual)}
+            role="switch"
+            aria-checked={cameraState.showVirtual}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.showVirtual ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="mb-3 text-[10px] leading-snug text-white/30">Off by default. Real lenses (wide / ultra-wide / telephoto) are stable. Virtual “Dual/Triple” cameras auto-switch lens by zoom &amp; lighting — handy creatively, but they can make different patterns use a different lens.</div>
+
+        <!-- Test cameras -->
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-white/70">Test cameras</span>
+          <button
+            onclick={() => runCameraTest()}
+            disabled={cameraTesting}
+            class="rounded border border-white/15 px-2 py-0.5 text-[11px] text-white/60 hover:border-white/40 hover:text-white/90 transition-colors cursor-pointer disabled:opacity-40"
+          >{cameraTesting ? 'Testing…' : 'Run test'}</button>
+        </div>
+        {#if cameraProbes.length > 0}
+          <div class="mt-2 rounded bg-white/[0.05] px-2 py-1.5 text-[11px]">
+            <div class="mb-1 {cameraProbeStatus === 'mismatch' ? 'text-amber-400' : cameraProbeStatus === 'error' ? 'text-white/50' : 'text-emerald-400/80'}">
+              {cameraProbeStatus === 'mismatch' ? '⚠ Patterns resolve to different cameras:' : cameraProbeStatus === 'error' ? 'Camera test results:' : '✓ All patterns use the same camera:'}
+            </div>
+            {#each cameraProbes as p}
+              <div class="flex justify-between gap-2 text-white/60">
+                <span class="shrink-0">{p.name}</span>
+                <span class="min-w-0 truncate text-right text-white/80">{p.error ? '⚠ ' + p.error : `${p.label} · ${p.width}×${p.height}`}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- MIDI section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">MIDI</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-white/70">Enable MIDI</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {midiEnabled ? 'bg-white/60' : 'bg-white/20'}"
+            onclick={() => {
+              midiEnabled = !midiEnabled;
+              localStorage.setItem(MIDI_ENABLED_KEY, String(midiEnabled));
+              if (midiEnabled) _midiStart?.(); else _midiStop?.();
+            }}
+            role="switch"
+            aria-checked={midiEnabled}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {midiEnabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        {#if midiEnabled}
+          <div class="mt-2 text-[11px] text-white/40">{midiConnected ? '♪ Device connected' : 'No device detected'}</div>
+        {/if}
+      </div>
+
 
       <!-- Remote Control section -->
       <div class="mb-5">
