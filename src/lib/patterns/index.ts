@@ -31,6 +31,8 @@ import { addAudioReactivity } from "../audioReactivityWrapper";
 
 // Lustspiel — one entry per phase; elements are toggles inside the pattern
 const lspA = makeLustspielPattern('lsp-a', 'Lustspiel A', 'A');
+const lspB = makeLustspielPattern('lsp-b', 'Lustspiel B', 'B');
+const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
 
 // Static image patterns (one per artwork)
 const _base = import.meta.env.BASE_URL;
@@ -62,6 +64,7 @@ const PUSH_IDS = new Set([
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
+export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -103,6 +106,8 @@ const rawPatterns: Pattern[] = [
   imgPurpleOrnate,
   imgFlowingDots,
   lspA,
+  lspB,
+  lspC,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,

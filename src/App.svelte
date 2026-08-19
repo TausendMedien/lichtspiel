@@ -35,7 +35,7 @@
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
   import { overlayState, saveOverlaySettings } from "./lib/textOverlay.svelte";
   import { ALIGN_OPTIONS, STYLE_OPTIONS } from "./lib/overlayText";
-  import { flickerGuard, saveFlickerGuard } from "./lib/flickerGuard.svelte";
+  import { flickerGuard, saveFlickerGuard, saveFlickerGuardNotice } from "./lib/flickerGuard.svelte";
   import {
     remoteConn, connect as remoteConnect, disconnect as remoteDisconnect, send as remoteSend,
     loadRelayUrl, saveRelayUrl, REMOTE_MODE_KEY,
@@ -90,16 +90,18 @@
   // Pattern-grid category dividers — computed per visible item so the label survives
   // filtering (a category's first pattern may be filtered out while later ones remain).
   const LIGHT_ID_SET = new Set(LIGHT_IDS);
-  type PatternCategory = 'live' | 'static' | 'experimental' | null;
+  type PatternCategory = 'live' | 'static' | 'lustspiel' | 'experimental' | null;
   function categoryOf(id: string): PatternCategory {
     if (LIGHT_ID_SET.has(id)) return 'live';
     if (id.startsWith('img-')) return 'static';
+    if (id.startsWith('lsp-')) return 'lustspiel';
     if (EXPERIMENTAL_IDS.has(id)) return 'experimental';
     return null;
   }
   const CATEGORY_LABELS: Record<Exclude<PatternCategory, null>, string> = {
     live: 'Live Light Painting',
     static: 'Static Images',
+    lustspiel: 'Lustspiel',
     experimental: 'Experimental',
   };
 
@@ -576,6 +578,7 @@
     { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
+    { label: 'Lustspiel',          ids: ['lsp-a','lsp-b','lsp-c'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [
@@ -3587,6 +3590,24 @@
             ? 'Real-time flicker damping for photosensitivity (ITU-R BT.1702 / Harding-based).'
             : '⚠ Disabled — no flicker protection active.'}
         </div>
+
+        <!-- Badge visibility only — the damping itself is unaffected. -->
+        <div class="mt-2 flex items-center justify-between">
+          <span class="text-xs text-white/70">Show guard notice</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="relative h-[14px] w-[22px] flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {flickerGuard.showNotice ? 'bg-white/60' : 'bg-white/20'}"
+            onclick={() => { flickerGuard.showNotice = !flickerGuard.showNotice; saveFlickerGuardNotice(); }}
+            role="switch"
+            aria-checked={flickerGuard.showNotice}
+            tabindex="0"
+          >
+            <div class="absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow transition-transform duration-200 {flickerGuard.showNotice ? 'translate-x-[10px]' : 'translate-x-[2px]'}"></div>
+          </div>
+        </div>
+        <div class="mt-1 text-[10px] leading-snug text-white/30">
+          Hides the “guard active” label during a performance. The flicker damping keeps running.
+        </div>
       </div>
 
     </div>
@@ -5236,7 +5257,7 @@
      damping the image (which dims thin-feature patterns toward black), independent
      of HUD visibility, so the dimming is attributable instead of looking like a
      rendering bug. -->
-{#if guardDampingActive}
+{#if guardDampingActive && flickerGuard.showNotice}
   <div class="pointer-events-none fixed bottom-3 right-3 z-[90] rounded-full border border-white/20 bg-black/60 px-2.5 py-1 text-[10px] tracking-wide text-white/60 backdrop-blur-sm"
     title="The epilepsy guard detected flashing and is damping the image.">
     ⛨ Epilepsy guard active
