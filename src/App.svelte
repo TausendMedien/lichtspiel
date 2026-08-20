@@ -1474,7 +1474,7 @@
         anims[ctrl.label] = { from: ctrl.get(), to, startMs: now };
         pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
         broadcastCtrlValue(ctrl.label, to); // animates via setLive locally — broadcast the final target directly
-      } else if (ctrl.type === 'select' && !ctrl.disabled?.()) {
+      } else if ((ctrl.type === 'select' || ctrl.type === 'buttons') && !ctrl.disabled?.()) {
         const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options;
         const idx = Math.floor(Math.random() * opts.length);
         ctrl.set(idx);
@@ -2318,6 +2318,9 @@
           } else if (c.type === 'text' || c.type === 'color') {
             const v = c.get();
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
+          } else if (c.type === 'buttons' || c.type === 'stepper') {
+            const v = c.get();
+            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
           }
         }
       }
@@ -4331,6 +4334,47 @@
                     }}
                     class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
                   />
+                {:else if ctrl.type === "buttons"}
+                  {@const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options}
+                  {@const selIdx = Number(ctrlVals[ctrl.label] ?? ctrl.get())}
+                  <div class="flex gap-1">
+                    {#each opts as opt, i}
+                      <button
+                        type="button"
+                        onclick={() => { ctrl.set(i); ctrlVals[ctrl.label] = i; saveSettings(patterns); }}
+                        class="flex-1 rounded px-2 py-1 text-xs transition-colors {selIdx === i ? 'bg-white/25 text-white' : 'bg-white/10 text-white/60 hover:bg-white/15 hover:text-white/80'}"
+                      >{opt}</button>
+                    {/each}
+                  </div>
+                {:else if ctrl.type === "stepper"}
+                  {@const val = Number(ctrlVals[ctrl.label] ?? ctrl.get())}
+                  {@const lo = ctrl.min ?? -Infinity}
+                  {@const hi = ctrl.max ?? Infinity}
+                  {@const st = ctrl.step ?? 1}
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onclick={() => { const v = Math.max(lo, val - st); ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns); }}
+                      class="w-7 shrink-0 rounded bg-white/10 py-1 text-xs text-white hover:bg-white/20 active:bg-white/30 transition-colors"
+                    >−</button>
+                    <input
+                      type="number"
+                      min={ctrl.min} max={ctrl.max} step={st}
+                      value={val}
+                      oninput={(e) => {
+                        const raw = parseInt((e.target as HTMLInputElement).value, 10);
+                        if (!Number.isFinite(raw)) return;
+                        const v = Math.min(hi, Math.max(lo, raw));
+                        ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns);
+                      }}
+                      class="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-center font-mono text-xs text-white outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <button
+                      type="button"
+                      onclick={() => { const v = Math.min(hi, val + st); ctrl.set(v); ctrlVals[ctrl.label] = v; saveSettings(patterns); }}
+                      class="w-7 shrink-0 rounded bg-white/10 py-1 text-xs text-white hover:bg-white/20 active:bg-white/30 transition-colors"
+                    >+</button>
+                  </div>
                 {:else if ctrl.type === "button"}
                   <button
                     title={(ctrl as any).tip ?? undefined}

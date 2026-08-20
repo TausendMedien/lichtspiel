@@ -10,6 +10,12 @@ export interface PatternContext {
 export type PatternControl =
   | { label: string; type: "range"; min: number; max: number; step: number; default?: number; readonly?: boolean; disabled?: () => boolean; interactive?: 'pose' | 'camera' | 'heat' | 'internal'; audioWeight?: number; exp?: true; tip?: string; get(): number; set(v: number): void; /** Set without persisting to localStorage or pushing undo — for transient drift (Evolving Range). Provided by wrapWithPersist. */ setLive?(v: number): void; /** Final write of an animated transition: persists to localStorage without pushing undo (the caller pushes one undo for the start value). Provided by wrapWithPersist. */ commit?(v: number): void }
   | { label: string; type: "select"; options: string[] | (() => string[]); disabled?: () => boolean; interactive?: 'camera'; tip?: string; get(): number; set(v: number): void }
+  /** Segmented button row — same semantics as "select" (index in/out), rendered as
+   *  buttons instead of a dropdown for choices meant to be seen and hit at a glance. */
+  | { label: string; type: "buttons"; options: string[] | (() => string[]); disabled?: () => boolean; tip?: string; get(): number; set(v: number): void }
+  /** Numeric text box with −/+ step buttons — for values with a huge range where a
+   *  slider knob can't land on a specific number twice (e.g. a 1..9999 seed). */
+  | { label: string; type: "stepper"; min?: number; max?: number; step?: number; tip?: string; get(): number; set(v: number): void }
   /** `interactive: 'camera'` additionally marks a toggle as *starting* the camera —
    *  App.svelte force-switches those off when the Interactive section is off. Other
    *  values ('heat', 'pose') only place the toggle in the Interactive section. */

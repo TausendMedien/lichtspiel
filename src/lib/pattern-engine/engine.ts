@@ -1,12 +1,6 @@
 /**
  * Lustspiel pattern engine — ported from reference/lustspiel-pattern-generator_7.html.
  *
- * Two deliberate changes against the prototype:
- *  - The fixed H = 1080 became a logical height derived from the output aspect
- *    ratio. DESIGN_W stays 1920 so the stroke-width-to-millimetres-on-the-body
- *    calibration keeps its meaning; nothing is stretched or cropped.
- *  - `organic` and `layout` were added. Both are inert at their defaults.
- *
  * Determinism: hash() decides identity and existence, field()/intensity()/zoneU()
  * decide shape and distribution. Time may only ever enter the latter three —
  * feeding it into hash() makes the image boil frame to frame (photosensitivity).
@@ -33,6 +27,53 @@ export function field(x: number, y: number, s: number): number {
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
+// ─── Colour ───────────────────────────────────────────────────────────────────
+// Palette colours are hex strings ("#rrggbb"). Parsed once per string and cached,
+// since a single paint() can call col() thousands of times.
+
+const hexCache = new Map<string, [number, number, number]>();
+function hexToRgb(hex: string): [number, number, number] {
+  let c = hexCache.get(hex);
+  if (c) return c;
+  const n = parseInt(hex.slice(1), 16);
+  c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  hexCache.set(hex, c);
+  return c;
+}
+
+/** Linear blend between two hex colours, returned as a hex string — so the
+ *  result stays parseable by hexToRgb()/col() if it is fed back in as a
+ *  palette entry (as the Film/Default palette blend does). */
+export function mixHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = hexToRgb(a), [br, bg, bb] = hexToRgb(b);
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bch = Math.round(ab + (bb - ab) * t);
+  const toHex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(bch)}`;
+}
+
+/**
+ * Picks a colour along the palette at position r (0..1). `softness` controls
+ * whether that pick is a hard step (0, the original look) or a continuous
+ * gradient across neighbouring palette entries (1, a soft blend).
+ */
+function col(r: number, pal: string[], softness: number): string {
+  const n = pal.length;
+  const pos = clamp(r, 0, 0.999999) * n;
+  const i0 = Math.min(n - 1, Math.floor(pos));
+  const [ar, ag, ab] = hexToRgb(pal[i0]);
+  if (softness <= 0.001) return `rgb(${ar},${ag},${ab})`;
+  const i1 = Math.min(n - 1, i0 + 1);
+  const frac = pos - i0;
+  const [br, bg, bb] = hexToRgb(pal[i1]);
+  const sr = ar + (br - ar) * frac, sg = ag + (bg - ag) * frac, sb = ab + (bb - ab) * frac;
+  const r2 = Math.round(ar + (sr - ar) * softness);
+  const g2 = Math.round(ag + (sg - ag) * softness);
+  const b2 = Math.round(ab + (sb - ab) * softness);
+  return `rgb(${r2},${g2},${b2})`;
+}
+
 /** Working state: the user state plus values derived once per paint(). */
 interface Ctx extends EngineState {
   H: number;      // logical height
@@ -42,13 +83,15 @@ interface Ctx extends EngineState {
 }
 
 /**
- * Intensity: continuous variation, never zero — areas with more and less, no holes.
- * Coverage raises the floor.
+ * Intensity: continuous variation, never zero — areas with more and less, no
+ * holes. Coverage used to raise/lower this floor; it is fixed at its former
+ * maximum (equivalent to Coverage = 1) since separately dimming existing marks
+ * duplicated the app's own Brightness control.
  */
+const INTENSITY_FLOOR = 0.82;
 function intensity(x: number, y: number, o: Ctx): number {
   const v = field(x * 1.15 + 400, y * 1.15 + 400, o.seed + 50 + o.t) * 0.5 + 0.5;
-  const floor = clamp(0.22 + 0.60 * o.occ, 0.22, 0.88);
-  return floor + (1 - floor) * v;
+  return INTENSITY_FLOOR + (1 - INTENSITY_FLOOR) * v;
 }
 
 // ─── Zones ────────────────────────────────────────────────────────────────────
@@ -56,10 +99,17 @@ function intensity(x: number, y: number, o: Ctx): number {
 /** Wide, flowing bands — the basis of the composition. */
 function zoneU(x: number, y: number, o: Ctx): number {
   const s = o.seed + o.t;
-  if (o.layout === "sideBySide") {
-    // Vertical stripes side by side, edge perturbed so it never reads as a ruler line.
-    const u = x / DESIGN_W + field(x * 0.9, y * 1.6, o.seed + 210 + o.t) * 0.06;
-    return clamp(u, 0, 0.9999) * o.zones;
+  // leftRight/upDown promise one band per element, in order — so the band count
+  // here is the element count, not Zones (Zones instead sets blob-cluster density
+  // for comp="blobs", and repeat count for comp="bands" + arrangement="chaotic").
+  const n = o.elems.length;
+  if (o.arrangement === "leftRight") {
+    const u = x / DESIGN_W + field(x * 0.9, y * 1.6, o.seed + 210 + o.t) * 0.05;
+    return clamp(u, 0, 0.9999) * n;
+  }
+  if (o.arrangement === "upDown") {
+    const u = y / o.H + field(y * 0.9, x * 1.6, o.seed + 310 + o.t) * 0.05;
+    return clamp(u, 0, 0.9999) * n;
   }
   const a = Math.sin(x * 0.0019 + Math.sin(y * 0.0030 + s) * 1.8 + s * 0.7);
   const b = Math.sin(y * 0.0034 - x * 0.0010 + s * 1.3);
@@ -84,30 +134,41 @@ function bandZone(x: number, y: number, o: Ctx, slot: number): boolean {
 
 /**
  * Blobs: amorphous cells instead of straight bands, with a dark seam at the
- * border rather than blending into each other.
+ * border rather than blending into each other. Zones sets how many blob
+ * clusters each element gets (more = finer, more scattered composition);
+ * Interlock narrows the seam toward a soft blend as it rises.
  */
 let _blobKey: string | null = null;
 let _blobList: { x: number; y: number; slot: number }[] | null = null;
 
 function blobCenters(o: Ctx) {
-  // The layout and the logical height change where centres land, so both belong
-  // in the cache key — otherwise switching arrangement appears to do nothing.
-  const key = o.seed + "|" + o.elems.join(",") + "|" + o.layout + "|" + Math.round(o.H);
+  // Arrangement, zones and the logical height all change where centres land, so
+  // all belong in the cache key — otherwise a change appears to do nothing.
+  const key = o.seed + "|" + o.elems.join(",") + "|" + o.arrangement + "|" + Math.round(o.H) + "|" + o.zones;
   if (_blobKey === key && _blobList) return _blobList;
-  const n = o.elems.length, list: { x: number; y: number; slot: number }[] = [], perSlot = 2;
+  const n = o.elems.length;
+  const perSlot = Math.max(1, Math.round(o.zones));
+  const list: { x: number; y: number; slot: number }[] = [];
   for (let s = 0; s < n; s++) {
     for (let b = 0; b < perSlot; b++) {
       const rx = hash(s * 17 + b * 31 + 5, 7, o.seed + 200);
-      let x: number;
-      if (o.layout === "sideBySide") {
-        // Slot s owns the horizontal band [s/n, (s+1)/n], widened by 15 % on each
-        // side so the seam meanders instead of sitting on a straight line.
-        const lo = s / n, hi = (s + 1) / n, over = (hi - lo) * 0.15;
+      const ry = hash(s * 23 + b * 13 + 9, 11, o.seed + 201);
+      let x: number, y: number;
+      if (o.arrangement === "leftRight") {
+        // Slot s owns the horizontal band [s/n, (s+1)/n], widened a little on
+        // each side so the seam meanders instead of sitting on a straight line.
+        const lo = s / n, hi = (s + 1) / n, over = (hi - lo) * 0.08;
         x = (lo - over + rx * (hi - lo + 2 * over)) * DESIGN_W;
+        y = ry * o.H;
+      } else if (o.arrangement === "upDown") {
+        const lo = s / n, hi = (s + 1) / n, over = (hi - lo) * 0.08;
+        y = (lo - over + ry * (hi - lo + 2 * over)) * o.H;
+        x = rx * DESIGN_W;
       } else {
         x = rx * DESIGN_W;
+        y = ry * o.H;
       }
-      list.push({ x, y: hash(s * 23 + b * 13 + 9, 11, o.seed + 201) * o.H, slot: s });
+      list.push({ x, y, slot: s });
     }
   }
   _blobKey = key; _blobList = list;
@@ -125,7 +186,10 @@ function blobZone(x: number, y: number, o: Ctx, slot: number): boolean {
   if (bestSlot !== slot) return false;
   const rDist = Math.sqrt(best), rSecond = Math.sqrt(second);
   const margin = (rSecond - rDist) / Math.max(rSecond, 1);
-  return margin > 0.06;                          // dark seam instead of blending
+  // lock=0 → 0.06 (sharp seam, the original look); lock=1 → close to 0 (blobs
+  // interlock almost seamlessly).
+  const threshold = 0.06 * (1 - 0.85 * o.lock);
+  return margin > threshold;
 }
 
 function inZone(x: number, y: number, o: Ctx, slot: number): boolean {
@@ -133,32 +197,72 @@ function inZone(x: number, y: number, o: Ctx, slot: number): boolean {
   return (o.comp === "blobs") ? blobZone(x, y, o, slot) : bandZone(x, y, o, slot);
 }
 
+/**
+ * Which element (by position in state.elems) a point belongs to. Exported for
+ * tuning and tests — paint() itself never needs this, it calls inZone() per
+ * element while drawing. Returns -1 if the point sits in no element's zone
+ * (the dark seam between blobs).
+ */
+export function debugZoneSlot(x: number, y: number, logicalH: number, state: EngineState): number {
+  const o: Ctx = {
+    ...state,
+    H: logicalH,
+    keep: 1,
+    pal: state.palette && state.palette.length ? state.palette : PHASE[state.phase].pal,
+    t: state.time ?? 0,
+  };
+  for (let slot = 0; slot < o.elems.length; slot++) {
+    if (inZone(x, y, o, slot)) return slot;
+  }
+  return -1;
+}
+
 // ─── Phases ───────────────────────────────────────────────────────────────────
 
 export const PHASE: Record<PhaseId, Phase> = {
-  A: { pal: ["#ffffff", "#ffffff", "#d6f7ff", "#4fe0ee", "#2aa6c4"], warp: 0.18, jit: 0.10, dir: +1, glow: 0 },
-  B: { pal: ["#ffffff", "#d6f7ff", "#4fe0ee", "#b14cff", "#8a2be2"], warp: 0.75, jit: 0.35, dir:  0, glow: 0 },
-  C: { pal: ["#f0dcff", "#c24bff", "#8a26c9", "#2a7e8c", "#155a66"], warp: 1.90, jit: 0.85, dir: -1, glow: 1 },
+  A: { pal: ["#ffffff", "#ffffff", "#d6f7ff", "#4fe0ee", "#2aa6c4"], warp: 0.18, jit: 0.10, glow: 0 },
+  B: { pal: ["#ffffff", "#d6f7ff", "#4fe0ee", "#b14cff", "#8a2be2"], warp: 0.75, jit: 0.35, glow: 0 },
+  C: { pal: ["#f0dcff", "#c24bff", "#8a26c9", "#2a7e8c", "#155a66"], warp: 1.90, jit: 0.85, glow: 1 },
 };
 
-const col = (r: number, pal: string[]) => pal[Math.min(pal.length - 1, Math.floor(r * pal.length))];
-
 /**
- * Organic: blends the regular two-harmonic sine bend into an incoherent meander
- * driven by the same field() the "wave" point style already uses. It changes the
- * shape of a strand, never whether it exists — so it is safe to animate.
+ * Organic: blends the regular two-harmonic sine bend into an incoherent, two-
+ * octave meander driven by field() — the same coherent noise the "wave" point
+ * style uses for its flow. Both the shape AND the amplitude grow with the
+ * slider, so high values read as genuinely wild rather than a same-size bend
+ * in a different shape.
  */
 function bendOf(base: number, px: number, py: number, amp: number, o: Ctx): number {
   if (o.organic <= 0) return base;
-  const wander = field(px * 0.6, py * 0.6, o.seed + 130 + o.t) * amp * 1.6;
+  const w1 = field(px * 0.55, py * 0.55, o.seed + 130 + o.t);
+  const w2 = field(px * 1.6 + 900, py * 1.6 + 900, o.seed + 140 + o.t);
+  const wander = (w1 * 0.7 + w2 * 0.55) * amp * 2.4;
   return base * (1 - o.organic) + wander * o.organic;
 }
+
+// ─── Equal-impact calibration ──────────────────────────────────────────────────
+// At identical Density/Stroke Width/Warp, the five drawing styles cover very
+// different amounts of surface for purely geometric reasons (dot area grows with
+// radius², strand coverage is far sparser than a 2D grid, etc.). These constants
+// were fitted so that, at the default Stroke Width, every element lights a dancer
+// with roughly the same strength — measured as average per-pixel brightness
+// across many seeds. They sit between the user's Stroke Width and the raw radius/
+// line-width formulas below, invisible as a separate control.
+const IMPACT = {
+  pointsGrid: 1.26,
+  pointsWave: 1.26,
+  pointsStrands: 2.01,
+  lines: 0.82,
+  mesh: 1.24,
+  rings: 0.91,
+};
 
 // ─── Elements ─────────────────────────────────────────────────────────────────
 
 function elPoints(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
   if (o.pointStyle === "strands") return elPointsStrands(c, P, o, slot);
   const sp = 26 / o.dens, style = o.pointStyle, H = o.H;
+  const impact = style === "wave" ? IMPACT.pointsWave : IMPACT.pointsGrid;
   for (let y = sp * 0.5; y < H + sp; y += sp) {
     for (let x = sp * 0.5; x < DESIGN_W + sp; x += sp) {
       let px: number, py: number;
@@ -175,10 +279,10 @@ function elPoints(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
       if (hash(x * 3.3, y * 4.4, o.seed + 77) > o.keep) continue;   // fewer elements, not dimmer
       const m = intensity(px, py, o);
       const sz = 0.40 + 0.60 * hash(x * 1.7, y * 2.3, o.seed + 9);
-      const r = sp * 0.42 * (0.55 + 0.45 * m) * sz * o.stroke;
+      const r = sp * 0.42 * (0.55 + 0.45 * m) * sz * o.stroke * impact;
       if (r < 0.5) continue;
       c.beginPath(); c.arc(px, py, r, 0, 6.2832);
-      c.fillStyle = col(hash(x * 2.1, y * 1.3, o.seed + 21), o.pal);
+      c.fillStyle = col(hash(x * 2.1, y * 1.3, o.seed + 21), o.pal, o.colorSoftness);
       c.globalAlpha = 0.55 + 0.45 * m;
       c.fill();
     }
@@ -212,9 +316,9 @@ function elPointsStrands(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: nu
       if (!inZone(px, py, o, slot)) continue;
       const m = intensity(px, py, o);
       const sz = (0.40 + 0.60 * hash(s * 0.7, i * 3.3, o.seed + 95)) * (0.55 + 0.45 * m);
-      const r = Math.max(0.5, gap * 0.30 * sz * o.stroke);
+      const r = Math.max(0.5, gap * 0.30 * sz * o.stroke * IMPACT.pointsStrands);
       c.beginPath(); c.arc(px, py, r, 0, 6.2832);
-      c.fillStyle = col(hash(s * 1.1, i * 2.7, o.seed + 21), o.pal);
+      c.fillStyle = col(hash(s * 1.1, i * 2.7, o.seed + 21), o.pal, o.colorSoftness);
       c.globalAlpha = 0.55 + 0.45 * m;
       c.fill();
     }
@@ -231,10 +335,10 @@ function elLines(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
   while (pos < spanMain + base) {
     const r1 = hash(i * 3.1, 7.7, o.seed), r2 = hash(i * 5.3, 11.1, o.seed + 2), r3 = hash(i * 9.1, 3.3, o.seed + 4);
     if (hash(i * 6.6, 2.2, o.seed + 77) > o.keep) { pos += base * (0.5 + r1 * 1.7); i++; continue; }
-    const lw0 = base * (0.20 + r2 * 0.55) * o.stroke * 1.9;
+    const lw0 = base * (0.20 + r2 * 0.55) * o.stroke * 1.9 * IMPACT.lines;
     const amp = P.warp * o.warp * (14 + r3 * 70);
     const f = 0.0016 + r1 * 0.0022, ph = r2 * 6.283;
-    c.strokeStyle = col(r3, o.pal);
+    c.strokeStyle = col(r3, o.pal, o.colorSoftness);
     c.beginPath(); let open = false;
     for (let s = -8; s <= spanSweep + 8; s += 5) {
       let bend = amp * Math.sin(s * f + ph) + amp * 0.35 * Math.sin(s * f * 2.7 + ph * 1.7);
@@ -256,27 +360,29 @@ function elMesh(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
   const cell = 58 / o.dens;
   const cols = Math.ceil(DESIGN_W / cell) + 2, rows = Math.ceil(o.H / cell) + 2;
   const j = cell * 0.30 * (0.4 + P.jit * o.warp);
-  const org = o.organic > 0 ? cell * 0.55 * o.organic : 0;
+  const org = o.organic > 0 ? cell * 0.9 * o.organic : 0;
   const nx = (i: number, k: number) => i * cell - cell * 0.5 + (hash(i * 1.7, k * 2.9, o.seed + 7) - 0.5) * j * 2
-    + (org ? field(i * cell * 0.6, k * cell * 0.6, o.seed + 130 + o.t) * org : 0);
+    + (org ? (field(i * cell * 0.5, k * cell * 0.5, o.seed + 130 + o.t) * 0.7
+            + field(i * cell * 1.4 + 900, k * cell * 1.4 + 900, o.seed + 140 + o.t) * 0.5) * org : 0);
   const ny = (i: number, k: number) => k * cell - cell * 0.5 + (hash(k * 1.3, i * 3.7, o.seed + 13) - 0.5) * j * 2
-    + (org ? field(i * cell * 0.6 + 500, k * cell * 0.6 + 500, o.seed + 131 + o.t) * org : 0);
+    + (org ? (field(i * cell * 0.5 + 500, k * cell * 0.5 + 500, o.seed + 131 + o.t) * 0.7
+            + field(i * cell * 1.4 + 1400, k * cell * 1.4 + 1400, o.seed + 141 + o.t) * 0.5) * org : 0);
   for (let k = 0; k < rows; k++) {
     for (let i = 0; i < cols; i++) {
       const ax = nx(i, k), ay = ny(i, k);
       if (!inZone(ax, ay, o, slot)) continue;
       if (hash(i * 4.4, k * 5.5, o.seed + 77) > o.keep) continue;
       const m = intensity(ax, ay, o);
-      c.lineWidth = Math.max(0.6, cell * 0.171 * o.stroke * (0.55 + 0.45 * m));
+      c.lineWidth = Math.max(0.6, cell * 0.171 * o.stroke * IMPACT.mesh * (0.55 + 0.45 * m));
       for (const d of [[1, 0], [0, 1]]) {
         const bx = nx(i + d[0], k + d[1]), by = ny(i + d[0], k + d[1]);
         c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by);
-        c.strokeStyle = col(hash(i * 2.3, k * 4.1, o.seed + 17), o.pal);
+        c.strokeStyle = col(hash(i * 2.3, k * 4.1, o.seed + 17), o.pal, o.colorSoftness);
         c.globalAlpha = 0.35 + 0.65 * m;
         c.stroke();
       }
-      c.beginPath(); c.arc(ax, ay, Math.max(0.6, cell * 0.209 * o.stroke * (0.55 + 0.45 * m)), 0, 6.2832);
-      c.fillStyle = col(hash(k * 2.3, i * 4.1, o.seed + 19), o.pal);
+      c.beginPath(); c.arc(ax, ay, Math.max(0.6, cell * 0.209 * o.stroke * IMPACT.mesh * (0.55 + 0.45 * m)), 0, 6.2832);
+      c.fillStyle = col(hash(k * 2.3, i * 4.1, o.seed + 19), o.pal, o.colorSoftness);
       c.globalAlpha = 0.65 + 0.35 * m; c.fill();
     }
   }
@@ -294,8 +400,8 @@ function elRings(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
     if (hash(i * 8.8, 1.1, o.seed + 77) > o.keep) { r += step * (0.6 + r2 * 1.1); i++; continue; }
     const amp = P.warp * o.warp * r * 0.085;
     const m = intensity(cx, cy - r, o);
-    c.strokeStyle = col(r2, o.pal);
-    c.lineWidth = Math.max(0.6, step * (0.16 + r1 * 0.45) * o.stroke * 1.52 * (0.55 + 0.45 * m));
+    c.strokeStyle = col(r2, o.pal, o.colorSoftness);
+    c.lineWidth = Math.max(0.6, step * (0.16 + r1 * 0.45) * o.stroke * IMPACT.rings * 1.52 * (0.55 + 0.45 * m));
     c.globalAlpha = (0.40 + 0.60 * m);
     c.beginPath(); let open = false;
     for (let a = 0; a <= 6.31; a += 0.035) {
@@ -366,13 +472,4 @@ export function paint(
     ctx.globalAlpha = 1;
   }
   ctx.drawImage(layer, 0, 0);
-
-  // Gradient: extra directional darkening in A/C only — capped at 40 %.
-  if (P.dir !== 0 && o.grad > 0) {
-    const amt = Math.min(0.4, o.grad * 0.4);
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    if (P.dir > 0) { g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0," + amt + ")"); }
-    else           { g.addColorStop(0, "rgba(0,0,0," + amt + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); }
-    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-  }
 }

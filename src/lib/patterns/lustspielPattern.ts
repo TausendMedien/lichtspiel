@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { Pattern, PatternContext, PatternControl } from './types';
 import type { EngineState, ElementId, PhaseId } from '../pattern-engine/types';
-import { paint, DESIGN_W } from '../pattern-engine/engine';
-import { colorC2, getEnabledIndices, getColorByIndex } from '../colorC2.svelte';
+import { paint, PHASE, DESIGN_W, mixHex } from '../pattern-engine/engine';
+import { getEnabledIndices, getColorByIndex } from '../colorC2.svelte';
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
 // The canvas is drawn at the output resolution, so the texture maps 1:1 onto the
@@ -36,6 +36,10 @@ const ELEMENTS: { id: ElementId; label: string; tip: string }[] = [
 
 const POINT_STYLES = ['Grid', 'Strands', 'Wave'] as const;
 const POINT_STYLE_VALUES: EngineState['pointStyle'][] = ['grid', 'strands', 'wave'];
+const ARRANGEMENTS = ['Chaotic', 'Left / Right', 'Up / Down'] as const;
+const ARRANGEMENT_VALUES: EngineState['arrangement'][] = ['chaotic', 'leftRight', 'upDown'];
+
+const DEFAULT_SEED = 8685;
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
@@ -44,10 +48,9 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     phase,
     elems: [1],
     comp: 'blobs',
-    layout: 'chaotic',
+    arrangement: 'chaotic',
     pointStyle: 'strands',
     lineDir: 'v',
-    occ: 0.7,
     dens: 1,
     stroke: 1,
     warp: 1,
@@ -55,14 +58,15 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     zones: 3,
     lock: 0.35,
     pk: 20,
-    grad: 0.3,
-    seed: 7,
+    seed: DEFAULT_SEED,
+    colorSoftness: 0.5,
   };
 
   /** Which elements are on, keyed by element id — the toggles write here. */
   const on: Record<ElementId, boolean> = { 1: true, 2: false, 3: false, 4: false };
-  let useAppPalette = false;
-  let lastPaletteKey = '';
+  /** 0 = Film (fixed phase colours), 1 = Default (the app's global palette). */
+  let paletteBlend = 0.5;
+  let lastAppPaletteKey = '';
 
   let canvas: HTMLCanvasElement | null = null;
   let c2d: CanvasRenderingContext2D | null = null;
@@ -76,6 +80,10 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
 
   const touch = () => { dirty = true; };
   const multi = () => state.elems.length > 1;
+  /** Zones only changes anything for blobs, or for bands while scattered — once
+   *  bands are ordered left/right or up/down the band count must equal the
+   *  element count, so Zones has nothing left to do (see engine.ts zoneU()). */
+  const zonesMatter = () => multi() && (state.comp === 'blobs' || state.arrangement === 'chaotic');
 
   /** Rebuild elems from the toggles, keeping the fixed order and never emptying it. */
   function syncElems() {
@@ -86,16 +94,18 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
   }
 
   /** Signature of the app palette — lets update() notice colour edits. */
-  function paletteKey(): string {
+  function appPaletteKey(): string {
     return getEnabledIndices().map(getColorByIndex).join(',');
   }
 
+  /** Blends this phase's fixed palette with the app's global palette, per entry. */
   function applyPalette() {
-    if (!useAppPalette) { state.palette = undefined; return; }
-    const cols = getEnabledIndices().map(getColorByIndex);
-    // The phase palettes hold five entries; repeat the app colours so the
-    // colour picking inside the engine spreads across the same range.
-    state.palette = cols.length >= 5 ? cols : Array.from({ length: 5 }, (_, i) => cols[i % cols.length]);
+    const filmPal = PHASE[phase].pal;
+    const appColors = getEnabledIndices().map(getColorByIndex);
+    const appPal = appColors.length >= filmPal.length
+      ? appColors.slice(0, filmPal.length)
+      : Array.from({ length: filmPal.length }, (_, i) => appColors[i % appColors.length]);
+    state.palette = filmPal.map((f, i) => mixHex(f, appPal[i], paletteBlend));
   }
 
   function repaint() {
@@ -123,82 +133,86 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
 
   const controls: PatternControl[] = [
     // ── Elements ─────────────────────────────────────────────────────────────
+    { label: 'Elements', type: 'separator' },
     ...ELEMENTS.map(e => ({
       label: e.label, type: 'toggle' as const, tip: e.tip,
       get: () => on[e.id],
       set: (v: boolean) => { on[e.id] = v; syncElems(); },
     })),
 
-    // ── Shape ────────────────────────────────────────────────────────────────
-    { label: 'Coverage', type: 'range', min: 0.15, max: 1, step: 0.01, default: 0.7,
-      tip: 'How much of the surface carries pattern. Raises the brightness floor without adding elements.',
-      get: () => state.occ, set: v => { state.occ = v; touch(); } },
+    // ── Shape — how each element looks and moves ──────────────────────────────
+    { label: 'Shape', type: 'separator' },
     { label: 'Density', type: 'range', min: 0.4, max: 2.4, step: 0.05, default: 1,
       tip: 'How closely the strands, dots or rings sit together.',
       get: () => state.dens, set: v => { state.dens = v; touch(); } },
-    { label: 'Stroke Width', type: 'range', min: 0.2, max: 1.5, step: 0.05, default: 1,
+    { label: 'Stroke Width', type: 'range', min: 0.5, max: 1.5, step: 0.05, default: 1,
       tip: 'Thickness of every mark. Decides whether the pattern still reads on a moving body.',
       get: () => state.stroke, set: v => { state.stroke = v; touch(); } },
     { label: 'Warp', type: 'range', min: 0, max: 2.5, step: 0.05, default: 1,
       tip: 'How strongly the strands bend away from a straight path.',
       get: () => state.warp, set: v => { state.warp = v; touch(); } },
     { label: 'Organic', type: 'range', min: 0, max: 1, step: 0.05, default: 0,
-      tip: 'From regular waves to an irregular, vine-like meander.',
+      tip: 'From regular waves to a wild, irregular, vine-like meander — both the shape and the amplitude grow with this slider.',
       get: () => state.organic, set: v => { state.organic = v; touch(); } },
-
-    { label: 'Point Style', type: 'select', options: [...POINT_STYLES],
+    { label: 'Point Style', type: 'buttons', options: [...POINT_STYLES],
       tip: 'Grid: a jittered raster. Strands: dot chains along bent paths. Wave: dots carried by a flow.',
       disabled: () => !on[1],
       get: () => POINT_STYLE_VALUES.indexOf(state.pointStyle),
       set: v => { state.pointStyle = POINT_STYLE_VALUES[v] ?? 'strands'; touch(); } },
-    { label: 'Line Direction', type: 'select', options: ['Vertical', 'Horizontal'],
+    { label: 'Line Direction', type: 'buttons', options: ['Vertical', 'Horizontal'],
       tip: 'Turns the line direction by 90°. Nothing is cropped — the pattern is generated along the other axis. Use it to compensate a rotated projector, or because upright and lying lines read very differently on a dancing body.',
       disabled: () => !(on[2] || (on[1] && state.pointStyle !== 'grid')),
       get: () => (state.lineDir === 'v' ? 0 : 1),
       set: v => { state.lineDir = v === 0 ? 'v' : 'h'; touch(); } },
 
-    // ── Composition — only meaningful with two or more elements ───────────────
-    { label: 'Composition', type: 'select', options: ['Bands', 'Blobs'],
+    // ── Composition — how several elements share the surface ──────────────────
+    { label: 'Composition', type: 'separator' },
+    { label: 'Zone Shape', type: 'buttons', options: ['Bands', 'Blobs'],
       tip: 'How the surface is divided between elements: flowing bands, or amorphous blobs with a dark seam.',
       disabled: () => !multi(),
       get: () => (state.comp === 'bands' ? 0 : 1),
       set: v => { state.comp = v === 0 ? 'bands' : 'blobs'; touch(); } },
-    { label: 'Arrangement', type: 'select', options: ['Chaotic', 'Side by side'],
-      tip: 'Chaotic scatters the zones over the whole surface. Side by side puts one element left and the next right, with a meandering seam and a mixed middle.',
+    { label: 'Arrangement', type: 'buttons', options: [...ARRANGEMENTS],
+      tip: 'Chaotic scatters the zones over the whole surface. Left/Right and Up/Down give each element its own side, in order, with a meandering (not ruler-straight) seam.',
       disabled: () => !multi(),
-      get: () => (state.layout === 'chaotic' ? 0 : 1),
-      set: v => { state.layout = v === 0 ? 'chaotic' : 'sideBySide'; touch(); } },
+      get: () => ARRANGEMENT_VALUES.indexOf(state.arrangement),
+      set: v => { state.arrangement = ARRANGEMENT_VALUES[v] ?? 'chaotic'; touch(); } },
     { label: 'Zones', type: 'range', min: 2, max: 6, step: 1, default: 3,
-      tip: 'How many zones the surface is divided into.',
-      disabled: () => !multi(),
+      tip: 'Blobs: how many clusters each element gets — more clusters, more scattered. Bands: only affects Chaotic (Left/Right and Up/Down always use one band per element).',
+      disabled: () => !zonesMatter(),
       get: () => state.zones, set: v => { state.zones = Math.round(v); touch(); } },
     { label: 'Interlock', type: 'range', min: 0, max: 1, step: 0.05, default: 0.35,
-      tip: 'How much neighbouring zones reach into each other at their edge.',
+      tip: 'How much neighbouring zones reach into each other at their edge — from a sharp dark seam to an almost seamless blend.',
       disabled: () => !multi(),
       get: () => state.lock, set: v => { state.lock = v; touch(); } },
 
-    // ── Phase A/C only — both are mathematically inert in B ───────────────────
+    // ── Phase A/C only — inert in B ────────────────────────────────────────────
+    { label: 'Phase A / C', type: 'separator' },
     { label: 'Thinning', type: 'range', min: 0, max: 60, step: 1, default: 20,
       tip: 'Removes elements in phases A and C — fewer marks, not a dimmer image. No effect in phase B.',
       disabled: () => phase === 'B',
       get: () => state.pk, set: v => { state.pk = Math.round(v); touch(); } },
-    { label: 'Gradient', type: 'range', min: 0, max: 1, step: 0.05, default: 0.3,
-      tip: 'Darkens one edge of the image in phases A and C. No effect in phase B.',
-      disabled: () => phase === 'B',
-      get: () => state.grad, set: v => { state.grad = v; touch(); } },
+
+    // ── Colour ───────────────────────────────────────────────────────────────
+    { label: 'Colour', type: 'separator' },
+    { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
+      tip: 'Left: Film — this phase’s fixed colours. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both.',
+      get: () => paletteBlend, set: v => { paletteBlend = v; touch(); } },
+    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.05, default: 0.5,
+      tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
+      get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
 
     // ── Identity ─────────────────────────────────────────────────────────────
-    { label: 'Seed', type: 'range', min: 1, max: 9999, step: 1, default: 7,
+    { label: 'Identity', type: 'separator' },
+    { label: 'Seed', type: 'stepper', min: 1, max: 9999, step: 1,
       tip: 'Picks one specific pattern out of all possible ones. The same seed always gives the same image.',
       get: () => state.seed, set: v => { state.seed = Math.round(v); touch(); } },
     { label: 'New Seed', type: 'button',
       tip: 'Roll a new random seed — a completely different pattern, same settings.',
       action: () => { state.seed = 1 + Math.floor(Math.random() * 9999); touch(); } },
-    { label: 'Palette', type: 'select', options: ['Film', 'Lichtspiel'],
-      tip: 'Film uses the fixed colours of this phase. Lichtspiel uses the global colour palette above, so you can change the colours live.',
-      get: () => (useAppPalette ? 1 : 0),
-      set: v => { useAppPalette = v === 1; lastPaletteKey = paletteKey(); touch(); } },
 
+    // ── Sync ─────────────────────────────────────────────────────────────────
+    { label: 'All Phases', type: 'separator' },
     { label: 'Apply to all Lustspiel patterns', type: 'button',
       tip: 'Copies these settings onto the other Lustspiel phases, so you only have to dial them in once.',
       action: () => { void applyToAll(id); } },
@@ -207,9 +221,9 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
   return {
     id,
     name,
-    // Coverage and Organic are intensity and shape — never Seed or Zones, which
-    // decide *which* elements exist and would make the image jump.
-    motionControlLabels: ['Coverage', 'Organic'],
+    // Organic is shape, never Seed or Zones, which decide *which* elements exist
+    // and would make the image jump.
+    motionControlLabels: ['Organic', 'Warp'],
     controls,
 
     init(ctx: PatternContext) {
@@ -239,15 +253,16 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       ctx.scene.add(mesh);
 
       syncElems();
-      lastPaletteKey = paletteKey();
+      lastAppPaletteKey = appPaletteKey();
       repaint();
     },
 
     update() {
-      // Colour edits happen in the global palette, outside this pattern's controls.
-      if (useAppPalette) {
-        const key = paletteKey();
-        if (key !== lastPaletteKey) { lastPaletteKey = key; dirty = true; }
+      // Colour edits happen in the global palette, outside this pattern's controls
+      // — only worth checking while the blend actually uses them.
+      if (paletteBlend > 0) {
+        const key = appPaletteKey();
+        if (key !== lastAppPaletteKey) { lastAppPaletteKey = key; dirty = true; }
       }
       if (dirty) repaint();
     },

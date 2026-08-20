@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test";
-import { hash, field, PHASE, DESIGN_W } from "./engine";
+import { hash, field, PHASE, DESIGN_W, mixHex } from "./engine";
 
 describe("hash", () => {
   test("is deterministic and in [0,1)", () => {
@@ -60,13 +60,84 @@ describe("phases", () => {
     expect(PHASE.B.jit).toBeLessThan(PHASE.C.jit);
   });
 
-  test("only B is directionless — Thinning/Gradient are inert there", () => {
-    expect(PHASE.B.dir).toBe(0);
-    expect(PHASE.A.dir).toBe(1);
-    expect(PHASE.C.dir).toBe(-1);
+});
+
+describe("mixHex", () => {
+  test("t=0 returns the first colour, t=1 the second", () => {
+    expect(mixHex("#ff0000", "#0000ff", 0)).toBe("#ff0000");
+    expect(mixHex("#ff0000", "#0000ff", 1)).toBe("#0000ff");
+  });
+
+  test("t=0.5 is the midpoint", () => {
+    expect(mixHex("#000000", "#ffffff", 0.5)).toBe("#808080");
+  });
+
+  test("output is a real hex colour — parseable if fed back into a palette", () => {
+    const mixed = mixHex("#00ffff", "#ff00cc", 0.5);
+    expect(mixed).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
 
 test("the design width stays fixed — the mm calibration depends on it", () => {
   expect(DESIGN_W).toBe(1920);
+});
+
+describe("arrangement — spatial partition between elements", () => {
+  const { debugZoneSlot, DESIGN_W } = require("./engine") as typeof import("./engine");
+  const H = 1080;
+  const base = {
+    phase: "B" as const, pointStyle: "strands" as const, lineDir: "v" as const,
+    dens: 1, stroke: 1, warp: 1, organic: 0, zones: 3, lock: 0.35, pk: 20,
+    seed: 8685, colorSoftness: 0.5, elems: [1, 2] as const,
+  };
+
+  // Column of samples at a given fraction across the width, returns the majority slot.
+  function majoritySlotAtX(frac: number, state: Parameters<typeof debugZoneSlot>[3]) {
+    const counts = [0, 0];
+    for (let i = 0; i < 50; i++) {
+      const y = ((i + 0.5) / 50) * H;
+      const slot = debugZoneSlot(frac * DESIGN_W, y, H, state as any);
+      if (slot === 0 || slot === 1) counts[slot]++;
+    }
+    return counts[0] >= counts[1] ? 0 : 1;
+  }
+
+  test("blobs + leftRight: far left is element 0, far right is element 1", () => {
+    const st = { ...base, comp: "blobs" as const, arrangement: "leftRight" as const };
+    expect(majoritySlotAtX(0.05, st)).toBe(0);
+    expect(majoritySlotAtX(0.95, st)).toBe(1);
+  });
+
+  test("bands + leftRight: far left is element 0, far right is element 1", () => {
+    const st = { ...base, comp: "bands" as const, arrangement: "leftRight" as const };
+    expect(majoritySlotAtX(0.05, st)).toBe(0);
+    expect(majoritySlotAtX(0.95, st)).toBe(1);
+  });
+
+  test("blobs + chaotic: no left/right ordering — both slots appear near both edges", () => {
+    const st = { ...base, comp: "blobs" as const, arrangement: "chaotic" as const };
+    let sawSlot0NearRight = false, sawSlot1NearLeft = false;
+    for (let i = 0; i < 40; i++) {
+      const y = ((i + 0.5) / 40) * H;
+      if (debugZoneSlot(0.9 * DESIGN_W, y, H, st as any) === 0) sawSlot0NearRight = true;
+      if (debugZoneSlot(0.1 * DESIGN_W, y, H, st as any) === 1) sawSlot1NearLeft = true;
+    }
+    expect(sawSlot0NearRight || sawSlot1NearLeft).toBe(true);
+  });
+
+  test("Zones raises the number of blob clusters (more distinct centres)", () => {
+    const st2 = { ...base, comp: "blobs" as const, arrangement: "chaotic" as const, zones: 2 };
+    const st6 = { ...base, comp: "blobs" as const, arrangement: "chaotic" as const, zones: 6 };
+    // More clusters -> the pattern of slot assignment across a fine scanline changes
+    // more often (more, smaller regions) than with fewer clusters.
+    const flips = (st: any) => {
+      let last = -1, n = 0;
+      for (let i = 0; i < 300; i++) {
+        const slot = debugZoneSlot(((i + 0.5) / 300) * DESIGN_W, H * 0.5, H, st);
+        if (slot !== last) { n++; last = slot; }
+      }
+      return n;
+    };
+    expect(flips(st6)).toBeGreaterThan(flips(st2));
+  });
 });

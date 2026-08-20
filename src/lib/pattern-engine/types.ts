@@ -10,23 +10,30 @@ export interface EngineState {
   elems: ElementId[];
   /** Zone shape. */
   comp: "bands" | "blobs";
-  /** Zone arrangement — applies to both bands and blobs. */
-  layout: "chaotic" | "sideBySide";
+  /** Zone arrangement — applies to both bands and blobs. chaotic scatters zones
+   *  over the whole surface; leftRight/upDown assign each element its own band
+   *  along that axis, with a meandering (not ruler-straight) edge. */
+  arrangement: "chaotic" | "leftRight" | "upDown";
   pointStyle: "grid" | "strands" | "wave";
   /** Generation axis for Lines and Points/Strands — the 90° switch. */
   lineDir: "v" | "h";
-  occ: number;      // coverage — raises the intensity floor
   dens: number;     // density
   stroke: number;   // stroke width
   warp: number;     // deformation
   /** 0..1 — blends regular sine bends into an incoherent meander. */
   organic: number;
+  /** Number of zones (bands), or blob clusters per element (blobs). 2..6. */
   zones: number;
-  lock: number;     // interlock at zone edges
+  /** Interlock at zone edges: band overlap for bands, seam softness for blobs. */
+  lock: number;
   pk: number;       // thinning in A/C (percent)
-  grad: number;     // directional gradient in A/C
   seed: number;
-  /** Overrides the phase palette when set. */
+  /** 0 = hard, stepped colour picks per shape. 1 = a smooth gradient across the
+   *  palette, like the soft blends in Gravity Lines. */
+  colorSoftness: number;
+  /** Always set by the pattern adapter — a blend of the phase's fixed palette and
+   *  the app's global palette. Falls back to the phase palette when absent (only
+   *  relevant if some other future caller omits it). */
   palette?: string[];
   /**
    * Extra phase offset for field()/intensity()/zoneU() — animation.
@@ -39,6 +46,5 @@ export interface Phase {
   pal: string[];
   warp: number;
   jit: number;
-  dir: number;
   glow: number;
 }
