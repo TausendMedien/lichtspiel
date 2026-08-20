@@ -520,12 +520,33 @@ export function paint(
   ctx.globalAlpha = 1;
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
 
+  // Applied to every drawImage pass below (not via a separate final pass —
+  // drawing a canvas onto itself to re-filter it is unreliable across browsers).
+  const brightness = state.brightness ?? 1;
+  const brightnessFilter = Math.abs(brightness - 1) > 0.001 ? ` brightness(${Math.max(0, brightness) * 100}%)` : "";
+
   if (P.glow) {                        // one blur pass instead of shadowBlur per shape
-    ctx.filter = "blur(" + (8 * scale) + "px)";
+    ctx.filter = `blur(${8 * scale}px)${brightnessFilter}`;
     ctx.globalAlpha = 0.55;
     ctx.drawImage(layer, 0, 0);
     ctx.filter = "none";
     ctx.globalAlpha = 1;
   }
+  const soft = state.softness ?? 0;
+  if (soft > 0) {
+    // Soft mode: a wide blur pass carries most of the weight as softness rises,
+    // the crisp layer underneath fades but never disappears — small, sub-pixel
+    // drifts stay visible as a gentle glow instead of vanishing between hard
+    // edges. Purely a compositing blend; the geometry above is untouched.
+    const blurPx = (2 + soft * 16) * scale;
+    ctx.filter = `blur(${blurPx}px)${brightnessFilter}`;
+    ctx.globalAlpha = 0.35 + soft * 0.45;
+    ctx.drawImage(layer, 0, 0);
+    ctx.filter = "none";
+    ctx.globalAlpha = 1 - soft * 0.55;
+  }
+  if (brightnessFilter) ctx.filter = brightnessFilter.trim();
   ctx.drawImage(layer, 0, 0);
+  ctx.filter = "none";
+  ctx.globalAlpha = 1;
 }

@@ -44,7 +44,7 @@ const DEFAULT_SEED = 8685;
 /** Radians of field()/zoneU() phase per second at Speed = 1 — tuned so even full
  *  speed drifts rather than boils: a full 2π cycle takes well over ten seconds.
  *  hash() is never touched, so which shapes exist never changes, only their form. */
-const TIME_RATE = 0.5;
+const TIME_RATE = 1.0;
 
 export interface LustspielOptions {
   /** Overrides applied on top of the built-in defaults below. */
@@ -80,6 +80,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     animated: !!opts?.animated,
   };
   let speed = opts?.animated ? (opts.speedDefault ?? 0.15) : 0;
+  let brightness = 1;
 
   /** Which elements are on, keyed by element id — the toggles write here.
    *  Seeded from state.elems (defaults or an opts.defaults override), not
@@ -137,6 +138,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     const logicalH = canvas.height / scale;
     const t0 = performance.now();
     applyPalette();
+    state.brightness = brightness;
     paint(c2d, scale, logicalH, state);
     const ms = performance.now() - t0;
     if (ms > 100) console.debug(`[${id}] repaint took ${ms.toFixed(0)} ms`);
@@ -174,18 +176,21 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
 
     // ── Shape — how each element looks and moves ──────────────────────────────
     { label: 'Shape', type: 'separator' },
-    { label: 'Density', type: 'range', min: 0.4, max: 2.4, step: 0.05, default: 2,
+    { label: 'Density', type: 'range', min: 0.4, max: 2.4, step: 0.01, default: 2,
       tip: 'How closely the strands, dots or rings sit together.',
       get: () => state.dens, set: v => { state.dens = v; touch(); } },
-    { label: 'Stroke Width', type: 'range', min: 0.5, max: 1.5, step: 0.05, default: 1,
+    { label: 'Stroke Width', type: 'range', min: 0.5, max: 1.5, step: 0.01, default: 1,
       tip: 'Thickness of every mark. Decides whether the pattern still reads on a moving body.',
       get: () => state.stroke, set: v => { state.stroke = v; touch(); } },
-    { label: 'Warp', type: 'range', min: 0, max: 2.5, step: 0.05, default: 1,
+    { label: 'Warp', type: 'range', min: 0, max: 2.5, step: 0.01, default: 1,
       tip: 'How strongly the strands bend away from a straight path.',
       get: () => state.warp, set: v => { state.warp = v; touch(); } },
-    { label: 'Organic', type: 'range', min: 0, max: 1, step: 0.05, default: 0,
+    { label: 'Organic', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
       tip: 'From regular waves to a wild, irregular, vine-like meander — both the shape and the amplitude grow with this slider.',
       get: () => state.organic, set: v => { state.organic = v; touch(); } },
+    { label: 'Softness', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
+      tip: 'Hard (0): every shape crisp and fully opaque, like today. Soft (1): blurred and semi-transparent — a second mode built for slow, subtle change, where a small drift stays visible instead of vanishing between hard edges.',
+      get: () => state.softness ?? 0, set: v => { state.softness = v; touch(); } },
     { label: 'Point Style', type: 'buttons', options: [...POINT_STYLES],
       tip: 'Grid: a jittered raster. Strands: dot chains along bent paths. Wave: dots carried by a flow.',
       disabled: () => !on[1],
@@ -209,7 +214,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
       disabled: () => !multi(),
       get: () => ARRANGEMENT_VALUES.indexOf(state.arrangement),
       set: v => { state.arrangement = ARRANGEMENT_VALUES[v] ?? 'chaotic'; touch(); } },
-    { label: 'Strictness', type: 'range', min: 0, max: 1, step: 0.05, default: 0.65,
+    { label: 'Strictness', type: 'range', min: 0, max: 1, step: 0.01, default: 0.65,
       tip: 'Only for Left/Right and Up/Down: how unambiguous the split is. 0 lets sides blend and overlap — can look chaotic. 1 gives a clean, obvious split. No effect on Chaotic.',
       disabled: () => !multi() || state.arrangement === 'chaotic',
       get: () => state.strictness, set: v => { state.strictness = v; touch(); } },
@@ -217,7 +222,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
       tip: 'Blobs: how many clusters each element gets — more clusters, more scattered. Bands: only affects Chaotic (Left/Right and Up/Down always use one band per element).',
       disabled: () => !zonesMatter(),
       get: () => state.zones, set: v => { state.zones = Math.round(v); touch(); } },
-    { label: 'Interlock', type: 'range', min: 0, max: 1, step: 0.05, default: 0.35,
+    { label: 'Interlock', type: 'range', min: 0, max: 1, step: 0.01, default: 0.35,
       tip: 'How much neighbouring zones reach into each other at their edge — from a sharp dark seam to an almost seamless blend.',
       disabled: () => !multi(),
       get: () => state.lock, set: v => { state.lock = v; touch(); } },
@@ -241,9 +246,12 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
       tip: 'Left: Film — this phase’s fixed colours. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both.',
       get: () => paletteBlend, set: v => { paletteBlend = v; touch(); } },
-    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.05, default: 0,
+    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
       tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
       get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
+    { label: 'Brightness', type: 'range', min: 0.4, max: 1.6, step: 0.01, default: 1,
+      tip: 'Output brightness. 1 is neutral. Mainly here as an Audio-reactivity target.',
+      get: () => brightness, set: v => { brightness = v; touch(); } },
 
     // ── Sync ─────────────────────────────────────────────────────────────────
     { label: 'All Phases', type: 'separator' },
@@ -255,9 +263,14 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
   return {
     id,
     name,
-    // Organic is shape, never Seed or Zones, which decide *which* elements exist
-    // and would make the image jump.
-    motionControlLabels: ['Organic', 'Warp'],
+    // Motion drives Speed and Organic — the two controls that shift the pattern's
+    // form and pace without ever changing which shapes exist (that stays fixed by
+    // Seed, so a moving body never makes it jump). Speed only exists on the
+    // animated 1/2/3 patterns; A/B/C fall back to Organic alone.
+    motionControlLabels: opts?.animated ? ['Speed', 'Organic'] : ['Organic'],
+    // Audio drives Speed and Brightness — pace and intensity, the same pairing
+    // a sound-reactive light rig would use.
+    audioControlLabels: opts?.animated ? ['Speed', 'Brightness'] : ['Brightness'],
     controls,
 
     init(ctx: PatternContext) {

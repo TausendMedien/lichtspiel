@@ -862,23 +862,53 @@
     saveColorC2();
   }
 
+  // Lustspiel's own Palette/Colour Blend/Strictness/Point Style/Zone Shape/
+  // Arrangement pick a deliberate look — Randomize should vary intensity and
+  // form, not silently pick a different look out from under the user. Density
+  // and Stroke Width are additionally clamped to one side of their range: a
+  // dance-film pattern needs to stay dense and thin enough to read on a moving
+  // body, not roll a value that makes it vanish.
+  const LUSTSPIEL_RANDOMIZE = new Set([
+    'Seed', 'Density', 'Stroke Width', 'Warp', 'Organic', 'Softness',
+    'Zones', 'Interlock', 'Speed', 'Colour Blend',
+  ]);
+
   function randomizeControls() {
-    for (const c of patterns[index]?.controls ?? []) {
+    const pat = patterns[index];
+    const isLustspiel = pat?.id?.startsWith('lsp-');
+    for (const c of pat?.controls ?? []) {
       if ((c as any).interactive) continue;
+      if (isLustspiel && !LUSTSPIEL_RANDOMIZE.has(c.label)) continue;
       if (c.type === 'range' && !c.readonly) {
-        const steps = Math.round((c.max - c.min) / c.step);
+        let lo = c.min, hi = c.max;
+        if (isLustspiel && c.label === 'Density') lo = Math.max(c.min, Math.min(c.max, 1 + c.step));
+        if (isLustspiel && c.label === 'Stroke Width') hi = Math.min(c.max, Math.max(c.min, 1 - c.step));
+        const steps = Math.max(0, Math.round((hi - lo) / c.step));
         const r = Math.floor(Math.random() * (steps + 1));
-        const v = parseFloat(Math.min(c.max, c.min + r * c.step).toFixed(10));
+        const v = parseFloat(Math.min(hi, lo + r * c.step).toFixed(10));
+        c.set(v);
+        ctrlVals[c.label] = v;
+      } else if (c.type === 'stepper' && !(c as any).readonly) {
+        const lo = c.min ?? 0, hi = c.max ?? lo, st = c.step ?? 1;
+        const steps = Math.max(0, Math.round((hi - lo) / st));
+        const r = Math.floor(Math.random() * (steps + 1));
+        const v = Math.min(hi, lo + r * st);
         c.set(v);
         ctrlVals[c.label] = v;
       }
     }
-    doColorShuffle();
-    colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
-    colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
-    // Colors v2: power-curve bias — mostly high (2–3), rarely low
-    colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
-    saveColorC2();
+    // Lustspiel's colour is fully governed by its own Palette/Colour Blend
+    // controls (Palette is deliberately excluded above) — shuffling the app's
+    // global colour palette here would silently shift Lustspiel's colours
+    // through that blend even though nothing in its own panel changed.
+    if (!isLustspiel) {
+      doColorShuffle();
+      colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
+      colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
+      // Colors v2: power-curve bias — mostly high (2–3), rarely low
+      colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
+      saveColorC2();
+    }
     savePatternColor(patterns[index].id);
     saveSettings(patterns);
   }
@@ -2310,19 +2340,28 @@
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'toggle' || c.type === 'section') {
             const v = c.get() ? 1 : 0;
-            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
+            if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'select') {
-            // Keep current index in sync; re-reading also lets Svelte re-evaluate ctrl.options()
+            // Re-reading also lets Svelte re-evaluate ctrl.options()
             const v = c.get();
-            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
+            if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'text' || c.type === 'color') {
             const v = c.get();
             if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           } else if (c.type === 'buttons' || c.type === 'stepper') {
             const v = c.get();
-            if (ctrlVals[c.label] !== v) { ctrlVals[c.label] = v; ctrlRev++; }
+            if (ctrlVals[c.label] !== v) ctrlVals[c.label] = v;
           }
         }
+        // A control's disabled() can depend on ANY other control's live value
+        // (Lustspiel's Point Style depends on the Points toggle, Composition on
+        // element count, etc.) — bumping ctrlRev only when a specific tracked
+        // value happens to change missed cases where the *dependency* changed
+        // via a path this loop doesn't diff (e.g. a toggle flipped and flipped
+        // straight back within one comparison window). Re-deriving controlMeta
+        // unconditionally every visible frame is cheap (a few dozen plain
+        // function calls) and makes greyed-out state impossible to go stale.
+        ctrlRev++;
       }
       // Sync pose person count for HUD reactivity
       const pc = poseState.persons.length;

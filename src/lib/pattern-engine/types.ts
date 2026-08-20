@@ -35,6 +35,14 @@ export interface EngineState {
   /** 0 = hard, stepped colour picks per shape. 1 = a smooth gradient across the
    *  palette, like the soft blends in Gravity Lines. */
   colorSoftness: number;
+  /** 0 = every shape crisp and fully opaque (the original look). 1 = a soft,
+   *  blurred, semi-transparent second mode built for slow, subtle change —
+   *  small drifts read clearly even when they're too small to change a hard
+   *  edge. Purely a render-time blend; never affects which shapes exist. */
+  softness?: number;
+  /** Output brightness multiplier, applied last (Canvas2D `brightness()` filter).
+   *  1 = neutral (no change). Exists mainly as an audio-reactivity target. */
+  brightness?: number;
   /** Always set by the pattern adapter — a blend of the phase's fixed palette and
    *  the app's global palette. Falls back to the phase palette when absent (only
    *  relevant if some other future caller omits it). */

@@ -41,20 +41,25 @@ const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
 // Speed control: 0 holds the image still, 1 lets it slowly drift. Only field()/
 // intensity()/zoneU() ever see that time value — hash() never does — so drift
 // never changes which shapes exist, only their form (see engine.ts).
-const lsp1 = makeLustspielPattern('lsp-1', 'Lustspiel 1', 'B', {
+// Phase matches the number (1→A, 2→B, 3→C) so the colour character tracks
+// Lustspiel A/B/C: 1 mostly white/blue, 2 and 3 progressively more colourful.
+const lsp1 = makeLustspielPattern('lsp-1', 'Lustspiel 1', 'A', {
   // dot-waves / flowing-dots: an S-band of lines with a halftone field of dots.
   animated: true, speedDefault: 0.15,
   defaults: { elems: [1, 2], pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic', organic: 0.35, warp: 0.8, dens: 1.4, colorSoftness: 0.4 },
 });
-const lsp2 = makeLustspielPattern('lsp-2', 'Lustspiel 2', 'A', {
+const lsp2 = makeLustspielPattern('lsp-2', 'Lustspiel 2', 'B', {
   // two-feather: dots and strands split left/right of a wandering centre line.
-  animated: true, speedDefault: 0.12,
+  animated: true, speedDefault: 0.15,
   defaults: { elems: [1, 2], comp: 'blobs', arrangement: 'leftRight', strictness: 0.8, organic: 0.25, warp: 1.2, dens: 1.0, colorSoftness: 0.2 },
 });
 const lsp3 = makeLustspielPattern('lsp-3', 'Lustspiel 3', 'C', {
   // baroque-vines: winding, clustered growth in the deep violet phase palette.
-  animated: true, speedDefault: 0.2,
-  defaults: { elems: [2, 3], comp: 'blobs', arrangement: 'chaotic', organic: 0.75, warp: 1.6, dens: 1.0, zones: 4, colorSoftness: 0.3 },
+  // Warp/Organic kept close to 1/2's range (not the 1.6/0.75 tried earlier) —
+  // both feed the drift amplitude, so a big gap there made Speed feel like a
+  // different, faster control on this pattern for the same slider position.
+  animated: true, speedDefault: 0.15,
+  defaults: { elems: [2, 3], comp: 'blobs', arrangement: 'chaotic', organic: 0.5, warp: 1.25, dens: 1.0, zones: 4, colorSoftness: 0.3 },
 });
 
 // Lustspiel is meant to be danced in, not reacted to by default — the shared Tier 1
