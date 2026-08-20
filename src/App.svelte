@@ -578,7 +578,7 @@
     { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
-    { label: 'Lustspiel',          ids: ['lsp-a','lsp-b','lsp-c','lsp-1','lsp-2','lsp-3','lsp-organic'] },
+    { label: 'Lustspiel',          ids: ['lsp-a','lsp-b','lsp-c','lsp-1','lsp-2','lsp-3','lsp-organic','lsp-particle'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [

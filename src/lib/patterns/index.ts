@@ -24,6 +24,7 @@ import { hyperMixHeat } from "./hyperMixHeat";
 import { typography3d } from "./typography3d";
 import { makeImagePattern } from "./imagePattern";
 import { makeLustspielPattern } from "./lustspielPattern";
+import { makeLustspielParticle } from "./lustspielParticle";
 import { wrapWithPersist } from "../persist";
 import { wrapWithBroadcast } from "../remote/broadcastWrap";
 import { addMotionCamera } from "../motionCameraWrapper";
@@ -78,13 +79,18 @@ const lspOrganic = makeLustspielPattern('lsp-organic', 'Lustspiel Organic', 'C',
   },
 });
 
+// Lustspiel Particle — same layered/atmosphere idea as Organic, but each element
+// is one of the app's existing patterns hosted in its own scene and render
+// target. See lustspielParticle.ts for why those four can be hosted unmodified.
+const lspParticle = makeLustspielParticle('lsp-particle', 'Lustspiel Particle');
+
 // Lustspiel is meant to be danced in, not reacted to by default — the shared Tier 1
 // "Interactions" universals (Colour v2, Speed, Direction, Burst) default ON for every
 // pattern in the app (see interactionState.svelte.ts). Seed the opposite for these
 // six specific ids, once, at the earliest possible point (module load, before any
 // control is ever read) — and only if nothing was saved for them yet, so a later,
 // deliberate opt-in from the Options panel is never overwritten.
-for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic']) {
+for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle']) {
   if (interactionState.patternSettings[id]) continue;
   const off: PatternInteractionSettings = {
     brightnessEnabled: false, brightnessGain: 1.0,
@@ -120,13 +126,16 @@ const PUSH_IDS = new Set([
   'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines',
   'img-thinVerticals', 'img-twoFeather', 'img-rootWave', 'img-purpleOrnate',
   'img-flowingDots',
+  // Hosts Hyper Mix / Particle Field / Gravity Lines / Parallel Lines, all of
+  // which are Push-capable — they read the push field in their own shaders.
+  'lsp-particle',
 ]);
 
 // Patterns that must NOT get the generic motion camera wrapper:
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
-export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic'];
+export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -174,6 +183,7 @@ const rawPatterns: Pattern[] = [
   lsp2,
   lsp3,
   lspOrganic,
+  lspParticle,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,
