@@ -526,6 +526,15 @@ export function paint(
   c.clearRect(0, 0, DESIGN_W, logicalH);
   c.globalCompositeOperation = "lighter";
   c.lineCap = "round"; c.lineJoin = "round";
+  // Atmosphere runs a per-element layered path instead (see paintLayered): each
+  // element gets its own surface so the grime can eat into one element without
+  // touching the one in front of it. Everything else keeps the original
+  // single-surface path below, byte-for-byte.
+  if ((o.atmosphere ?? 0) > 0 && o.elems.length > 0) {
+    paintLayered(ctx, c, P, o, w, h, scale, logicalH);
+    return;
+  }
+
   o.elems.forEach((el, slot) => RENDER[el](c, P, o, slot));
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -559,92 +568,154 @@ export function paint(
   ctx.filter = "none";
   ctx.globalAlpha = 1;
 
-  paintAtmosphere(ctx, layer, o, w, h, scale);
 }
 
+
+// ─── Atmosphere (Lustspiel Organic) ───────────────────────────────────────────
+
 let atmoBlur: HTMLCanvasElement | null = null;
-let atmoSoftMask: HTMLCanvasElement | null = null;
-let atmoDarkMask: HTMLCanvasElement | null = null;
+let atmoMaskA: HTMLCanvasElement | null = null;
+let atmoMaskB: HTMLCanvasElement | null = null;
+let elemLayer: HTMLCanvasElement | null = null;
+
+/** Builds one low-res alpha mask from a field(). Rendered at ~24px wide and then
+ *  scaled up by drawImage, so the browser's own bitmap smoothing turns it into a
+ *  soft gradient for free — a per-pixel field() call would cost 100x more. */
+function buildMask(cv: HTMLCanvasElement, o: Ctx, variant: number, invert: boolean, gain: number) {
+  const MW = 24, MH = Math.max(2, Math.round(MW * (o.H / DESIGN_W)));
+  cv.width = MW; cv.height = MH;
+  const cx = cv.getContext("2d")!;
+  const img = cx.createImageData(MW, MH);
+  for (let my = 0; my < MH; my++) {
+    for (let mx = 0; mx < MW; mx++) {
+      const wx = ((mx + 0.5) / MW) * DESIGN_W, wy = ((my + 0.5) / MH) * o.H;
+      // variant shifts both the seed and the sampling origin, so two elements
+      // never get the same patches in the same places.
+      let v = field(wx * 0.55 + variant * 210, wy * 0.55 + variant * 130,
+                    o.seed + 500 + variant * 97 + o.t * 0.3);
+      if (invert) v = -v;
+      // x1.9 before clamping pushes most of the field to either clearly-off or
+      // fully-on, so these read as defined patches rather than one soft ramp.
+      const a = Math.max(0, Math.min(1, v * 1.9 * gain));
+      const i = (my * MW + mx) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(a * 255);
+    }
+  }
+  cx.putImageData(img, 0, 0);
+}
 
 /**
- * Atmosphere (Lustspiel Organic only — 0 for every other pattern, a no-op
- * below): an organic, unevenly-distributed grime layer built from two
- * low-resolution field() gradients — cheap even though it varies per pixel,
- * because it's computed at ~16×9 and Canvas2D's own bitmap smoothing blows
- * it up into a soft gradient for free.
+ * Draws each element on its own surface, back to front, applying a different
+ * atmosphere to each — the front element (slot 0) stays untouched, and every
+ * element behind it gets progressively more, with its own patch layout.
  *
- * One gradient masks a heavily-blurred copy of the frame, so some patches
- * dissolve into a wash of colour while others stay crisp underneath — "the
- * grid changes from quite clear to almost full colour" the way a halftone
- * print does. The other gradient overlays black, so some patches sink
- * toward darkness instead — "dots descending below the lines into
- * darkness". Both drift with o.t exactly like everything else, so at
- * Speed 0 the grime sits still and only moves once the user asks for motion.
+ * Because each element is composited separately, the grime eats into *that
+ * element only*: where a back element is dissolved or erased, the elements
+ * behind show through and the one in front stays crisp on top. That is what
+ * makes it read as layers living on top of each other rather than one flat
+ * image getting darker in places.
  */
-function paintAtmosphere(
+function paintLayered(
   ctx: CanvasRenderingContext2D,
-  layer: HTMLCanvasElement,
+  _shared: CanvasRenderingContext2D,
+  P: Phase,
   o: Ctx,
   w: number,
   h: number,
   scale: number,
+  logicalH: number,
 ): void {
   const atmo = o.atmosphere ?? 0;
-  if (atmo <= 0) return;
+  const n = o.elems.length;
 
-  const MW = 16, MH = Math.max(2, Math.round(16 * (h / w)));
-  if (!atmoSoftMask) atmoSoftMask = document.createElement("canvas");
-  if (!atmoDarkMask) atmoDarkMask = document.createElement("canvas");
-  atmoSoftMask.width = MW; atmoSoftMask.height = MH;
-  atmoDarkMask.width = MW; atmoDarkMask.height = MH;
-  const sctx = atmoSoftMask.getContext("2d")!;
-  const dctx = atmoDarkMask.getContext("2d")!;
-  const sImg = sctx.createImageData(MW, MH);
-  const dImg = dctx.createImageData(MW, MH);
-  for (let my = 0; my < MH; my++) {
-    for (let mx = 0; mx < MW; mx++) {
-      const wx = ((mx + 0.5) / MW) * DESIGN_W, wy = ((my + 0.5) / MH) * o.H;
-      // Two independent low-frequency fields — patches of "dissolve into a
-      // wash" and patches of "sink into black" land in different places,
-      // not a single uniform gradient across the whole frame. The ×1.8 before
-      // clamping pushes most of each field into either "clearly off" or
-      // "fully on" — defined patches, not one smooth gradient everywhere.
-      const softV = Math.max(0, field(wx * 0.6, wy * 0.6, o.seed + 500 + o.t * 0.3) * 1.8) * atmo;
-      const darkV = Math.max(0, -field(wx * 0.45 + 300, wy * 0.45 + 300, o.seed + 640 + o.t * 0.3) * 1.8) * atmo;
-      const si = (my * MW + mx) * 4;
-      sImg.data[si] = sImg.data[si + 1] = sImg.data[si + 2] = 255;
-      sImg.data[si + 3] = Math.round(Math.min(1, softV) * 255);
-      dImg.data[si] = dImg.data[si + 1] = dImg.data[si + 2] = 0;
-      dImg.data[si + 3] = Math.round(Math.min(1, darkV) * 255);
-    }
-  }
-  sctx.putImageData(sImg, 0, 0);
-  dctx.putImageData(dImg, 0, 0);
-
+  if (!elemLayer) elemLayer = document.createElement("canvas");
   if (!atmoBlur) atmoBlur = document.createElement("canvas");
-  atmoBlur.width = layer.width; atmoBlur.height = layer.height;
-  const bctx = atmoBlur.getContext("2d")!;
-  bctx.clearRect(0, 0, atmoBlur.width, atmoBlur.height);
-  bctx.filter = `blur(${64 * scale}px)`;
-  bctx.drawImage(layer, 0, 0);
-  bctx.filter = "none";
-  // Shape the blurred copy's alpha by the soft-zone gradient (destination-in
-  // keeps only where the mask is opaque), so it only shows where it should.
-  bctx.globalCompositeOperation = "destination-in";
-  bctx.imageSmoothingEnabled = true;
-  bctx.drawImage(atmoSoftMask, 0, 0, atmoBlur.width, atmoBlur.height);
-  bctx.globalCompositeOperation = "source-over";
+  if (!atmoMaskA) atmoMaskA = document.createElement("canvas");
+  if (!atmoMaskB) atmoMaskB = document.createElement("canvas");
+  const lw = Math.max(1, Math.round(w)), lh = Math.max(1, Math.round(h));
+  elemLayer.width = lw; elemLayer.height = lh;
+  atmoBlur.width = lw; atmoBlur.height = lh;
+  const ec = elemLayer.getContext("2d")!;
+  const bc = atmoBlur.getContext("2d")!;
 
-  // Erase the crisp detail underneath wherever the wash is about to cover it,
-  // by the same soft-zone shape — otherwise the wash just adds on top of
-  // still-visible hard edges instead of actually replacing them, which read
-  // as "a little blur", not the shapes genuinely dissolving into colour.
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(atmoSoftMask, 0, 0, w, h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
-  ctx.drawImage(atmoBlur, 0, 0, w, h);
-
+  ctx.globalAlpha = 1;
+  ctx.filter = "none";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(atmoDarkMask, 0, 0, w, h);
+
+  const soft = o.softness ?? 0;
+  const softBlurPx = soft * soft * 400 * scale;
+
+  for (let i = n - 1; i >= 0; i--) {
+    // ── render this element alone ──
+    ec.setTransform(1, 0, 0, 1, 0, 0);
+    ec.globalCompositeOperation = "source-over";
+    ec.globalAlpha = 1; ec.filter = "none";
+    ec.clearRect(0, 0, lw, lh);
+    ec.setTransform(scale, 0, 0, scale, 0, 0);
+    ec.globalCompositeOperation = "lighter";
+    ec.lineCap = "round"; ec.lineJoin = "round";
+    RENDER[o.elems[i]](ec, P, o, i);
+    ec.setTransform(1, 0, 0, 1, 0, 0);
+    ec.globalCompositeOperation = "source-over";
+
+    // Slot 0 is the front layer and is deliberately left alone; everything
+    // behind it takes progressively more, so depth reads as increasing grime.
+    const depth = n > 1 ? i / (n - 1) : 0;
+    const strength = i === 0 ? 0 : atmo * (0.45 + 0.55 * depth);
+
+    if (strength > 0.001) {
+      buildMask(atmoMaskA!, o, i, false, strength);   // dissolve-into-a-wash
+      buildMask(atmoMaskB!, o, i + 40, true, strength); // sink-into-darkness
+
+      // Blurred copy of THIS element, shaped by mask A.
+      bc.setTransform(1, 0, 0, 1, 0, 0);
+      bc.globalCompositeOperation = "source-over";
+      bc.globalAlpha = 1;
+      bc.clearRect(0, 0, lw, lh);
+      bc.filter = `blur(${64 * scale}px)`;
+      bc.drawImage(elemLayer, 0, 0);
+      bc.filter = "none";
+      bc.globalCompositeOperation = "destination-in";
+      bc.imageSmoothingEnabled = true;
+      bc.drawImage(atmoMaskA!, 0, 0, lw, lh);
+      bc.globalCompositeOperation = "source-over";
+
+      // Remove this element's crisp detail where the wash replaces it, and
+      // remove it entirely where it sinks into darkness. destination-out on
+      // the element's OWN surface, so what is behind shows through instead of
+      // a black hole being punched through the whole frame.
+      ec.globalCompositeOperation = "destination-out";
+      ec.imageSmoothingEnabled = true;
+      ec.drawImage(atmoMaskA!, 0, 0, lw, lh);
+      ec.drawImage(atmoMaskB!, 0, 0, lw, lh);
+      ec.globalCompositeOperation = "source-over";
+      ec.drawImage(atmoBlur, 0, 0);
+    }
+
+    // Phase-C glow, per layer. atmoBlur is free again here — its wash has
+    // already been merged into elemLayer above — so this blurs into a scratch
+    // surface rather than drawing ctx.canvas onto itself.
+    if (P.glow) {
+      bc.setTransform(1, 0, 0, 1, 0, 0);
+      bc.globalCompositeOperation = "source-over";
+      bc.globalAlpha = 1;
+      bc.clearRect(0, 0, lw, lh);
+      bc.filter = `blur(${8 * scale}px)`;
+      bc.drawImage(elemLayer, 0, 0);
+      bc.filter = "none";
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(atmoBlur, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.filter = softBlurPx > 0.05 ? `blur(${softBlurPx}px)` : "none";
+    ctx.drawImage(elemLayer, 0, 0);
+    ctx.filter = "none";
+  }
+
+  void logicalH;
 }
