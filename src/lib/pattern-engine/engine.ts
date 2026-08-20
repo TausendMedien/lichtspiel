@@ -319,10 +319,15 @@ function elPoints(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
         py = y + (hash(y, x, o.seed + 3) - 0.5) * j * 1.4;
         // Grid style has no other time-dependent term (unlike Wave's flow offset)
         // — add a gentle always-on drift so Speed still has a visible effect.
+        // The frequency multiplier has to be ~1, like every other element's drift
+        // term. An earlier 0.02 made field() near-constant across the whole frame
+        // (its base frequency is 0.0031/px, so 0.02 × that varies by ~0.12 rad
+        // over all 1920px), which translated the entire grid as one rigid block —
+        // indistinguishable from static.
         if (o.animated) {
-          const d = sp * 0.45;
-          px += field(x * 0.02, y * 0.02, o.seed + 150 + o.t) * d;
-          py += field(y * 0.02, x * 0.02, o.seed + 151 + o.t) * d;
+          const d = sp * 0.8;
+          px += field(x * 0.9, y * 0.9, o.seed + 150 + o.t) * d;
+          py += field(y * 0.9, x * 0.9, o.seed + 151 + o.t) * d;
         }
       }
       if (!inZone(px, py, o, slot)) continue;
@@ -542,8 +547,12 @@ export function paint(
   // actually read as dissolved rather than just a bit fuzzy — at typical
   // Density spacing that gap is tens of logical pixels, so this goes well
   // past it at Softness 1.
+  // Quadratic, and with a far bigger ceiling than the 90 logical px this used to
+  // top out at — that was still under one strand-gap at typical Density, which is
+  // why it read as "maybe a little blur" rather than as a mode. Quadratic keeps
+  // the bottom of the slider fine-grained while the top is a genuine dissolve.
   const soft = state.softness ?? 0;
-  const softBlurPx = soft * 90 * scale;
+  const softBlurPx = soft * soft * 400 * scale;
   ctx.filter = softBlurPx > 0.05 ? `blur(${softBlurPx}px)` : "none";
   ctx.globalAlpha = 1;
   ctx.drawImage(layer, 0, 0);

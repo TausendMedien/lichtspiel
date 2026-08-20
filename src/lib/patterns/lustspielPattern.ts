@@ -244,7 +244,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     // ── Motion — only for the animated Lustspiel 1/2/3 patterns ────────────────
     ...(opts?.animated ? [
       { label: 'Motion', type: 'separator' as const },
-      { label: 'Speed', type: 'range' as const, min: 0, max: 1, step: 0.01, default: opts.speedDefault ?? 0.15,
+      { label: 'Speed', type: 'range' as const, min: 0, max: 2, step: 0.01, default: opts.speedDefault ?? 0.15,
         tip: '0 holds the image still. Higher values let it slowly drift — the same shapes stay, in the same places, only their form wanders. Which elements exist never changes (that stays fixed by Seed), so it never flickers.',
         get: () => speed, set: (v: number) => { speed = v; touch(); } },
     ] : []),
