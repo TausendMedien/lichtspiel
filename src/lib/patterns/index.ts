@@ -35,13 +35,35 @@ const lspA = makeLustspielPattern('lsp-a', 'Lustspiel A', 'A');
 const lspB = makeLustspielPattern('lsp-b', 'Lustspiel B', 'B');
 const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
 
+// Lustspiel 1/2/3 — Phase 3: additional, separate entries (A/B/C stay untouched)
+// whose defaults lean toward the character of one of the original inspiration
+// images (public/images/dot-waves, two-feather, baroque-vines), and which add a
+// Speed control: 0 holds the image still, 1 lets it slowly drift. Only field()/
+// intensity()/zoneU() ever see that time value — hash() never does — so drift
+// never changes which shapes exist, only their form (see engine.ts).
+const lsp1 = makeLustspielPattern('lsp-1', 'Lustspiel 1', 'B', {
+  // dot-waves / flowing-dots: a flowing field of dots, mixed cyan/magenta/white.
+  animated: true, speedDefault: 0.15,
+  defaults: { pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic', organic: 0.35, warp: 0.8, dens: 1.4, colorSoftness: 0.4 },
+});
+const lsp2 = makeLustspielPattern('lsp-2', 'Lustspiel 2', 'A', {
+  // two-feather: near-mirrored strands either side of a centre line.
+  animated: true, speedDefault: 0.12,
+  defaults: { elems: [2], comp: 'blobs', arrangement: 'leftRight', strictness: 0.8, organic: 0.25, warp: 1.2, dens: 1.0, colorSoftness: 0.2 },
+});
+const lsp3 = makeLustspielPattern('lsp-3', 'Lustspiel 3', 'C', {
+  // baroque-vines: winding, clustered growth in the deep violet phase palette.
+  animated: true, speedDefault: 0.2,
+  defaults: { elems: [2, 3], comp: 'blobs', arrangement: 'chaotic', organic: 0.75, warp: 1.6, dens: 1.0, zones: 4, colorSoftness: 0.3 },
+});
+
 // Lustspiel is meant to be danced in, not reacted to by default — the shared Tier 1
 // "Interactions" universals (Colour v2, Speed, Direction, Burst) default ON for every
 // pattern in the app (see interactionState.svelte.ts). Seed the opposite for these
-// three specific ids, once, at the earliest possible point (module load, before any
+// six specific ids, once, at the earliest possible point (module load, before any
 // control is ever read) — and only if nothing was saved for them yet, so a later,
 // deliberate opt-in from the Options panel is never overwritten.
-for (const id of ['lsp-a', 'lsp-b', 'lsp-c']) {
+for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3']) {
   if (interactionState.patternSettings[id]) continue;
   const off: PatternInteractionSettings = {
     brightnessEnabled: false, brightnessGain: 1.0,
@@ -83,7 +105,7 @@ const PUSH_IDS = new Set([
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
-export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c'];
+export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -127,6 +149,9 @@ const rawPatterns: Pattern[] = [
   lspA,
   lspB,
   lspC,
+  lsp1,
+  lsp2,
+  lsp3,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,

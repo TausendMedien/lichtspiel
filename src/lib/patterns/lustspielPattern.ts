@@ -41,9 +41,23 @@ const ARRANGEMENT_VALUES: EngineState['arrangement'][] = ['chaotic', 'leftRight'
 
 const DEFAULT_SEED = 8685;
 
+/** Radians of field()/zoneU() phase per second at Speed = 1 — tuned so even full
+ *  speed drifts rather than boils: a full 2π cycle takes well over ten seconds.
+ *  hash() is never touched, so which shapes exist never changes, only their form. */
+const TIME_RATE = 0.5;
+
+export interface LustspielOptions {
+  /** Overrides applied on top of the built-in defaults below. */
+  defaults?: Partial<EngineState>;
+  /** Adds the Speed control and drives state.time from it every frame. */
+  animated?: boolean;
+  /** Speed control default (0 = static, 1 = full drift). Only used when animated. */
+  speedDefault?: number;
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-export function makeLustspielPattern(id: string, name: string, phase: PhaseId): Pattern {
+export function makeLustspielPattern(id: string, name: string, phase: PhaseId, opts?: LustspielOptions): Pattern {
   const state: EngineState = {
     phase,
     elems: [1],
@@ -61,10 +75,17 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     seed: DEFAULT_SEED,
     colorSoftness: 0,
     strictness: 0.65,
+    ...opts?.defaults,
+    time: 0,
   };
+  let speed = opts?.animated ? (opts.speedDefault ?? 0.15) : 0;
 
-  /** Which elements are on, keyed by element id — the toggles write here. */
-  const on: Record<ElementId, boolean> = { 1: true, 2: false, 3: false, 4: false };
+  /** Which elements are on, keyed by element id — the toggles write here.
+   *  Seeded from state.elems (defaults or an opts.defaults override), not
+   *  hardcoded — syncElems() below rebuilds state.elems from this on first
+   *  init() and would otherwise silently discard a non-[1] elems default. */
+  const on: Record<ElementId, boolean> = { 1: false, 2: false, 3: false, 4: false };
+  for (const el of state.elems) on[el] = true;
   /** 0 = Film (fixed phase colours), 1 = Default (the app's global palette). */
   let paletteBlend = 0.5;
   let lastAppPaletteKey = '';
@@ -206,6 +227,14 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       tip: 'Removes elements — fewer marks, not a dimmer image.',
       get: () => state.pk, set: v => { state.pk = Math.round(v); touch(); } },
 
+    // ── Motion — only for the animated Lustspiel 1/2/3 patterns ────────────────
+    ...(opts?.animated ? [
+      { label: 'Motion', type: 'separator' as const },
+      { label: 'Speed', type: 'range' as const, min: 0, max: 1, step: 0.01, default: opts.speedDefault ?? 0.15,
+        tip: '0 holds the image still. Higher values let it slowly drift — the same shapes stay, in the same places, only their form wanders. Which elements exist never changes (that stays fixed by Seed), so it never flickers.',
+        get: () => speed, set: (v: number) => { speed = v; touch(); } },
+    ] : []),
+
     // ── Colour ───────────────────────────────────────────────────────────────
     { label: 'Colour', type: 'separator' },
     { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
@@ -261,7 +290,11 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       repaint();
     },
 
-    update() {
+    update(dt: number) {
+      if (speed > 0) {
+        state.time = (state.time ?? 0) + dt * speed * TIME_RATE;
+        dirty = true;
+      }
       // Colour edits happen in the global palette, outside this pattern's controls
       // — only worth checking while the blend actually uses them.
       if (paletteBlend > 0) {
