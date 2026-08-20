@@ -28,11 +28,30 @@ import { wrapWithPersist } from "../persist";
 import { wrapWithBroadcast } from "../remote/broadcastWrap";
 import { addMotionCamera } from "../motionCameraWrapper";
 import { addAudioReactivity } from "../audioReactivityWrapper";
+import { interactionState, type PatternInteractionSettings } from "../interactionState.svelte";
 
 // Lustspiel — one entry per phase; elements are toggles inside the pattern
 const lspA = makeLustspielPattern('lsp-a', 'Lustspiel A', 'A');
 const lspB = makeLustspielPattern('lsp-b', 'Lustspiel B', 'B');
 const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
+
+// Lustspiel is meant to be danced in, not reacted to by default — the shared Tier 1
+// "Interactions" universals (Colour v2, Speed, Direction, Burst) default ON for every
+// pattern in the app (see interactionState.svelte.ts). Seed the opposite for these
+// three specific ids, once, at the earliest possible point (module load, before any
+// control is ever read) — and only if nothing was saved for them yet, so a later,
+// deliberate opt-in from the Options panel is never overwritten.
+for (const id of ['lsp-a', 'lsp-b', 'lsp-c']) {
+  if (interactionState.patternSettings[id]) continue;
+  const off: PatternInteractionSettings = {
+    brightnessEnabled: false, brightnessGain: 1.0,
+    colorsV2Enabled: false, colorsV2Gain: 1.0,
+    speedEnabled: false, speedGain: 1.0,
+    directionEnabled: false, directionXBlend: 0.5, directionYBlend: 0.0,
+    burstEnabled: false, burstMagnitude: 0.5,
+  };
+  interactionState.patternSettings[id] = off;
+}
 
 // Static image patterns (one per artwork)
 const _base = import.meta.env.BASE_URL;

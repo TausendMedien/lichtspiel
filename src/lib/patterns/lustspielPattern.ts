@@ -59,7 +59,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     lock: 0.35,
     pk: 20,
     seed: DEFAULT_SEED,
-    colorSoftness: 0.5,
+    colorSoftness: 0,
     strictness: 0.65,
   };
 
@@ -211,7 +211,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
       tip: 'Left: Film — this phase’s fixed colours. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both.',
       get: () => paletteBlend, set: v => { paletteBlend = v; touch(); } },
-    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.05, default: 0.5,
+    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.05, default: 0,
       tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
       get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
 
