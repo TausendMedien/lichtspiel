@@ -44,6 +44,14 @@ export interface EngineState {
    * NEVER passed to hash(): that would change which elements exist per frame.
    */
   time?: number;
+  /**
+   * True for the Speed-driven Lustspiel 1/2/3 patterns — adds a gentle,
+   * always-on time-based drift to every element/style (not just Organic's
+   * meander or the Wave point style's flow), so Speed has a visible effect
+   * everywhere. Left unset (falsy) for Lustspiel A/B/C, whose `time` never
+   * advances anyway, but which must render bit-for-bit as before this existed.
+   */
+  animated?: boolean;
 }
 
 export interface Phase {

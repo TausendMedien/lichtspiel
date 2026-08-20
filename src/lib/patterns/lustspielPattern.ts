@@ -77,6 +77,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     strictness: 0.65,
     ...opts?.defaults,
     time: 0,
+    animated: !!opts?.animated,
   };
   let speed = opts?.animated ? (opts.speedDefault ?? 0.15) : 0;
 

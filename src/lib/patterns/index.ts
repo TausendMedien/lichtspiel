@@ -42,14 +42,14 @@ const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
 // intensity()/zoneU() ever see that time value — hash() never does — so drift
 // never changes which shapes exist, only their form (see engine.ts).
 const lsp1 = makeLustspielPattern('lsp-1', 'Lustspiel 1', 'B', {
-  // dot-waves / flowing-dots: a flowing field of dots, mixed cyan/magenta/white.
+  // dot-waves / flowing-dots: an S-band of lines with a halftone field of dots.
   animated: true, speedDefault: 0.15,
-  defaults: { pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic', organic: 0.35, warp: 0.8, dens: 1.4, colorSoftness: 0.4 },
+  defaults: { elems: [1, 2], pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic', organic: 0.35, warp: 0.8, dens: 1.4, colorSoftness: 0.4 },
 });
 const lsp2 = makeLustspielPattern('lsp-2', 'Lustspiel 2', 'A', {
-  // two-feather: near-mirrored strands either side of a centre line.
+  // two-feather: dots and strands split left/right of a wandering centre line.
   animated: true, speedDefault: 0.12,
-  defaults: { elems: [2], comp: 'blobs', arrangement: 'leftRight', strictness: 0.8, organic: 0.25, warp: 1.2, dens: 1.0, colorSoftness: 0.2 },
+  defaults: { elems: [1, 2], comp: 'blobs', arrangement: 'leftRight', strictness: 0.8, organic: 0.25, warp: 1.2, dens: 1.0, colorSoftness: 0.2 },
 });
 const lsp3 = makeLustspielPattern('lsp-3', 'Lustspiel 3', 'C', {
   // baroque-vines: winding, clustered growth in the deep violet phase palette.

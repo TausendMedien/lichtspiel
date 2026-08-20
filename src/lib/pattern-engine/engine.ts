@@ -251,11 +251,21 @@ export const PHASE: Record<PhaseId, Phase> = {
  * in a different shape.
  */
 function bendOf(base: number, px: number, py: number, amp: number, o: Ctx): number {
-  if (o.organic <= 0) return base;
-  const w1 = field(px * 0.55, py * 0.55, o.seed + 130 + o.t);
-  const w2 = field(px * 1.6 + 900, py * 1.6 + 900, o.seed + 140 + o.t);
-  const wander = (w1 * 0.7 + w2 * 0.55) * amp * 2.4;
-  return base * (1 - o.organic) + wander * o.organic;
+  let bent = base;
+  if (o.organic > 0) {
+    const w1 = field(px * 0.55, py * 0.55, o.seed + 130 + o.t);
+    const w2 = field(px * 1.6 + 900, py * 1.6 + 900, o.seed + 140 + o.t);
+    const wander = (w1 * 0.7 + w2 * 0.55) * amp * 2.4;
+    bent = base * (1 - o.organic) + wander * o.organic;
+  }
+  // A gentle drift independent of Organic, so Speed (state.time) has a visible,
+  // continuous effect on every element and style — even a hard sine bend at
+  // Organic 0. Skipped for Lustspiel A/B/C (o.animated unset), whose time never
+  // advances anyway, so this changes nothing for them.
+  if (o.animated) {
+    bent += field(px * 0.4 + 300, py * 0.4 + 300, o.seed + 170 + o.t) * amp * 0.30;
+  }
+  return bent;
 }
 
 // ─── Equal-impact calibration ──────────────────────────────────────────────────
@@ -299,6 +309,13 @@ function elPoints(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
         const j = P.jit * o.warp * sp;
         px = x + (hash(x, y, o.seed) - 0.5) * j;
         py = y + (hash(y, x, o.seed + 3) - 0.5) * j * 1.4;
+        // Grid style has no other time-dependent term (unlike Wave's flow offset)
+        // — add a gentle always-on drift so Speed still has a visible effect.
+        if (o.animated) {
+          const d = sp * 0.45;
+          px += field(x * 0.02, y * 0.02, o.seed + 150 + o.t) * d;
+          py += field(y * 0.02, x * 0.02, o.seed + 151 + o.t) * d;
+        }
       }
       if (!inZone(px, py, o, slot)) continue;
       if (hash(x * 3.3, y * 4.4, o.seed + 77) > o.keep) continue;   // fewer elements, not dimmer
@@ -393,12 +410,17 @@ function elMesh(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
   const cols = Math.ceil(DESIGN_W / cell) + 2, rows = Math.ceil(o.H / cell) + 2;
   const j = cell * 0.30 * (0.4 + P.jit * o.warp);
   const org = o.organic > 0 ? cell * 0.9 * o.organic : 0;
+  // Organic-gated wander (org) covers Organic > 0; this always-on term (drift)
+  // gives Speed a visible effect at Organic 0 too, same rationale as bendOf().
+  const drift = o.animated ? cell * 0.4 : 0;
   const nx = (i: number, k: number) => i * cell - cell * 0.5 + (hash(i * 1.7, k * 2.9, o.seed + 7) - 0.5) * j * 2
     + (org ? (field(i * cell * 0.5, k * cell * 0.5, o.seed + 130 + o.t) * 0.7
-            + field(i * cell * 1.4 + 900, k * cell * 1.4 + 900, o.seed + 140 + o.t) * 0.5) * org : 0);
+            + field(i * cell * 1.4 + 900, k * cell * 1.4 + 900, o.seed + 140 + o.t) * 0.5) * org : 0)
+    + (drift ? field(i * cell * 0.5 + 700, k * cell * 0.5 + 700, o.seed + 160 + o.t) * drift : 0);
   const ny = (i: number, k: number) => k * cell - cell * 0.5 + (hash(k * 1.3, i * 3.7, o.seed + 13) - 0.5) * j * 2
     + (org ? (field(i * cell * 0.5 + 500, k * cell * 0.5 + 500, o.seed + 131 + o.t) * 0.7
-            + field(i * cell * 1.4 + 1400, k * cell * 1.4 + 1400, o.seed + 141 + o.t) * 0.5) * org : 0);
+            + field(i * cell * 1.4 + 1400, k * cell * 1.4 + 1400, o.seed + 141 + o.t) * 0.5) * org : 0)
+    + (drift ? field(i * cell * 0.5 + 1700, k * cell * 0.5 + 1700, o.seed + 161 + o.t) * drift : 0);
   for (let k = 0; k < rows; k++) {
     for (let i = 0; i < cols; i++) {
       const ax = nx(i, k), ay = ny(i, k);
