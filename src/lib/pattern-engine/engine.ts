@@ -298,7 +298,13 @@ const IMPACT = {
   lines: 0.82,
   mesh: 1.24,
   rings: 0.91,
-  gravity: 1.35,
+  /** Fitted by bisection against the real paint() (not a reproduction — that is
+   *  how the Strands calibration went wrong once): 1.743 puts Gravity's mean
+   *  per-pixel max-channel brightness at 88.4, the average of Points (83.3),
+   *  Lines (85.4) and Mesh (96.6), measured over 5 seeds at Density 2. The
+   *  closed-form estimate said ~2.6; the longer dashes overlap more than the
+   *  arithmetic assumed, so measurement wins. */
+  gravity: 1.743,
 };
 
 // ─── Elements ─────────────────────────────────────────────────────────────────
@@ -504,18 +510,30 @@ function elGravity(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) 
   const nMass = 3 + Math.round(hash(7, 11, o.seed + 300) * 3);   // 3..6
   const mass: { x: number; y: number; m: number }[] = [];
   for (let i = 0; i < nMass; i++) {
-    const bx = (0.14 + hash(i * 3.7, 2.1, o.seed + 301) * 0.72) * DESIGN_W;
-    const by = (0.14 + hash(i * 5.1, 4.3, o.seed + 302) * 0.72) * H;
+    // Lissajous orbits, the same shape and rates the real Gravity Lines pattern
+    // uses for its attractors (updateAttractors in gravityLines.ts). The earlier
+    // version only nudged each mass ±12% around a fixed hash position, which is
+    // why the flow barely moved; these sweep ±75% of the frame, so the bands
+    // between the masses genuinely travel.
+    //
+    // hash() still decides how many masses there are and which ones repel — that
+    // is identity and must never see time, or dashes would pop in and out
+    // (photosensitivity). Only the positions move, and only via o.t, so Speed 0
+    // is still perfectly still.
+    const s = i * 1.7;
+    const x = DESIGN_W * 0.5 + Math.sin(o.t * (0.31 + 0.07 * i) + s)       * DESIGN_W * 0.5 * 0.75;
+    const y = H * 0.5        + Math.cos(o.t * (0.23 + 0.05 * i) + s * 1.3) * H        * 0.5 * 0.75;
     // Signed: roughly a third repel, which is what opens up the empty lanes.
-    const m = (hash(i * 9.3, 6.7, o.seed + 303) < 0.34 ? -1 : 1)
-            * (0.5 + hash(i * 2.9, 8.1, o.seed + 304) * 0.9);
-    const dx = field(i * 400 + 50, i * 260 + 90, o.seed + 305 + o.t) * DESIGN_W * 0.12;
-    const dy = field(i * 260 + 700, i * 400 + 310, o.seed + 306 + o.t) * H * 0.12;
-    mass.push({ x: bx + dx, y: by + dy, m });
+    const sign = hash(i * 9.3, 6.7, o.seed + 303) < 0.34 ? -1 : 1;
+    const m = sign * (0.7 + 0.3 * Math.sin(o.t * 0.4 + s));
+    mass.push({ x, y, m });
   }
   const swirl = Math.min(1, o.warp * 0.42);       // Warp curls the field
   const soften = 9000;                             // keeps cores finite
-  const sp = 34 / o.dens;
+  // Same raster as Points (26/dens), not the far sparser 34/dens it used to be —
+  // combined with the longer dashes and higher alpha floor below, this is what
+  // brings Gravity's ink-per-cell up to the ~0.43 that Points and Mesh sit at.
+  const sp = 26 / o.dens;
 
   for (let y = sp * 0.5; y < H + sp; y += sp) {
     for (let x = sp * 0.5; x < DESIGN_W + sp; x += sp) {
@@ -548,11 +566,14 @@ function elGravity(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) 
       // Scale-free ramp: 0 near a core, →1 in the strong bands.
       const t = mag / (mag + 0.55);
       const m2 = intensity(px, py, o);
-      const len = sp * (0.30 + 0.95 * t);
+      // Longer dashes so neighbours nearly meet and read as flow rather than as
+      // a field of dots, and a higher alpha floor (was 0.30) so the quiet areas
+      // near a core aren't near-invisible next to the other elements.
+      const len = sp * (0.55 + 1.30 * t);
       const lw = Math.max(0.6, sp * 0.13 * o.stroke * IMPACT.gravity * (0.55 + 0.45 * m2));
       c.strokeStyle = col(hash(x * 1.9, y * 2.3, o.seed + 21), o.pal, o.colorSoftness);
       c.lineWidth = lw;
-      c.globalAlpha = (0.30 + 0.70 * t) * (0.55 + 0.45 * m2);
+      c.globalAlpha = (0.45 + 0.55 * t) * (0.55 + 0.45 * m2);
       c.beginPath();
       c.moveTo(px - dirx * len * 0.5, py - diry * len * 0.5);
       c.lineTo(px + dirx * len * 0.5, py + diry * len * 0.5);
