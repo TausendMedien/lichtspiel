@@ -780,7 +780,7 @@
         : new Set(pat.defaultCollapsedSections ?? []);
       colourCollapsed = _perPatternColourCollapsed.has(pat.id)
         ? _perPatternColourCollapsed.get(pat.id)!
-        : pat.id.startsWith('img-');
+        : (pat.id.startsWith('img-') || pat.id.startsWith('lsp-'));
       patternGroupCollapsed = _perPatternGroupCollapsed.has(pat.id)
         ? _perPatternGroupCollapsed.get(pat.id)!
         : true;
@@ -4149,11 +4149,18 @@
             {#if isInteractive}{:else}
             {@const focusedRangeCtrl = sliderModeActive ? rangeControls[sliderFocusIndex] : null}
             {@const activeFocusedCtrl = rangeControls[sliderFocusIndex]}
-            {#if ctrl.type === "separator"}
-              <!-- Plain section divider (no toggle) -->
+            {#if ctrl.type === "separator" && ctrl.label}
+              <!-- Sub-heading within a top-level section (e.g. inside "Pattern") —
+                   deliberately lighter than the Pattern/Colour/Interactive headers
+                   above, so the hierarchy reads at a glance instead of looking like
+                   three more top-level sections. -->
+              <div class="mt-2 flex items-center gap-1.5">
+                <span class="text-[10px] font-medium tracking-wide text-white/35">{ctrl.label}</span>
+                <div class="h-px flex-1 bg-white/10"></div>
+              </div>
+            {:else if ctrl.type === "separator"}
+              <!-- Blank divider, no label -->
               <div class="mt-1 flex items-center gap-2">
-                <div class="h-px flex-1 bg-white/20"></div>
-                <span class="text-xs font-semibold uppercase tracking-widest text-white/60">{ctrl.label}</span>
                 <div class="h-px flex-1 bg-white/20"></div>
               </div>
             {:else if ctrl.type === "section"}

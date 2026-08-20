@@ -88,7 +88,7 @@ describe("arrangement — spatial partition between elements", () => {
   const base = {
     phase: "B" as const, pointStyle: "strands" as const, lineDir: "v" as const,
     dens: 1, stroke: 1, warp: 1, organic: 0, zones: 3, lock: 0.35, pk: 20,
-    seed: 8685, colorSoftness: 0.5, elems: [1, 2] as const,
+    seed: 8685, colorSoftness: 0.5, strictness: 0.65, elems: [1, 2] as const,
   };
 
   // Column of samples at a given fraction across the width, returns the majority slot.

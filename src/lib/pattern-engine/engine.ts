@@ -77,7 +77,7 @@ function col(r: number, pal: string[], softness: number): string {
 /** Working state: the user state plus values derived once per paint(). */
 interface Ctx extends EngineState {
   H: number;      // logical height
-  keep: number;   // 1 = keep everything; < 1 thins elements out (A/C)
+  keep: number;   // 1 = keep everything; < 1 thins elements out
   pal: string[];
   t: number;      // time offset fed into field()/intensity()/zoneU()
 }
@@ -103,12 +103,15 @@ function zoneU(x: number, y: number, o: Ctx): number {
   // here is the element count, not Zones (Zones instead sets blob-cluster density
   // for comp="blobs", and repeat count for comp="bands" + arrangement="chaotic").
   const n = o.elems.length;
+  // Strictness shrinks the edge noise toward 0 (a clean, near-straight split) as it
+  // rises, and opens it up toward a wavier edge as it falls.
+  const edgeNoise = 0.16 * (1 - o.strictness) * (1 - o.strictness);
   if (o.arrangement === "leftRight") {
-    const u = x / DESIGN_W + field(x * 0.9, y * 1.6, o.seed + 210 + o.t) * 0.05;
+    const u = x / DESIGN_W + field(x * 0.9, y * 1.6, o.seed + 210 + o.t) * edgeNoise;
     return clamp(u, 0, 0.9999) * n;
   }
   if (o.arrangement === "upDown") {
-    const u = y / o.H + field(y * 0.9, x * 1.6, o.seed + 310 + o.t) * 0.05;
+    const u = y / o.H + field(y * 0.9, x * 1.6, o.seed + 310 + o.t) * edgeNoise;
     return clamp(u, 0, 0.9999) * n;
   }
   const a = Math.sin(x * 0.0019 + Math.sin(y * 0.0030 + s) * 1.8 + s * 0.7);
@@ -144,7 +147,7 @@ let _blobList: { x: number; y: number; slot: number }[] | null = null;
 function blobCenters(o: Ctx) {
   // Arrangement, zones and the logical height all change where centres land, so
   // all belong in the cache key — otherwise a change appears to do nothing.
-  const key = o.seed + "|" + o.elems.join(",") + "|" + o.arrangement + "|" + Math.round(o.H) + "|" + o.zones;
+  const key = o.seed + "|" + o.elems.join(",") + "|" + o.arrangement + "|" + Math.round(o.H) + "|" + o.zones + "|" + o.strictness;
   if (_blobKey === key && _blobList) return _blobList;
   const n = o.elems.length;
   const perSlot = Math.max(1, Math.round(o.zones));
@@ -154,15 +157,20 @@ function blobCenters(o: Ctx) {
       const rx = hash(s * 17 + b * 31 + 5, 7, o.seed + 200);
       const ry = hash(s * 23 + b * 13 + 9, 11, o.seed + 201);
       let x: number, y: number;
+      // Strictness controls how far a cluster's centre may wander from the
+      // middle of its own band, as a fraction of the band's half-width: at 0 it
+      // commonly spills deep into neighbouring bands (a chaotic-looking split —
+      // nearest-neighbour assignment near a spilled-over centre goes the "wrong"
+      // way); at 1 it stays clustered near its own centre, safely away from any
+      // boundary, giving an unambiguous split.
+      const spreadFrac = 1.6 - 1.3 * o.strictness;
       if (o.arrangement === "leftRight") {
-        // Slot s owns the horizontal band [s/n, (s+1)/n], widened a little on
-        // each side so the seam meanders instead of sitting on a straight line.
-        const lo = s / n, hi = (s + 1) / n, over = (hi - lo) * 0.08;
-        x = (lo - over + rx * (hi - lo + 2 * over)) * DESIGN_W;
+        const lo = s / n, hi = (s + 1) / n, mid = (lo + hi) / 2, halfW = (hi - lo) / 2;
+        x = (mid + (rx * 2 - 1) * halfW * spreadFrac) * DESIGN_W;
         y = ry * o.H;
       } else if (o.arrangement === "upDown") {
-        const lo = s / n, hi = (s + 1) / n, over = (hi - lo) * 0.08;
-        y = (lo - over + ry * (hi - lo + 2 * over)) * o.H;
+        const lo = s / n, hi = (s + 1) / n, mid = (lo + hi) / 2, halfW = (hi - lo) / 2;
+        y = (mid + (ry * 2 - 1) * halfW * spreadFrac) * o.H;
         x = rx * DESIGN_W;
       } else {
         x = rx * DESIGN_W;
@@ -177,9 +185,19 @@ function blobCenters(o: Ctx) {
 
 function blobZone(x: number, y: number, o: Ctx, slot: number): boolean {
   const centers = blobCenters(o);
+  // Left/Right and Up/Down promise a split along one axis. Nearest-neighbour
+  // distance alone is blind to that — a point can sit firmly in the "top" half
+  // by y, yet be 2D-closer to a "bottom" blob purely because of x. Strictness
+  // discounts the off-axis distance component, so the search increasingly
+  // becomes "nearest along the axis that matters" instead of "nearest in the
+  // plane" — that is what actually makes the split unambiguous, more than
+  // where the centres themselves sit.
+  let wx = 1, wy = 1;
+  if (o.arrangement === "leftRight") { const w = 1 - 0.92 * o.strictness; wy = w * w; }
+  else if (o.arrangement === "upDown") { const w = 1 - 0.92 * o.strictness; wx = w * w; }
   let best = Infinity, bestSlot = -1, second = Infinity;
   for (let i = 0; i < centers.length; i++) {
-    const c = centers[i], dx = x - c.x, dy = y - c.y, d = dx * dx + dy * dy;
+    const c = centers[i], dx = x - c.x, dy = y - c.y, d = dx * dx * wx + dy * dy * wy;
     if (d < best) { second = best; best = d; bestSlot = c.slot; }
     else if (d < second) { second = d; }
   }
@@ -251,7 +269,14 @@ function bendOf(base: number, px: number, py: number, amp: number, o: Ctx): numb
 const IMPACT = {
   pointsGrid: 1.26,
   pointsWave: 1.26,
-  pointsStrands: 2.01,
+  /** A 1D chain of dots can't match a 2D grid's coverage without either much
+   *  bigger dots or densely overlapping (and therefore wasted) placement — so
+   *  the fix is split between the two: dots stay close to grid/wave size
+   *  (moderately bigger, not ~1.6x as before) and are placed ~3.5x more
+   *  densely along each strand. Both were fitted so Strands matches Grid's
+   *  measured brightness at the shared default density. */
+  pointsStrands: 1.41,
+  pointsStrandsPlacement: 3.5,
   lines: 0.82,
   mesh: 1.24,
   rings: 0.91,
@@ -298,25 +323,32 @@ function elPointsStrands(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: nu
   const horiz = (o.lineDir === "h");
   const base = 22 / o.dens;
   const spanMain = horiz ? o.H : DESIGN_W, spanSweep = horiz ? DESIGN_W : o.H;
+  // Radius uses the density-only spacing, unaffected by IMPACT_STRAND_PLACEMENT, so a
+  // strand dot stays the same size as a grid/wave dot. The brightness this style is
+  // missing (a 1D chain covers far less area than a 2D raster) is made up by placing
+  // roughly twice as many dots per strand instead of making each dot bigger.
+  const gapSize = Math.max(6, 30 / o.dens);
+  const gapPlace = gapSize / IMPACT.pointsStrandsPlacement;
   let pos = -base, i = 0;
   while (pos < spanMain + base) {
     const r1 = hash(i * 3.1, 7.7, o.seed + 60), r2 = hash(i * 5.3, 11.1, o.seed + 62), r3 = hash(i * 9.1, 3.3, o.seed + 64);
     if (hash(i * 6.6, 2.2, o.seed + 78) > o.keep) { pos += base * (0.5 + r1 * 1.6); i++; continue; }
     const amp = P.warp * o.warp * (14 + r3 * 70) * 0.9;
     const f = 0.0016 + r1 * 0.0022, ph = r2 * 6.283;
-    const gap = Math.max(6, 30 / o.dens) * (0.6 + 0.8 * hash(i * 2.2, 4.4, o.seed + 81));
-    let acc = gap;
+    const gapR = gapSize * (0.6 + 0.8 * hash(i * 2.2, 4.4, o.seed + 81));
+    const gapP = gapPlace * (0.6 + 0.8 * hash(i * 2.2, 4.4, o.seed + 81));
+    let acc = gapP;
     for (let s = -10; s < spanSweep + 10; s += 7) {
       acc -= 7;
       if (acc > 0) continue;
-      acc = gap * (0.7 + 0.6 * hash(s * 0.3, i * 1.1, o.seed + 91));
+      acc = gapP * (0.7 + 0.6 * hash(s * 0.3, i * 1.1, o.seed + 91));
       let bend = amp * Math.sin(s * f + ph) + amp * 0.35 * Math.sin(s * f * 2.7 + ph * 1.7);
       bend = bendOf(bend, horiz ? s : pos, horiz ? pos : s, amp, o);
       const px = horiz ? s : pos + bend, py = horiz ? pos + bend : s;
       if (!inZone(px, py, o, slot)) continue;
       const m = intensity(px, py, o);
       const sz = (0.40 + 0.60 * hash(s * 0.7, i * 3.3, o.seed + 95)) * (0.55 + 0.45 * m);
-      const r = Math.max(0.5, gap * 0.30 * sz * o.stroke * IMPACT.pointsStrands);
+      const r = Math.max(0.5, gapR * 0.30 * sz * o.stroke * IMPACT.pointsStrands);
       c.beginPath(); c.arc(px, py, r, 0, 6.2832);
       c.fillStyle = col(hash(s * 1.1, i * 2.7, o.seed + 21), o.pal, o.colorSoftness);
       c.globalAlpha = 0.55 + 0.45 * m;
@@ -440,8 +472,10 @@ export function paint(
   const o: Ctx = {
     ...state,
     H: logicalH,
-    // A/C: fewer elements, not darker.
-    keep: state.phase === "B" ? 1 : (1 - state.pk / 100),
+    // Fewer elements, not darker — applies in every phase now (Thinning used to
+    // be forced off in B; that was the prototype's stylistic default, not a
+    // constraint, and B is thinnable like A/C now).
+    keep: 1 - state.pk / 100,
     pal: state.palette && state.palette.length ? state.palette : P.pal,
     t: state.time ?? 0,
   };

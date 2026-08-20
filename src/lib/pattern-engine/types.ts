@@ -14,6 +14,10 @@ export interface EngineState {
    *  over the whole surface; leftRight/upDown assign each element its own band
    *  along that axis, with a meandering (not ruler-straight) edge. */
   arrangement: "chaotic" | "leftRight" | "upDown";
+  /** 0..1 — how cleanly leftRight/upDown splits the elements: 0 lets bands
+   *  meander and overlap a lot (can look chaotic), 1 gives a clean, unambiguous
+   *  split. No effect on "chaotic" arrangement. */
+  strictness: number;
   pointStyle: "grid" | "strands" | "wave";
   /** Generation axis for Lines and Points/Strands — the 90° switch. */
   lineDir: "v" | "h";

@@ -51,7 +51,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     arrangement: 'chaotic',
     pointStyle: 'strands',
     lineDir: 'v',
-    dens: 1,
+    dens: 2,
     stroke: 1,
     warp: 1,
     organic: 0,
@@ -60,6 +60,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     pk: 20,
     seed: DEFAULT_SEED,
     colorSoftness: 0.5,
+    strictness: 0.65,
   };
 
   /** Which elements are on, keyed by element id — the toggles write here. */
@@ -140,9 +141,18 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       set: (v: boolean) => { on[e.id] = v; syncElems(); },
     })),
 
+    // ── Identity ─────────────────────────────────────────────────────────────
+    { label: 'Identity', type: 'separator' },
+    { label: 'Seed', type: 'stepper', min: 1, max: 9999, step: 1,
+      tip: 'Picks one specific pattern out of all possible ones. The same seed always gives the same image.',
+      get: () => state.seed, set: v => { state.seed = Math.round(v); touch(); } },
+    { label: 'New Seed', type: 'button',
+      tip: 'Roll a new random seed — a completely different pattern, same settings.',
+      action: () => { state.seed = 1 + Math.floor(Math.random() * 9999); touch(); } },
+
     // ── Shape — how each element looks and moves ──────────────────────────────
     { label: 'Shape', type: 'separator' },
-    { label: 'Density', type: 'range', min: 0.4, max: 2.4, step: 0.05, default: 1,
+    { label: 'Density', type: 'range', min: 0.4, max: 2.4, step: 0.05, default: 2,
       tip: 'How closely the strands, dots or rings sit together.',
       get: () => state.dens, set: v => { state.dens = v; touch(); } },
     { label: 'Stroke Width', type: 'range', min: 0.5, max: 1.5, step: 0.05, default: 1,
@@ -173,10 +183,14 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       get: () => (state.comp === 'bands' ? 0 : 1),
       set: v => { state.comp = v === 0 ? 'bands' : 'blobs'; touch(); } },
     { label: 'Arrangement', type: 'buttons', options: [...ARRANGEMENTS],
-      tip: 'Chaotic scatters the zones over the whole surface. Left/Right and Up/Down give each element its own side, in order, with a meandering (not ruler-straight) seam.',
+      tip: 'Chaotic scatters the zones over the whole surface. Left/Right and Up/Down give each element its own side, in order.',
       disabled: () => !multi(),
       get: () => ARRANGEMENT_VALUES.indexOf(state.arrangement),
       set: v => { state.arrangement = ARRANGEMENT_VALUES[v] ?? 'chaotic'; touch(); } },
+    { label: 'Strictness', type: 'range', min: 0, max: 1, step: 0.05, default: 0.65,
+      tip: 'Only for Left/Right and Up/Down: how unambiguous the split is. 0 lets sides blend and overlap — can look chaotic. 1 gives a clean, obvious split. No effect on Chaotic.',
+      disabled: () => !multi() || state.arrangement === 'chaotic',
+      get: () => state.strictness, set: v => { state.strictness = v; touch(); } },
     { label: 'Zones', type: 'range', min: 2, max: 6, step: 1, default: 3,
       tip: 'Blobs: how many clusters each element gets — more clusters, more scattered. Bands: only affects Chaotic (Left/Right and Up/Down always use one band per element).',
       disabled: () => !zonesMatter(),
@@ -186,11 +200,10 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
       disabled: () => !multi(),
       get: () => state.lock, set: v => { state.lock = v; touch(); } },
 
-    // ── Phase A/C only — inert in B ────────────────────────────────────────────
-    { label: 'Phase A / C', type: 'separator' },
+    // ── Phase timing ─────────────────────────────────────────────────────────
+    { label: 'Phase Timing', type: 'separator' },
     { label: 'Thinning', type: 'range', min: 0, max: 60, step: 1, default: 20,
-      tip: 'Removes elements in phases A and C — fewer marks, not a dimmer image. No effect in phase B.',
-      disabled: () => phase === 'B',
+      tip: 'Removes elements — fewer marks, not a dimmer image.',
       get: () => state.pk, set: v => { state.pk = Math.round(v); touch(); } },
 
     // ── Colour ───────────────────────────────────────────────────────────────
@@ -201,15 +214,6 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId): 
     { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.05, default: 0.5,
       tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
       get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
-
-    // ── Identity ─────────────────────────────────────────────────────────────
-    { label: 'Identity', type: 'separator' },
-    { label: 'Seed', type: 'stepper', min: 1, max: 9999, step: 1,
-      tip: 'Picks one specific pattern out of all possible ones. The same seed always gives the same image.',
-      get: () => state.seed, set: v => { state.seed = Math.round(v); touch(); } },
-    { label: 'New Seed', type: 'button',
-      tip: 'Roll a new random seed — a completely different pattern, same settings.',
-      action: () => { state.seed = 1 + Math.floor(Math.random() * 9999); touch(); } },
 
     // ── Sync ─────────────────────────────────────────────────────────────────
     { label: 'All Phases', type: 'separator' },
