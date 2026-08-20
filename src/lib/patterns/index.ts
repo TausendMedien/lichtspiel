@@ -73,7 +73,7 @@ const lspOrganic = makeLustspielPattern('lsp-organic', 'Lustspiel Organic', 'C',
   animated: true, speedDefault: 0.12,
   atmosphere: true, atmosphereDefault: 0.65,
   defaults: {
-    elems: [1, 2, 3, 4], pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic',
+    elems: [1, 2, 3, 4, 5], pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic',
     organic: 0.6, warp: 1.3, dens: 1.0, zones: 5, lock: 0.5, colorSoftness: 0.5,
   },
 });

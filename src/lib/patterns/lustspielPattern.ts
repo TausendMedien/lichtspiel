@@ -32,6 +32,7 @@ const ELEMENTS: { id: ElementId; label: string; tip: string }[] = [
   { id: 2, label: 'Lines',  tip: 'Long bent strands of varying thickness.' },
   { id: 3, label: 'Mesh',   tip: 'A net of nodes connected to their neighbours.' },
   { id: 4, label: 'Rings',  tip: 'Concentric rings around an off-centre point.' },
+  { id: 5, label: 'Gravity', tip: 'Short dashes aligned to a gravity field of a few attracting and repelling masses — the Gravity Lines look. Warp curls the field into orbits; the masses drift with Speed.' },
 ];
 
 const POINT_STYLES = ['Grid', 'Strands', 'Wave'] as const;
@@ -90,7 +91,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
    *  Seeded from state.elems (defaults or an opts.defaults override), not
    *  hardcoded — syncElems() below rebuilds state.elems from this on first
    *  init() and would otherwise silently discard a non-[1] elems default. */
-  const on: Record<ElementId, boolean> = { 1: false, 2: false, 3: false, 4: false };
+  const on: Record<ElementId, boolean> = { 1: false, 2: false, 3: false, 4: false, 5: false };
   for (const el of state.elems) on[el] = true;
   /** 0 = Film (fixed phase colours), 1 = Default (the app's global palette). */
   let paletteBlend = 0.5;

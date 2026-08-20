@@ -298,6 +298,7 @@ const IMPACT = {
   lines: 0.82,
   mesh: 1.24,
   rings: 0.91,
+  gravity: 1.35,
 };
 
 // ─── Elements ─────────────────────────────────────────────────────────────────
@@ -486,8 +487,84 @@ function elRings(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
   c.globalAlpha = 1;
 }
 
+/**
+ * Gravity: a grid of short dashes, each aligned to the local gravity field of a
+ * handful of signed masses — the Canvas2D reading of the app's Gravity Lines
+ * pattern. Attractors pull, repellers push, Warp mixes the field from radial
+ * toward tangential so the dashes curl into orbits instead of pointing straight
+ * at a core. Dash length and brightness ride the field strength, so cores read
+ * as quiet holes and the bands between them as bright streams.
+ *
+ * Identity (how many masses, where, what sign) comes from hash() and never
+ * changes; the masses only *drift* via field()+o.t, so Speed moves the flow
+ * without ever making dashes pop in and out.
+ */
+function elGravity(c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) {
+  const H = o.H;
+  const nMass = 3 + Math.round(hash(7, 11, o.seed + 300) * 3);   // 3..6
+  const mass: { x: number; y: number; m: number }[] = [];
+  for (let i = 0; i < nMass; i++) {
+    const bx = (0.14 + hash(i * 3.7, 2.1, o.seed + 301) * 0.72) * DESIGN_W;
+    const by = (0.14 + hash(i * 5.1, 4.3, o.seed + 302) * 0.72) * H;
+    // Signed: roughly a third repel, which is what opens up the empty lanes.
+    const m = (hash(i * 9.3, 6.7, o.seed + 303) < 0.34 ? -1 : 1)
+            * (0.5 + hash(i * 2.9, 8.1, o.seed + 304) * 0.9);
+    const dx = field(i * 400 + 50, i * 260 + 90, o.seed + 305 + o.t) * DESIGN_W * 0.12;
+    const dy = field(i * 260 + 700, i * 400 + 310, o.seed + 306 + o.t) * H * 0.12;
+    mass.push({ x: bx + dx, y: by + dy, m });
+  }
+  const swirl = Math.min(1, o.warp * 0.42);       // Warp curls the field
+  const soften = 9000;                             // keeps cores finite
+  const sp = 34 / o.dens;
+
+  for (let y = sp * 0.5; y < H + sp; y += sp) {
+    for (let x = sp * 0.5; x < DESIGN_W + sp; x += sp) {
+      if (hash(x * 3.1, y * 2.7, o.seed + 77) > o.keep) continue;
+      const jx = (hash(x, y, o.seed + 310) - 0.5) * sp * 0.55;
+      const jy = (hash(y, x, o.seed + 311) - 0.5) * sp * 0.55;
+      const px = x + jx, py = y + jy;
+      if (!inZone(px, py, o, slot)) continue;
+
+      let fx = 0, fy = 0;
+      for (let i = 0; i < nMass; i++) {
+        const dx = mass[i].x - px, dy = mass[i].y - py;
+        const r2 = dx * dx + dy * dy + soften;
+        // radial pulls toward the mass, tangential orbits it
+        const rx = dx / r2, ry = dy / r2;
+        const tx = -dy / r2, ty = dx / r2;
+        fx += mass[i].m * (rx * (1 - swirl) + tx * swirl) * 60000;
+        fy += mass[i].m * (ry * (1 - swirl) + ty * swirl) * 60000;
+      }
+      const mag = Math.hypot(fx, fy);
+      if (mag < 1e-6) continue;
+      let dirx = fx / mag, diry = fy / mag;
+      // Organic bends each dash off the pure field direction.
+      if (o.organic > 0) {
+        const a = field(px * 0.8, py * 0.8, o.seed + 320 + o.t) * o.organic * 1.5;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const nx = dirx * ca - diry * sa;
+        diry = dirx * sa + diry * ca; dirx = nx;
+      }
+      // Scale-free ramp: 0 near a core, →1 in the strong bands.
+      const t = mag / (mag + 0.55);
+      const m2 = intensity(px, py, o);
+      const len = sp * (0.30 + 0.95 * t);
+      const lw = Math.max(0.6, sp * 0.13 * o.stroke * IMPACT.gravity * (0.55 + 0.45 * m2));
+      c.strokeStyle = col(hash(x * 1.9, y * 2.3, o.seed + 21), o.pal, o.colorSoftness);
+      c.lineWidth = lw;
+      c.globalAlpha = (0.30 + 0.70 * t) * (0.55 + 0.45 * m2);
+      c.beginPath();
+      c.moveTo(px - dirx * len * 0.5, py - diry * len * 0.5);
+      c.lineTo(px + dirx * len * 0.5, py + diry * len * 0.5);
+      c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+  void P;
+}
+
 type ElementFn = (c: CanvasRenderingContext2D, P: Phase, o: Ctx, slot: number) => void;
-const RENDER: Record<ElementId, ElementFn> = { 1: elPoints, 2: elLines, 3: elMesh, 4: elRings };
+const RENDER: Record<ElementId, ElementFn> = { 1: elPoints, 2: elLines, 3: elMesh, 4: elRings, 5: elGravity };
 
 // ─── Composition ──────────────────────────────────────────────────────────────
 
