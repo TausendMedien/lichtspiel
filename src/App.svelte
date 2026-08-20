@@ -1492,31 +1492,50 @@
 
   function startRandomize(now: number) {
     handle?.suppressGuard(1300); // intentional transition — don't let the flicker guard dim it
+    const pat = patterns[index];
+    const isLustspiel = pat?.id?.startsWith('lsp-');
     const anims: Record<string, RandAnim> = {};
-    for (const ctrl of patterns[index]?.controls ?? []) {
+    for (const ctrl of pat?.controls ?? []) {
       if (/camera|microphone/i.test(ctrl.label)) continue;
       if ((ctrl as any).interactive) continue;
+      if (isLustspiel && !LUSTSPIEL_RANDOMIZE.has(ctrl.label)) continue;
       if (ctrl.type === 'range' && !ctrl.readonly) {
+        let lo = ctrl.min, hi = ctrl.max;
+        if (isLustspiel && ctrl.label === 'Density') lo = Math.max(ctrl.min, Math.min(ctrl.max, 1 + ctrl.step));
+        if (isLustspiel && ctrl.label === 'Stroke Width') hi = Math.min(ctrl.max, Math.max(ctrl.min, 1 - ctrl.step));
         // Snap to step so intermediate animated values are valid (e.g. integer line counts)
-        const steps = Math.round((ctrl.max - ctrl.min) / ctrl.step);
+        const steps = Math.max(0, Math.round((hi - lo) / ctrl.step));
         const r = Math.floor(Math.random() * (steps + 1));
-        const to = parseFloat(Math.min(ctrl.max, ctrl.min + r * ctrl.step).toFixed(10));
+        const to = parseFloat(Math.min(hi, lo + r * ctrl.step).toFixed(10));
         anims[ctrl.label] = { from: ctrl.get(), to, startMs: now };
         pushUndo({ patternId: patterns[index].id, label: ctrl.label, value: ctrl.get() }); // one entry per sweep, not per frame
         broadcastCtrlValue(ctrl.label, to); // animates via setLive locally — broadcast the final target directly
-      } else if ((ctrl.type === 'select' || ctrl.type === 'buttons') && !ctrl.disabled?.()) {
+      } else if (ctrl.type === 'stepper' && !(ctrl as any).readonly) {
+        const lo = ctrl.min ?? 0, hi = ctrl.max ?? lo, st = ctrl.step ?? 1;
+        const steps = Math.max(0, Math.round((hi - lo) / st));
+        const r = Math.floor(Math.random() * (steps + 1));
+        const v = Math.min(hi, lo + r * st);
+        ctrl.set(v);
+        ctrlVals[ctrl.label] = v;
+      } else if (!isLustspiel && (ctrl.type === 'select' || ctrl.type === 'buttons') && !ctrl.disabled?.()) {
         const opts = typeof ctrl.options === 'function' ? ctrl.options() : ctrl.options;
         const idx = Math.floor(Math.random() * opts.length);
         ctrl.set(idx);
         ctrlVals[ctrl.label] = idx;
       }
     }
-    doColorShuffle();
-    colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
-    colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
-    // Colors v2: power-curve bias — mostly high (2–3), rarely low
-    colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
-    saveColorC2();
+    // Lustspiel's colour is fully governed by its own Palette/Colour Blend
+    // controls (Palette is deliberately excluded above) — shuffling the app's
+    // global colour palette here would silently shift Lustspiel's colours
+    // through that blend even though nothing in its own panel changed.
+    if (!isLustspiel) {
+      doColorShuffle();
+      colorShuffle.saturation = parseFloat((0.5 + Math.random() * 0.5).toFixed(2));
+      colorShuffle.brightness = parseFloat((0.75 + Math.random() * 1.25).toFixed(2));
+      // Colors v2: power-curve bias — mostly high (2–3), rarely low
+      colorC2.colorsV2 = parseFloat((3 * (1 - Math.pow(Math.random(), 2.5))).toFixed(1));
+      saveColorC2();
+    }
     savePatternColor(patterns[index].id);
     randomizeAnims = anims;
   }

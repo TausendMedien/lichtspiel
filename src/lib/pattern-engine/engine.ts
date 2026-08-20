@@ -129,7 +129,15 @@ function bandZone(x: number, y: number, o: Ctx, slot: number): boolean {
     const f = u - fl, d = Math.min(f, 1 - f), band = 0.32 * o.lock;
     if (d < band) {
       const nb = (f < 0.5) ? ((idx - 1 + n) % n) : ((idx + 1) % n);
-      if (nb === slot) return hash(x * 0.7, y * 0.9, o.seed + 5) < (1 - d / band) * 0.85;
+      if (nb === slot) {
+        // field(), not hash(): at Speed 0 this is a fixed dither seam (same as
+        // before); once Speed > 0, o.t drifts it smoothly, so marks in the seam
+        // trade places back and forth — the flicker is deliberate here, but it
+        // rides the same speed-capped, slider-driven o.t as everything else, so
+        // it never runs faster than the user's own Speed setting allows.
+        const w = field(x * 0.7, y * 0.9, o.seed + 5 + o.t) * 0.5 + 0.5;
+        return w < (1 - d / band) * 0.85;
+      }
     }
   }
   return false;
@@ -532,20 +540,18 @@ export function paint(
     ctx.filter = "none";
     ctx.globalAlpha = 1;
   }
+  // Soft mode: a single pass, blurred by an amount that grows with softness —
+  // no separate crisp overlay on top (an earlier version drew one at reduced
+  // alpha "to keep some crispness", which just read as everything getting
+  // dimmer, not softer). A big enough blur actually merges neighbouring lines
+  // and fades a shape's edge to nothing, which is what "soft" is meant to do.
   const soft = state.softness ?? 0;
-  if (soft > 0) {
-    // Soft mode: a wide blur pass carries most of the weight as softness rises,
-    // the crisp layer underneath fades but never disappears — small, sub-pixel
-    // drifts stay visible as a gentle glow instead of vanishing between hard
-    // edges. Purely a compositing blend; the geometry above is untouched.
-    const blurPx = (2 + soft * 16) * scale;
-    ctx.filter = `blur(${blurPx}px)${brightnessFilter}`;
-    ctx.globalAlpha = 0.35 + soft * 0.45;
-    ctx.drawImage(layer, 0, 0);
-    ctx.filter = "none";
-    ctx.globalAlpha = 1 - soft * 0.55;
-  }
-  if (brightnessFilter) ctx.filter = brightnessFilter.trim();
+  const softBlurPx = soft * 30 * scale;
+  const filterParts: string[] = [];
+  if (softBlurPx > 0.05) filterParts.push(`blur(${softBlurPx}px)`);
+  if (brightnessFilter) filterParts.push(brightnessFilter.trim());
+  ctx.filter = filterParts.length ? filterParts.join(" ") : "none";
+  ctx.globalAlpha = 1;
   ctx.drawImage(layer, 0, 0);
   ctx.filter = "none";
   ctx.globalAlpha = 1;
