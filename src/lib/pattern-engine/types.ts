@@ -40,9 +40,10 @@ export interface EngineState {
    *  small drifts read clearly even when they're too small to change a hard
    *  edge. Purely a render-time blend; never affects which shapes exist. */
   softness?: number;
-  /** Output brightness multiplier, applied last (Canvas2D `brightness()` filter).
-   *  1 = neutral (no change). Exists mainly as an audio-reactivity target. */
-  brightness?: number;
+  /** 0..1 — Lustspiel Organic only, 0 (off) everywhere else. An organic, unevenly
+   *  distributed "grime" layer: patches of the frame dissolve into a heavy-blurred
+   *  wash, other patches sink toward black — see paintAtmosphere() in engine.ts. */
+  atmosphere?: number;
   /** Always set by the pattern adapter — a blend of the phase's fixed palette and
    *  the app's global palette. Falls back to the phase palette when absent (only
    *  relevant if some other future caller omits it). */

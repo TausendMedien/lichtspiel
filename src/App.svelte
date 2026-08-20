@@ -578,7 +578,7 @@
     { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
-    { label: 'Lustspiel',          ids: ['lsp-a','lsp-b','lsp-c','lsp-1','lsp-2','lsp-3'] },
+    { label: 'Lustspiel',          ids: ['lsp-a','lsp-b','lsp-c','lsp-1','lsp-2','lsp-3','lsp-organic'] },
     { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
   ];
   const DEFAULT_FAVORITES = [
@@ -869,7 +869,7 @@
   // dance-film pattern needs to stay dense and thin enough to read on a moving
   // body, not roll a value that makes it vanish.
   const LUSTSPIEL_RANDOMIZE = new Set([
-    'Seed', 'Density', 'Stroke Width', 'Warp', 'Organic', 'Softness',
+    'Seed', 'Density', 'Stroke Width', 'Warp', 'Organic', 'Softness', 'Atmosphere',
     'Zones', 'Interlock', 'Speed', 'Colour Blend',
   ]);
 

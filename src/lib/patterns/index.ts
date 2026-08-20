@@ -62,13 +62,29 @@ const lsp3 = makeLustspielPattern('lsp-3', 'Lustspiel 3', 'C', {
   defaults: { elems: [2, 3], comp: 'blobs', arrangement: 'chaotic', organic: 0.5, warp: 1.25, dens: 1.0, zones: 4, colorSoftness: 0.3 },
 });
 
+// Lustspiel Organic — a different angle from 1/2/3: instead of a clean
+// composition tuned toward one inspiration image, all four elements run at
+// once and an "Atmosphere" layer (engine.ts's paintAtmosphere()) unevenly
+// dissolves patches of the frame into a soft wash of colour or lets them
+// sink toward black — deliberately uneven, "dirty", alive, never the same
+// twice at a new Seed. Softness stays 0 by default: a uniform blur on top
+// would fight the point of Atmosphere being uneven in the first place.
+const lspOrganic = makeLustspielPattern('lsp-organic', 'Lustspiel Organic', 'C', {
+  animated: true, speedDefault: 0.12,
+  atmosphere: true, atmosphereDefault: 0.65,
+  defaults: {
+    elems: [1, 2, 3, 4], pointStyle: 'wave', comp: 'blobs', arrangement: 'chaotic',
+    organic: 0.6, warp: 1.3, dens: 1.0, zones: 5, lock: 0.5, colorSoftness: 0.5,
+  },
+});
+
 // Lustspiel is meant to be danced in, not reacted to by default — the shared Tier 1
 // "Interactions" universals (Colour v2, Speed, Direction, Burst) default ON for every
 // pattern in the app (see interactionState.svelte.ts). Seed the opposite for these
 // six specific ids, once, at the earliest possible point (module load, before any
 // control is ever read) — and only if nothing was saved for them yet, so a later,
 // deliberate opt-in from the Options panel is never overwritten.
-for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3']) {
+for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic']) {
   if (interactionState.patternSettings[id]) continue;
   const off: PatternInteractionSettings = {
     brightnessEnabled: false, brightnessGain: 1.0,
@@ -110,7 +126,7 @@ const PUSH_IDS = new Set([
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
-export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3'];
+export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -157,6 +173,7 @@ const rawPatterns: Pattern[] = [
   lsp1,
   lsp2,
   lsp3,
+  lspOrganic,
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,

@@ -53,6 +53,10 @@ export interface LustspielOptions {
   animated?: boolean;
   /** Speed control default (0 = static, 1 = full drift). Only used when animated. */
   speedDefault?: number;
+  /** Adds the Atmosphere control (Lustspiel Organic only). */
+  atmosphere?: boolean;
+  /** Atmosphere control default (0..1). Only used when atmosphere is true. */
+  atmosphereDefault?: number;
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -78,9 +82,9 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     ...opts?.defaults,
     time: 0,
     animated: !!opts?.animated,
+    atmosphere: opts?.atmosphere ? (opts.atmosphereDefault ?? 0.6) : 0,
   };
   let speed = opts?.animated ? (opts.speedDefault ?? 0.15) : 0;
-  let brightness = 1;
 
   /** Which elements are on, keyed by element id — the toggles write here.
    *  Seeded from state.elems (defaults or an opts.defaults override), not
@@ -138,7 +142,6 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     const logicalH = canvas.height / scale;
     const t0 = performance.now();
     applyPalette();
-    state.brightness = brightness;
     paint(c2d, scale, logicalH, state);
     const ms = performance.now() - t0;
     if (ms > 100) console.debug(`[${id}] repaint took ${ms.toFixed(0)} ms`);
@@ -191,6 +194,11 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     { label: 'Softness', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
       tip: 'Hard (0): every shape crisp and fully opaque, like today. Soft (1): blurred and semi-transparent — a second mode built for slow, subtle change, where a small drift stays visible instead of vanishing between hard edges.',
       get: () => state.softness ?? 0, set: v => { state.softness = v; touch(); } },
+    ...(opts?.atmosphere ? [{
+      label: 'Atmosphere', type: 'range' as const, min: 0, max: 1, step: 0.01, default: opts.atmosphereDefault ?? 0.6,
+      tip: 'An organic, unevenly-distributed grime: patches of the frame dissolve into a soft wash of colour, other patches sink toward black — never uniform, never the same twice at a new Seed.',
+      get: () => state.atmosphere ?? 0, set: (v: number) => { state.atmosphere = v; touch(); },
+    }] : []),
     { label: 'Point Style', type: 'buttons', options: [...POINT_STYLES],
       tip: 'Grid: a jittered raster. Strands: dot chains along bent paths. Wave: dots carried by a flow.',
       disabled: () => !on[1],
@@ -249,14 +257,6 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
       tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
       get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
-    // Named "Output Brightness", not "Brightness" — the app already has a global
-    // Brightness slider in the always-visible Colour section, and that one has
-    // no effect on Lustspiel at all (it's a Three.js shader uniform; Lustspiel
-    // draws via Canvas2D). A same-named control right next to it invited testing
-    // the wrong one and concluding this one didn't work.
-    { label: 'Output Brightness', type: 'range', min: 0.3, max: 2, step: 0.01, default: 1,
-      tip: 'This pattern\'s own brightness — separate from the global Brightness slider above (Colour section), which has no effect on Lustspiel. 1 is neutral. Mainly here as an Audio-reactivity target.',
-      get: () => brightness, set: v => { brightness = v; touch(); } },
 
     // ── Sync ─────────────────────────────────────────────────────────────────
     { label: 'All Phases', type: 'separator' },
@@ -273,9 +273,11 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     // Seed, so a moving body never makes it jump). Speed only exists on the
     // animated 1/2/3 patterns; A/B/C fall back to Organic alone.
     motionControlLabels: opts?.animated ? ['Speed', 'Organic'] : ['Organic'],
-    // Audio drives Speed and Brightness — pace and intensity, the same pairing
-    // a sound-reactive light rig would use.
-    audioControlLabels: opts?.animated ? ['Speed', 'Output Brightness'] : ['Output Brightness'],
+    // Audio's brightness pulse is the app's existing global Tier 1 "Brightness"
+    // reactivity (interactionState.svelte.ts, audio-driven, applies to every
+    // pattern via a post-process pass) — no pattern-local control needed for
+    // that half of it. Speed is the pattern-local half audio can still boost.
+    ...(opts?.animated ? { audioControlLabels: ['Speed'] } : {}),
     controls,
 
     init(ctx: PatternContext) {

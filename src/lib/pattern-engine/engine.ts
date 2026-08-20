@@ -528,13 +528,8 @@ export function paint(
   ctx.globalAlpha = 1;
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
 
-  // Applied to every drawImage pass below (not via a separate final pass —
-  // drawing a canvas onto itself to re-filter it is unreliable across browsers).
-  const brightness = state.brightness ?? 1;
-  const brightnessFilter = Math.abs(brightness - 1) > 0.001 ? ` brightness(${Math.max(0, brightness) * 100}%)` : "";
-
   if (P.glow) {                        // one blur pass instead of shadowBlur per shape
-    ctx.filter = `blur(${8 * scale}px)${brightnessFilter}`;
+    ctx.filter = `blur(${8 * scale}px)`;
     ctx.globalAlpha = 0.55;
     ctx.drawImage(layer, 0, 0);
     ctx.filter = "none";
@@ -543,16 +538,104 @@ export function paint(
   // Soft mode: a single pass, blurred by an amount that grows with softness —
   // no separate crisp overlay on top (an earlier version drew one at reduced
   // alpha "to keep some crispness", which just read as everything getting
-  // dimmer, not softer). A big enough blur actually merges neighbouring lines
-  // and fades a shape's edge to nothing, which is what "soft" is meant to do.
+  // dimmer, not softer). The radius has to clear the gap *between* strokes to
+  // actually read as dissolved rather than just a bit fuzzy — at typical
+  // Density spacing that gap is tens of logical pixels, so this goes well
+  // past it at Softness 1.
   const soft = state.softness ?? 0;
-  const softBlurPx = soft * 30 * scale;
-  const filterParts: string[] = [];
-  if (softBlurPx > 0.05) filterParts.push(`blur(${softBlurPx}px)`);
-  if (brightnessFilter) filterParts.push(brightnessFilter.trim());
-  ctx.filter = filterParts.length ? filterParts.join(" ") : "none";
+  const softBlurPx = soft * 90 * scale;
+  ctx.filter = softBlurPx > 0.05 ? `blur(${softBlurPx}px)` : "none";
   ctx.globalAlpha = 1;
   ctx.drawImage(layer, 0, 0);
   ctx.filter = "none";
   ctx.globalAlpha = 1;
+
+  paintAtmosphere(ctx, layer, o, w, h, scale);
+}
+
+let atmoBlur: HTMLCanvasElement | null = null;
+let atmoSoftMask: HTMLCanvasElement | null = null;
+let atmoDarkMask: HTMLCanvasElement | null = null;
+
+/**
+ * Atmosphere (Lustspiel Organic only — 0 for every other pattern, a no-op
+ * below): an organic, unevenly-distributed grime layer built from two
+ * low-resolution field() gradients — cheap even though it varies per pixel,
+ * because it's computed at ~16×9 and Canvas2D's own bitmap smoothing blows
+ * it up into a soft gradient for free.
+ *
+ * One gradient masks a heavily-blurred copy of the frame, so some patches
+ * dissolve into a wash of colour while others stay crisp underneath — "the
+ * grid changes from quite clear to almost full colour" the way a halftone
+ * print does. The other gradient overlays black, so some patches sink
+ * toward darkness instead — "dots descending below the lines into
+ * darkness". Both drift with o.t exactly like everything else, so at
+ * Speed 0 the grime sits still and only moves once the user asks for motion.
+ */
+function paintAtmosphere(
+  ctx: CanvasRenderingContext2D,
+  layer: HTMLCanvasElement,
+  o: Ctx,
+  w: number,
+  h: number,
+  scale: number,
+): void {
+  const atmo = o.atmosphere ?? 0;
+  if (atmo <= 0) return;
+
+  const MW = 16, MH = Math.max(2, Math.round(16 * (h / w)));
+  if (!atmoSoftMask) atmoSoftMask = document.createElement("canvas");
+  if (!atmoDarkMask) atmoDarkMask = document.createElement("canvas");
+  atmoSoftMask.width = MW; atmoSoftMask.height = MH;
+  atmoDarkMask.width = MW; atmoDarkMask.height = MH;
+  const sctx = atmoSoftMask.getContext("2d")!;
+  const dctx = atmoDarkMask.getContext("2d")!;
+  const sImg = sctx.createImageData(MW, MH);
+  const dImg = dctx.createImageData(MW, MH);
+  for (let my = 0; my < MH; my++) {
+    for (let mx = 0; mx < MW; mx++) {
+      const wx = ((mx + 0.5) / MW) * DESIGN_W, wy = ((my + 0.5) / MH) * o.H;
+      // Two independent low-frequency fields — patches of "dissolve into a
+      // wash" and patches of "sink into black" land in different places,
+      // not a single uniform gradient across the whole frame. The ×1.8 before
+      // clamping pushes most of each field into either "clearly off" or
+      // "fully on" — defined patches, not one smooth gradient everywhere.
+      const softV = Math.max(0, field(wx * 0.6, wy * 0.6, o.seed + 500 + o.t * 0.3) * 1.8) * atmo;
+      const darkV = Math.max(0, -field(wx * 0.45 + 300, wy * 0.45 + 300, o.seed + 640 + o.t * 0.3) * 1.8) * atmo;
+      const si = (my * MW + mx) * 4;
+      sImg.data[si] = sImg.data[si + 1] = sImg.data[si + 2] = 255;
+      sImg.data[si + 3] = Math.round(Math.min(1, softV) * 255);
+      dImg.data[si] = dImg.data[si + 1] = dImg.data[si + 2] = 0;
+      dImg.data[si + 3] = Math.round(Math.min(1, darkV) * 255);
+    }
+  }
+  sctx.putImageData(sImg, 0, 0);
+  dctx.putImageData(dImg, 0, 0);
+
+  if (!atmoBlur) atmoBlur = document.createElement("canvas");
+  atmoBlur.width = layer.width; atmoBlur.height = layer.height;
+  const bctx = atmoBlur.getContext("2d")!;
+  bctx.clearRect(0, 0, atmoBlur.width, atmoBlur.height);
+  bctx.filter = `blur(${64 * scale}px)`;
+  bctx.drawImage(layer, 0, 0);
+  bctx.filter = "none";
+  // Shape the blurred copy's alpha by the soft-zone gradient (destination-in
+  // keeps only where the mask is opaque), so it only shows where it should.
+  bctx.globalCompositeOperation = "destination-in";
+  bctx.imageSmoothingEnabled = true;
+  bctx.drawImage(atmoSoftMask, 0, 0, atmoBlur.width, atmoBlur.height);
+  bctx.globalCompositeOperation = "source-over";
+
+  // Erase the crisp detail underneath wherever the wash is about to cover it,
+  // by the same soft-zone shape — otherwise the wash just adds on top of
+  // still-visible hard edges instead of actually replacing them, which read
+  // as "a little blur", not the shapes genuinely dissolving into colour.
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(atmoSoftMask, 0, 0, w, h);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(atmoBlur, 0, 0, w, h);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(atmoDarkMask, 0, 0, w, h);
 }
