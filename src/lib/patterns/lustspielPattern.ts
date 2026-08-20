@@ -249,8 +249,13 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
       tip: 'Hard (0): each shape picks one stepped colour, like today. Soft (1): a smooth gradient across the palette, like the soft blends in Gravity Lines.',
       get: () => state.colorSoftness, set: v => { state.colorSoftness = v; touch(); } },
-    { label: 'Brightness', type: 'range', min: 0.4, max: 1.6, step: 0.01, default: 1,
-      tip: 'Output brightness. 1 is neutral. Mainly here as an Audio-reactivity target.',
+    // Named "Output Brightness", not "Brightness" — the app already has a global
+    // Brightness slider in the always-visible Colour section, and that one has
+    // no effect on Lustspiel at all (it's a Three.js shader uniform; Lustspiel
+    // draws via Canvas2D). A same-named control right next to it invited testing
+    // the wrong one and concluding this one didn't work.
+    { label: 'Output Brightness', type: 'range', min: 0.3, max: 2, step: 0.01, default: 1,
+      tip: 'This pattern\'s own brightness — separate from the global Brightness slider above (Colour section), which has no effect on Lustspiel. 1 is neutral. Mainly here as an Audio-reactivity target.',
       get: () => brightness, set: v => { brightness = v; touch(); } },
 
     // ── Sync ─────────────────────────────────────────────────────────────────
@@ -270,7 +275,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     motionControlLabels: opts?.animated ? ['Speed', 'Organic'] : ['Organic'],
     // Audio drives Speed and Brightness — pace and intensity, the same pairing
     // a sound-reactive light rig would use.
-    audioControlLabels: opts?.animated ? ['Speed', 'Brightness'] : ['Brightness'],
+    audioControlLabels: opts?.animated ? ['Speed', 'Output Brightness'] : ['Output Brightness'],
     controls,
 
     init(ctx: PatternContext) {
