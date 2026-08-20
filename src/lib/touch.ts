@@ -57,7 +57,12 @@ export function attachTouch(handler: (action: KeyAction) => void): () => void {
       lastTapTime = 0; // reset double-tap tracking after a swipe
       handler({ type: deltaX < 0 ? "next" : "prev" });
     } else if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) {
-      // Single tap — notify so HUD can be shown (without making swipes show HUD)
+      // Single tap — notify so HUD can be shown (without making swipes show HUD).
+      // preventDefault suppresses the mousemove + click iOS/iPadOS synthesize after
+      // a tap; without it the tap hid the HUD and the synthetic click immediately
+      // brought it back, which is why tapping the canvas appeared to do nothing.
+      // Taps on the panels never get here (startX === -1), so controls are unaffected.
+      e.preventDefault();
       handler({ type: "tap" });
     }
   }

@@ -2380,6 +2380,11 @@
 
     const detach = attachKeyboard(handleAction, (held) => { kbRHeld = held; }, () => pedalDoubleChangesPattern);
     const detachTouch = attachTouch(handleAction);
+    // Keep the touch-recency window fresh for every touch, wherever it lands, so the
+    // synthetic mouse events that follow are reliably ignored.
+    const markTouch = () => { lastTouchAt = performance.now(); };
+    window.addEventListener("touchstart", markTouch, { passive: true });
+    window.addEventListener("touchend", markTouch, { passive: true });
 
     function onFsChange() {
       isFullscreenState = fs.isFullscreen();
@@ -2407,7 +2412,15 @@
         syncCtrlVals();
       }
     });
-    function onMouseMove() {
+    let lastMouseX = -1, lastMouseY = -1;
+    function onMouseMove(e: MouseEvent) {
+      // A tap on iOS/iPadOS emits a mousemove at the exact tap coordinates. Gate on
+      // real movement rather than only on a time window — the window misses a finger
+      // that rested a moment, which is what made a tap hide the HUD and instantly
+      // re-show it. A genuine mouse always moves at least a pixel.
+      const moved = e.clientX !== lastMouseX || e.clientY !== lastMouseY;
+      lastMouseX = e.clientX; lastMouseY = e.clientY;
+      if (!moved) return;
       if (touchRecently()) return; // iPadOS synthesizes mousemove on tap
       pokeCursor();
       // An auto-started demo goes through poke(), which ends it — moving the mouse is
@@ -2436,6 +2449,8 @@
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       document.removeEventListener('pointerdown', onPointerDownFocus, { capture: true });
       if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("touchstart", markTouch);
+      window.removeEventListener("touchend", markTouch);
       window.removeEventListener("pointerup", chromeDimEnd);
       window.removeEventListener("pointercancel", chromeDimEnd);
       window.removeEventListener("pointermove", onDisplayActivity);
@@ -2503,7 +2518,18 @@
   class="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0" />
 
 <canvas bind:this={canvas} tabindex="0" class="block w-full h-full outline-none"
-  onclick={() => { if (appState !== "overview" && !touchRecently()) hudVisible = false; }}
+  onclick={() => {
+    // Toggle, not hide-only: with the HUD hidden there was no way back except
+    // moving the mouse, so a click on the canvas now brings the controls back.
+    if (appState === "overview" || touchRecently()) return;
+    if (hudVisible && !overlayHidden) {
+      hudVisible = false;
+      if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
+    } else {
+      overlayHidden = false;
+      poke();
+    }
+  }}
   ontouchstart={() => {
     lastTouchAt = performance.now();
     if (appState !== "overview" && demoActive && demoHideHud) { demoAutoStarted ? poke() : demoPoke(); }
@@ -4001,6 +4027,9 @@
       // Arrow-key edits never fire pointerdown, so catch the guide here too.
       if ((e.target as HTMLElement).dataset?.ctrl === FOLD_ANGLE) foldGuideOn(chromeHeld);
     }}
+    onwheel={() => poke()}
+    onscroll={() => poke()}
+    ontouchmove={() => poke()}
     class="pointer-events-auto fixed bottom-4 right-4 z-10 select-none transition-opacity duration-500 min-w-48 overflow-auto"
     style="max-height: {isTouch ? `calc(100dvh - ${hudPanelHeight + 40}px)` : 'calc(100dvh - 2rem)'}"
     class:opacity-0={!hudVisible || overlayHidden}

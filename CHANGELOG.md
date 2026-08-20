@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.260820-1118 — Interface behaves
+
+**Tap on the canvas hides the interface on iPhone and iPad**, the way clicking already did on the Mac. A tap did fire and did hide the panels — but iOS then synthesizes a mousemove and a click at the same spot, and the click brought everything straight back and reset the five-second timer, which is why the interface appeared to ignore the tap and then linger. A tap on the canvas now suppresses those synthesized events at source, so it hides, and a second tap brings it back. Taps on the panels themselves are untouched.
+
+**Click on the canvas now toggles**, on the Mac. It only ever hid the interface, so with the interface hidden the only way back was to move the mouse. Clicking again now brings the controls back.
+
+**Scrolling the control panel keeps it open.** Scrolling with two fingers or a wheel emits no press, so the five-second idle countdown ran out under your fingers and the panel vanished mid-scroll. Scrolling now counts as activity; the countdown starts again when you stop.
+
+**Mouse movement means actual movement.** A synthesized mousemove that lands on the exact pixel it started from no longer counts as activity — that alone was enough to wake the interface on touch devices.
+
 ## v0.7.260818-1707 — Volcano: slow lava flow, organic cone
 
 **Volcano** — landed magma's downhill creep no longer inherits speed from the launch, so raising **Jet Power** no longer makes the slow lava flow vanish into the general chaos: **Downhill Flow** is now the sole, steady driver of how fast it creeps, on by default. A freshly landed flow also renders thicker and with a longer streak than the airborne jet — reading as a continuous stream — before shrinking to a small cooled grain once it actually stops. The cone's silhouette and shading are properly organic now: an eroded ridge pattern with rougher terrain toward the base, and the surface is mottled with blotchy rock-like variation instead of a smooth gradient, so the rim glow no longer traces a perfectly uniform ring.
