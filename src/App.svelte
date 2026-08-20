@@ -871,6 +871,11 @@
   const LUSTSPIEL_RANDOMIZE = new Set([
     'Seed', 'Density', 'Stroke Width', 'Warp', 'Organic', 'Softness', 'Atmosphere',
     'Zones', 'Interlock', 'Speed', 'Colour Blend',
+    // Lustspiel Particle: same rule — vary intensity and form, never the
+    // deliberate look. Zone Shape / Arrangement / Strictness stay out.
+    'Mask Edge', 'L1 Speed', 'L2 Speed', 'L3 Speed', 'L4 Speed',
+    'L1 Atmosphere', 'L2 Atmosphere', 'L3 Atmosphere', 'L4 Atmosphere',
+    'L1 Warp', 'L2 Warp', 'L3 Warp', 'L4 Warp',
   ]);
 
   function randomizeControls() {

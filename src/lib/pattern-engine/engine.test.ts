@@ -141,3 +141,90 @@ describe("arrangement — spatial partition between elements", () => {
     expect(flips(st6)).toBeGreaterThan(flips(st2));
   });
 });
+
+describe("buildZoneMask", () => {
+  const { buildZoneMask, debugZoneSlot, DESIGN_W } = require("./engine") as typeof import("./engine");
+  const H = DESIGN_W * 9 / 16;
+  const MW = 64, MH = 36;
+  const zin = {
+    comp: "blobs" as const, arrangement: "chaotic" as const,
+    zones: 3, lock: 0.35, seed: 8685, strictness: 0.65,
+    elems: [1, 2] as const,
+  };
+  const build = (input: any) => {
+    const out = new Uint8Array(MW * MH * 4);
+    buildZoneMask(out, MW, MH, H, input);
+    return out;
+  };
+  /** Mask rows are written bottom-up, so undo that to compare against engine space. */
+  const at = (out: Uint8Array, mx: number, my: number) => {
+    const b = (my * MW + mx) * 4;
+    return [out[b], out[b + 1], out[b + 2], out[b + 3]];
+  };
+
+  test("a single element writes channel 0 only — never all four", () => {
+    // inZone() short-circuits to true for ANY slot when elems.length === 1, so a
+    // naive loop to 4 would mark every element as owning the entire screen.
+    const out = build({ ...zin, elems: [1] });
+    let anyC0 = false;
+    for (let i = 0; i < MW * MH; i++) {
+      expect(out[i * 4 + 1]).toBe(0);
+      expect(out[i * 4 + 2]).toBe(0);
+      expect(out[i * 4 + 3]).toBe(0);
+      if (out[i * 4] > 0) anyC0 = true;
+    }
+    expect(anyC0).toBe(true);
+  });
+
+  test("two elements each own part of the screen, neither owns all of it", () => {
+    const out = build(zin);
+    let c0 = 0, c1 = 0;
+    for (let i = 0; i < MW * MH; i++) {
+      if (out[i * 4] > 127) c0++;
+      if (out[i * 4 + 1] > 127) c1++;
+    }
+    const total = MW * MH;
+    expect(c0).toBeGreaterThan(total * 0.05);
+    expect(c1).toBeGreaterThan(total * 0.05);
+    expect(c0).toBeLessThan(total * 0.95);
+    expect(c1).toBeLessThan(total * 0.95);
+  });
+
+  test("agrees with debugZoneSlot on which channel dominates", () => {
+    const state = { ...zin, phase: "B" as const, pointStyle: "grid" as const,
+      lineDir: "v" as const, dens: 1, stroke: 1, warp: 1, organic: 0, pk: 0,
+      colorSoftness: 0, elems: [1, 2] };
+    const out = build(zin);
+    let checked = 0, agreed = 0;
+    for (let my = 2; my < MH - 2; my += 5) {
+      for (let mx = 2; mx < MW - 2; mx += 5) {
+        const wx = ((mx + 0.5) / MW) * DESIGN_W;
+        const wy = (1 - (my + 0.5) / MH) * H;      // mask rows are bottom-up
+        const slot = debugZoneSlot(wx, wy, H, state as any);
+        if (slot < 0) continue;                     // seam — no channel required
+        const px = at(out, mx, my);
+        // Only count cells that are unambiguous (not straddling a 2x2 edge).
+        if (px[slot] === 255 || px[slot] === 0) {
+          checked++;
+          if (px[slot] === 255) agreed++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+    expect(agreed / checked).toBeGreaterThan(0.9);
+  });
+
+  test("Up / Down puts element 0 in the upper half of the screen", () => {
+    // Guards the flipY trap: DataTexture.flipY is false and PlaneGeometry puts
+    // uv.y = 1 at the top, so texel row 0 is the BOTTOM of the screen.
+    const out = build({ ...zin, comp: "bands", arrangement: "upDown", strictness: 1, lock: 0 });
+    let topC0 = 0, botC0 = 0;
+    for (let mx = 0; mx < MW; mx++) {
+      for (let my = 0; my < MH; my++) {
+        const v = at(out, mx, my)[0];
+        if (my >= MH / 2) topC0 += v; else botC0 += v;   // high row index = top
+      }
+    }
+    expect(topC0).toBeGreaterThan(botC0 * 3);
+  });
+});

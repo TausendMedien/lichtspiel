@@ -224,6 +224,93 @@ function inZone(x: number, y: number, o: Ctx, slot: number): boolean {
 }
 
 /**
+ * The subset of EngineState the zone system actually reads. Kept narrow on
+ * purpose: buildZoneMask()'s caller (Lustspiel Particle) has no phase, point
+ * style, density or stroke, and requiring them would mean fabricating values —
+ * which is exactly how you end up crashing on PHASE[state.phase] with a
+ * meaningless phase.
+ */
+export type ZoneInput = Pick<
+  EngineState,
+  "elems" | "comp" | "arrangement" | "strictness" | "zones" | "lock" | "seed" | "time"
+>;
+
+/** Inert filler for the EngineState fields the zone path provably never reads. */
+const ZONE_UNUSED = {
+  phase: "A" as PhaseId,
+  pointStyle: "grid" as EngineState["pointStyle"],
+  lineDir: "v" as EngineState["lineDir"],
+  dens: 1, stroke: 1, warp: 1, organic: 0, pk: 0, colorSoftness: 0,
+};
+
+/**
+ * Fills an RGBA mask grid, one channel per zone slot, value = 0..255 coverage.
+ * The whole point is to build the Ctx (and the blob centre list) ONCE instead of
+ * per texel — debugZoneSlot() rebuilds both on every single call, which is fine
+ * for a handful of test lookups and hopeless for tens of thousands of texels.
+ *
+ * Four things here are load-bearing:
+ *  - Slots are tested INDEPENDENTLY, not first-match-wins. paint() calls inZone()
+ *    once per element while drawing, and bandZone()'s Interlock seam can
+ *    legitimately hand one point to two slots; collapsing to a single winner
+ *    would make the Interlock slider nearly invisible.
+ *  - Only slots < elems.length are written, and higher channels are zeroed —
+ *    inZone() short-circuits to `true` for ANY slot when elems.length === 1, so
+ *    looping to 4 would mark every element as owning the whole screen.
+ *  - Rows are written bottom-up. THREE.DataTexture sets flipY = false while
+ *    PlaneGeometry puts uv.y = 1 at the top, so texel row 0 lands at the BOTTOM
+ *    of the screen; writing row 0 from wy = 0 (the top in logical space) would
+ *    mirror the mask vertically and put "Up / Down" element 1 at the bottom.
+ *  - Each cell is 2x2 supersampled, so an edge lands as a fractional value and
+ *    slides smoothly as bands drift instead of stair-stepping a whole cell at a
+ *    time. The caller turns that ramp into a crisp or soft edge as it likes.
+ */
+export function buildZoneMask(
+  out: Uint8Array,
+  mw: number,
+  mh: number,
+  logicalH: number,
+  input: ZoneInput,
+): void {
+  const o: Ctx = {
+    ...ZONE_UNUSED,
+    ...input,
+    H: logicalH,
+    keep: 1,
+    pal: [],           // never read by the zone path
+    t: input.time ?? 0,
+  };
+  const nSlots = Math.min(4, o.elems.length);
+  // Hoisted: blobZone() calls blobCenters() internally, which rebuilds a cache
+  // key string every call. Touching it once here keeps that off the hot loop.
+  if (o.comp === "blobs") blobCenters(o);
+
+  const SS = 2, inv = 1 / (SS * SS);
+  for (let my = 0; my < mh; my++) {
+    for (let mx = 0; mx < mw; mx++) {
+      const base = (my * mw + mx) * 4;
+      let c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const fx = (mx + (sx + 0.5) / SS) / mw;
+          const fy = (my + (sy + 0.5) / SS) / mh;
+          const wx = fx * DESIGN_W;
+          const wy = (1 - fy) * logicalH;      // bottom-up, see note above
+          if (nSlots > 0 && inZone(wx, wy, o, 0)) c0 += inv;
+          if (nSlots > 1 && inZone(wx, wy, o, 1)) c1 += inv;
+          if (nSlots > 2 && inZone(wx, wy, o, 2)) c2 += inv;
+          if (nSlots > 3 && inZone(wx, wy, o, 3)) c3 += inv;
+        }
+      }
+      out[base] = nSlots > 0 ? Math.round(c0 * 255) : 0;
+      out[base + 1] = nSlots > 1 ? Math.round(c1 * 255) : 0;
+      out[base + 2] = nSlots > 2 ? Math.round(c2 * 255) : 0;
+      out[base + 3] = nSlots > 3 ? Math.round(c3 * 255) : 0;
+    }
+  }
+}
+
+/**
  * Which element (by position in state.elems) a point belongs to. Exported for
  * tuning and tests — paint() itself never needs this, it calls inZone() per
  * element while drawing. Returns -1 if the point sits in no element's zone
