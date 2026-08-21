@@ -34,6 +34,8 @@
   import { colorC2, colorShuffle, saveColorC2, COLOR_DEFAULTS, getEnabledIndices, getColorByIndex } from "./lib/colorC2.svelte";
   import { interactionState, saveInteractionSettings } from "./lib/interactionState.svelte";
   import { overlayState, saveOverlaySettings } from "./lib/textOverlay.svelte";
+  import { watermarkState, saveWatermarkSettings, ANCHOR_OPTIONS } from "./lib/watermark.svelte";
+  import { loadWatermarkFile } from "./lib/watermarkTexture";
   import { ALIGN_OPTIONS, STYLE_OPTIONS } from "./lib/overlayText";
   import { flickerGuard, saveFlickerGuard, saveFlickerGuardNotice } from "./lib/flickerGuard.svelte";
   import {
@@ -916,6 +918,31 @@
     }
     savePatternColor(patterns[index].id);
     saveSettings(patterns);
+  }
+
+  // The per-line size sliders are driven straight off the textarea's own line breaks,
+  // so the list grows and shrinks as you type rather than needing its own add/remove.
+  const overlayLines = $derived((() => {
+    const l = (overlayState.text ?? '').split('\n');
+    while (l.length > 1 && l[l.length - 1].trim() === '') l.pop();
+    return l;
+  })());
+
+  let watermarkError = $state('');
+  async function onWatermarkPick(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    watermarkError = '';
+    try {
+      const { dataUrl, aspect } = await loadWatermarkFile(file);
+      watermarkState.dataUrl = dataUrl;
+      watermarkState.aspect = aspect;
+      watermarkState.enabled = true;
+      saveWatermarkSettings();
+    } catch (err) {
+      watermarkError = err instanceof Error ? err.message : 'could not load that image';
+    }
+    (e.target as HTMLInputElement).value = '';  // let the same file be picked again
   }
 
   // Same exponential feel as the Dwell slider, for any seconds range: fine control
@@ -3119,7 +3146,45 @@
                 class="w-full resize-y rounded bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder-white/30 focus:bg-white/15"
               ></textarea>
             </label>
+            {#if overlayLines.length > 1}
+              <div class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50">Size per line</span>
+                {#each overlayLines as line, i}
+                  <div class="flex items-center gap-2">
+                    <span class="w-14 shrink-0 truncate text-[11px] text-white/40" title={line}>
+                      {line.trim() || `Line ${i + 1}`}
+                    </span>
+                    <input
+                      type="range" min={0.3} max={3} step={0.05}
+                      value={overlayState.lineSizes?.[i] ?? 1}
+                      oninput={(e) => {
+                        const next = [...(overlayState.lineSizes ?? [])];
+                        while (next.length < overlayLines.length) next.push(1);
+                        next[i] = parseFloat((e.target as HTMLInputElement).value);
+                        overlayState.lineSizes = next;
+                        saveOverlaySettings();
+                      }}
+                      class="min-w-0 flex-1 accent-white cursor-pointer"
+                    />
+                    <span class="w-8 shrink-0 text-right font-mono text-[11px] text-white/40">
+                      {(overlayState.lineSizes?.[i] ?? 1).toFixed(2)}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
             <div class="grid grid-cols-2 gap-2">
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50">Mode</span>
+                <select
+                  value={overlayState.mode}
+                  onchange={(e) => { overlayState.mode = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
+                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+                ><option value={0}>Flexible</option><option value={1}>Simple</option></select>
+                {#if overlayState.mode === 1}
+                  <span class="text-[10px] leading-tight text-white/35">Faces the camera and holds still. Flat lettering, no spin — uses noticeably less processing power.</span>
+                {/if}
+              </label>
               <label class="flex flex-col gap-1">
                 <span class="text-[11px] text-white/50">Align</span>
                 <select
@@ -3146,7 +3211,10 @@
               { k: 'opacity',     label: 'Opacity',      min: 0,   max: 1,   step: 0.01 },
               { k: 'spin',        label: 'Spin',         min: -2,  max: 2,   step: 0.05 },
             ] as s}
-              <div>
+              <!-- Simple mode faces front with flat lettering, so depth and spin have
+                   nothing to act on — grey them rather than leaving dead controls live. -->
+              {@const inert = overlayState.mode === 1 && (s.k === 'spin' || s.k === 'depth')}
+              <div class={inert ? 'opacity-35 pointer-events-none' : ''}>
                 <div class="flex justify-between mb-1 text-xs text-white/70">
                   <span>{s.label}</span>
                   <span class="font-mono text-white/40">{(overlayState as any)[s.k].toFixed(2)}</span>
@@ -3284,6 +3352,74 @@
         {/if}
       </div>
 
+
+      <!-- Watermark section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Watermark</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <p class="text-[11px] text-white/40">A logo laid over whichever pattern is running. Like the text, it is drawn into the picture, so it appears in screenshots and recordings.</p>
+          <div class="flex items-center justify-between text-xs text-white/70">
+            <span>Show watermark</span>
+            <div
+              data-knob
+              class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {watermarkState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+              onclick={() => { watermarkState.enabled = !watermarkState.enabled; saveWatermarkSettings(); }}
+            >
+              <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {watermarkState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            {#if watermarkState.dataUrl}
+              <img src={watermarkState.dataUrl} alt="Watermark preview"
+                   class="h-10 w-10 shrink-0 rounded border border-white/15 bg-black/40 object-contain" />
+            {/if}
+            <label class="cursor-pointer rounded-md border border-white/15 bg-white/[0.07] px-3 py-1 text-xs text-white/70 transition-colors hover:border-white/40">
+              {watermarkState.dataUrl ? 'Replace image…' : 'Choose image…'}
+              <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange={onWatermarkPick} />
+            </label>
+            {#if watermarkState.dataUrl}
+              <button
+                class="cursor-pointer rounded px-2 py-1 text-xs text-white/50 transition-colors hover:text-white/80"
+                onclick={() => { watermarkState.dataUrl = null; watermarkState.enabled = false; saveWatermarkSettings(); }}
+              >Remove</button>
+            {/if}
+          </div>
+          {#if watermarkError}
+            <p class="text-[11px] text-red-300">{watermarkError}</p>
+          {/if}
+          {#if watermarkState.enabled && watermarkState.dataUrl}
+            <label class="flex flex-col gap-1">
+              <span class="text-[11px] text-white/50">Position</span>
+              <select
+                value={watermarkState.anchor}
+                onchange={(e) => { watermarkState.anchor = parseInt((e.target as HTMLSelectElement).value); saveWatermarkSettings(); }}
+                class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
+              >{#each ANCHOR_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
+            </label>
+            {#each [
+              { k: 'scale',   label: 'Size',    min: 0.02, max: 0.8, step: 0.01 },
+              { k: 'margin',  label: 'Margin',  min: 0,    max: 0.5, step: 0.01 },
+              { k: 'opacity', label: 'Opacity', min: 0,    max: 1,   step: 0.01 },
+            ] as s}
+              <div>
+                <div class="flex justify-between mb-1 text-xs text-white/70">
+                  <span>{s.label}</span>
+                  <span class="font-mono text-white/40">{(watermarkState as any)[s.k].toFixed(2)}</span>
+                </div>
+                <input
+                  type="range" min={s.min} max={s.max} step={s.step} value={(watermarkState as any)[s.k]}
+                  oninput={(e) => { (watermarkState as any)[s.k] = parseFloat((e.target as HTMLInputElement).value); saveWatermarkSettings(); }}
+                  class="w-full accent-white cursor-pointer"
+                />
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </div>
 
       <!-- Remote Control section -->
       <div class="mb-5">

@@ -31,20 +31,37 @@ export function loadFont(): Promise<Font> {
 }
 
 export const ALIGN_OPTIONS = ["left", "center", "right"] as const;
-export const STYLE_OPTIONS = ["Solid", "Wireframe", "Neon"] as const;
+// Ghost is appended rather than inserted between Solid and Wireframe: `style` is
+// persisted as a numeric index (settings, preset slots, share URLs), so inserting
+// would silently turn everyone's saved Wireframe into Ghost and Neon into Wireframe.
+export const STYLE_OPTIONS = ["Solid", "Wireframe", "Neon", "Ghost"] as const;
 
 export interface TextBuildOpts {
   text: string;
   size: number;
   depth: number;
-  /** 0 = Solid, 1 = Wireframe, 2 = Neon */
+  /** 0 = Solid, 1 = Wireframe, 2 = Neon, 3 = Ghost */
   style: number;
   /** 0 = left, 1 = center, 2 = right */
   align: number;
   /** Gap between baselines as a multiple of size. */
   lineSpacing: number;
+  /** Per-line size multiplier; index i scales line i. Missing entries mean 1. */
+  lineSizes?: number[];
+  /**
+   * Flat lettering: no bevel, minimum extrusion, coarser curves. Text that always
+   * faces the viewer never shows its back cap or bevel rings, so building them is
+   * work spent on surfaces nobody sees.
+   */
+  flat?: boolean;
   primaryColor: string;
   glowColor: string;
+}
+
+/** Size multiplier for line i, defaulting to 1. */
+function lineScale(o: TextBuildOpts, i: number): number {
+  const v = o.lineSizes?.[i];
+  return typeof v === 'number' && isFinite(v) && v > 0 ? v : 1;
 }
 
 /**
@@ -62,20 +79,24 @@ export function buildTextGeometry(o: TextBuildOpts): THREE.BufferGeometry {
   // A trailing newline shouldn't add an invisible line that shifts the block.
   while (lines.length > 1 && lines[lines.length - 1].trim() === "") lines.pop();
 
-  const lineHeight = o.size * o.lineSpacing;
   const parts: THREE.BufferGeometry[] = [];
+  // Lines are stacked by a running offset rather than i * lineHeight, so a line
+  // scaled up pushes the next one down instead of growing into it.
+  let y = 0;
 
   lines.forEach((line, i) => {
+    const scale = lineScale(o, i);
+    const rowHeight = o.size * scale * o.lineSpacing;
     // An empty line still occupies a row, but has no geometry to place.
-    if (line.trim() === "") return;
+    if (line.trim() === "") { y -= o.size * o.lineSpacing; return; }
     const geo = new TextGeometry(line, {
       font: fontCache!,
-      size: o.size,
+      size: o.size * scale,
       // Depth 0 with bevel produces degenerate/NaN extrusion; stored settings and
       // presets may still carry 0, so clamp here rather than at the control.
-      depth: Math.max(0.01, o.depth),
-      curveSegments: 6,
-      bevelEnabled: true,
+      depth: o.flat ? 0.01 : Math.max(0.01, o.depth),
+      curveSegments: o.flat ? 3 : 6,
+      bevelEnabled: !o.flat,
       bevelThickness: 0.02,
       bevelSize: 0.02,
       bevelSegments: 3,
@@ -90,8 +111,9 @@ export function buildTextGeometry(o: TextBuildOpts): THREE.BufferGeometry {
     const dx = o.align === 0 ? -bb.min.x                      // left edges flush
              : o.align === 2 ? -bb.max.x                      // right edges flush
              : -(bb.min.x + bb.max.x) / 2;                    // centred
-    geo.translate(dx, -i * lineHeight, 0);
+    geo.translate(dx, y, 0);
     parts.push(geo);
+    y -= rowHeight;
   });
 
   if (!parts.length) throw new Error('no renderable lines');
@@ -116,13 +138,19 @@ export function buildTextGroup(o: TextBuildOpts): THREE.Group {
   const glow = new THREE.Color(o.glowColor);
   const group = new THREE.Group();
 
+  // Edge lines are derived from the mesh geometry by walking every triangle and
+  // hashing its edges — costly on beveled text. Build it at most once per group
+  // and share it, rather than once per LineSegments that wants it.
+  let edges: THREE.BufferGeometry | null = null;
+  const sharedEdges = () => (edges ??= new THREE.EdgesGeometry(geo));
+
   if (o.style === 1) {
-    // Wireframe
+    // Wireframe — both passes read the same edge geometry.
     group.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
+      sharedEdges(),
       new THREE.LineBasicMaterial({ color: glow, transparent: true, opacity: 1 })));
     group.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
+      sharedEdges(),
       new THREE.LineBasicMaterial({
         color: primary, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending })));
     geo.dispose();
@@ -135,29 +163,61 @@ export function buildTextGroup(o: TextBuildOpts): THREE.Group {
     group.add(new THREE.Mesh(outer, new THREE.MeshBasicMaterial({
       color: glow, transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending, side: THREE.BackSide })));
+  } else if (o.style === 3) {
+    // Ghost — a half-transparent fill under full-strength edges. depthWrite keeps
+    // the letters' own back faces from showing through the front, which would make
+    // the veil read as uneven double density instead of an even 45%.
+    group.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: primary, transparent: true, opacity: 0.45, depthWrite: true })));
+    group.add(new THREE.LineSegments(
+      sharedEdges(),
+      new THREE.LineBasicMaterial({ color: glow, transparent: true, opacity: 1, depthTest: false })));
   } else {
     // Solid
     group.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
       color: primary, transparent: true, opacity: 1 })));
     group.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
+      sharedEdges(),
       new THREE.LineBasicMaterial({ color: glow, transparent: true, opacity: 1, depthTest: false })));
   }
 
   // Remember each material's design opacity so the cycle can scale it without
   // flattening the style's own transparency (Neon's shell, Wireframe's overlay).
-  group.traverse(obj => {
+  // `role` lets the colour be refreshed in place each frame instead of rebuilding the
+  // geometry, which is what a palette change used to cost.
+  group.children.forEach((obj, i) => {
     const m = (obj as THREE.Mesh | THREE.LineSegments).material as THREE.Material | undefined;
-    if (m && 'opacity' in m) (m as any).userData.baseOpacity = (m as THREE.Material & { opacity: number }).opacity;
+    if (!m || !('opacity' in m)) return;
+    (m as any).userData.baseOpacity = (m as THREE.Material & { opacity: number }).opacity;
+    // Within every style the first child carries the primary colour and the second
+    // the glow, except Wireframe where the order is reversed.
+    const isGlow = o.style === 1 ? i === 0 : i === 1;
+    (m as any).userData.role = isGlow ? 'glow' : 'primary';
   });
   return group;
 }
 
+/**
+ * Repaints an existing group from the palette. Colour is a material property, so
+ * changing it must never trigger a geometry rebuild — under Motion the palette
+ * moves every frame, and rebuilding there cost a full re-tessellation per frame.
+ */
+export function applyTextColors(group: THREE.Group, primaryColor: string, glowColor: string): void {
+  group.children.forEach(obj => {
+    const m = (obj as THREE.Mesh).material as (THREE.Material & { color?: THREE.Color }) | undefined;
+    if (!m?.color) return;
+    m.color.set((m as any).userData?.role === 'glow' ? glowColor : primaryColor);
+  });
+}
+
 /** Frees every geometry and material in a group built above. */
 export function disposeTextGroup(group: THREE.Group): void {
+  // Wireframe hands the same EdgesGeometry to both of its LineSegments, so track
+  // what has already been freed rather than disposing it twice.
+  const freed = new Set<THREE.BufferGeometry>();
   group.traverse(obj => {
     const o = obj as THREE.Mesh | THREE.LineSegments;
-    if (o.geometry) o.geometry.dispose();
+    if (o.geometry && !freed.has(o.geometry)) { freed.add(o.geometry); o.geometry.dispose(); }
     const m = o.material as THREE.Material | THREE.Material[] | undefined;
     if (Array.isArray(m)) m.forEach(x => x.dispose());
     else if (m) m.dispose();

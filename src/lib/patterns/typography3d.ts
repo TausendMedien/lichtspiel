@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Pattern, PatternContext } from "./types";
 import {
   loadFont, getFont, buildTextGroup as buildSharedTextGroup, disposeTextGroup,
-  applyTextOpacity, cycleAlpha, ALIGN_OPTIONS, STYLE_OPTIONS,
+  applyTextOpacity, applyTextColors, cycleAlpha, ALIGN_OPTIONS, STYLE_OPTIONS,
 } from "../overlayText";
 import { colorC2 } from "../colorC2.svelte";
 import { cameraState } from "../globalCameraSettings.svelte";
@@ -109,16 +109,18 @@ let _lastPrimary  = "";
 let _lastGlow     = "";
 let _lastColorsV2 = -1;
 
+/** Palette-derived text colours, shared by the initial build and the per-frame repaint. */
+function currentColors(): { primary: string; glow: string } {
+  const ph1 = Math.min(1.0, colorC2.colorsV2);
+  const ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
+  const p = new THREE.Color().lerpColors(new THREE.Color(1, 1, 1), new THREE.Color(colorC2.main), ph1);
+  const g = new THREE.Color().lerpColors(p, new THREE.Color(colorC2.contrast), ph2);
+  return { primary: '#' + p.getHexString(), glow: '#' + g.getHexString() };
+}
+
 function buildText() {
   if (!scene || !getFont()) return;
-  const _ph1 = Math.min(1.0, colorC2.colorsV2);
-  const _ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
-  const _cW  = new THREE.Color(1, 1, 1);
-  const _cM  = new THREE.Color(colorC2.main);
-  const _cPrimary = new THREE.Color().lerpColors(_cW, _cM, _ph1);
-  const _cGlow    = new THREE.Color().lerpColors(_cPrimary, new THREE.Color(colorC2.contrast), _ph2);
-  const primaryColor = '#' + _cPrimary.getHexString();
-  const glowColor    = '#' + _cGlow.getHexString();
+  const { primary: primaryColor, glow: glowColor } = currentColors();
 
   // Build the replacement group FIRST and only swap it in on success — a failed
   // or degenerate TextGeometry (e.g. Depth 0 with bevel) must never leave the
@@ -261,12 +263,20 @@ export const typography3d: Pattern = {
   },
 
   update(dt: number, _elapsed: number) {
-    // Rebuild if custom colors changed — checked BEFORE the textGroup guard so a
-    // previously failed build can recover instead of dead-ending on black forever.
+    // A failed build leaves textGroup null; retry it here so the pattern can recover
+    // instead of dead-ending on black forever.
+    if (!textGroup) { if (getFont()) buildText(); if (!textGroup) return; }
+
+    // Colour is a material property. It used to be part of the rebuild trigger, but
+    // Motion drives colorC2.colorsV2 every frame, so that re-tessellated the whole
+    // text sixty times a second. Repaint in place instead.
     if (colorC2.main !== _lastPrimary || colorC2.contrast !== _lastGlow || colorC2.colorsV2 !== _lastColorsV2) {
-      buildText();
+      const { primary, glow } = currentColors();
+      applyTextColors(textGroup, primary, glow);
+      _lastPrimary  = colorC2.main;
+      _lastGlow     = colorC2.contrast;
+      _lastColorsV2 = colorC2.colorsV2;
     }
-    if (!textGroup) return;
 
     animTime += dt;
 
@@ -307,7 +317,10 @@ export const typography3d: Pattern = {
       if (faceT >= 1) { baseYaw = faceToYaw; heatYawOffset = 0; heatTiltOffset = 0; facing = false; }
     }
 
-    if (heatSmoothed && heatTmp && heatTexData) {
+    // Gate on the Heat switch. This block smooths and blurs a 160x90 field — some
+    // 43,000 float ops a frame — and used to run unconditionally, so every user who
+    // never turned Heat on was paying for it on every single frame.
+    if (cameraState.heatEnabled && heatSmoothed && heatTmp && heatTexData) {
       const raw = cameraState.heatMap;
       for (let i = 0; i < W * H; i++)
         heatSmoothed[i] = heatSmoothed[i] * 0.82 + Math.max(0, raw[i] - 0.008) * 0.18;

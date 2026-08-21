@@ -4,9 +4,11 @@ import { colorC2, colorShuffle, getColorByIndex } from "./colorC2.svelte";
 import { interactionState } from "./interactionState.svelte";
 import { keepCameraAlive } from "./motionCameraWrapper";
 import { overlayState } from "./textOverlay.svelte";
+import { watermarkState } from "./watermark.svelte";
+import { getWatermarkTexture, disposeWatermarkTexture } from "./watermarkTexture";
 import {
   loadFont, getFont, buildTextGroup as buildOverlayGroup, disposeTextGroup,
-  applyTextOpacity, cycleAlpha,
+  applyTextOpacity, applyTextColors, cycleAlpha,
 } from "./overlayText";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -179,6 +181,63 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   // Rebuild only when something that changes the geometry changes.
   let overlayKey = "";
 
+  // ── Watermark ──────────────────────────────────────────────────────────────
+  // Lives in the same overlay scene and camera as the text, so it inherits the same
+  // immunity from the colour grade and flicker guard, and the same presence in
+  // screenshots and recordings.
+  let markMesh: THREE.Mesh | null = null;
+  let markMat: THREE.MeshBasicMaterial | null = null;
+  let markGeo: THREE.PlaneGeometry | null = null;
+
+  function disposeWatermark() {
+    if (markMesh) overlayScene.remove(markMesh);
+    markGeo?.dispose();
+    markMat?.dispose();
+    disposeWatermarkTexture();
+    markMesh = null; markMat = null; markGeo = null;
+  }
+
+  function renderWatermarkUpdate() {
+    if (!watermarkState.enabled || !watermarkState.dataUrl) {
+      if (markMesh) { overlayScene.remove(markMesh); markMesh.visible = false; }
+      return;
+    }
+    const tex = getWatermarkTexture(watermarkState.dataUrl);
+    if (!tex) return;
+
+    if (!markMesh) {
+      markGeo = new THREE.PlaneGeometry(1, 1);
+      markMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false });
+      markMesh = new THREE.Mesh(markGeo, markMat);
+      markMesh.renderOrder = 10;  // always on top of the text
+    }
+    if (markMesh.parent !== overlayScene) overlayScene.add(markMesh);
+    markMesh.visible = true;
+    markMat!.map = tex;
+    markMat!.opacity = watermarkState.opacity;
+    markMat!.needsUpdate = true;
+
+    // Same frustum math the text position uses, so -1..1 means the same thing here.
+    const halfH = Math.tan((overlayCamera.fov * Math.PI / 180) / 2) * overlayCamera.position.z;
+    const halfW = halfH * overlayCamera.aspect;
+    const w = watermarkState.scale * halfW * 2;
+    const h = w / Math.max(0.01, watermarkState.aspect);
+    markMesh.scale.set(w, h, 1);
+
+    // Pin to a corner, then inset by the margin plus half the image so the whole
+    // thing sits inside the frame rather than straddling the edge.
+    const m = watermarkState.margin * halfH;
+    const x = halfW - m - w / 2;
+    const y = halfH - m - h / 2;
+    switch (watermarkState.anchor) {
+      case 0: markMesh.position.set(-x,  y, 0); break;  // top left
+      case 1: markMesh.position.set( x,  y, 0); break;  // top right
+      case 2: markMesh.position.set(-x, -y, 0); break;  // bottom left
+      case 4: markMesh.position.set( 0,  0, 0); break;  // centre
+      default: markMesh.position.set(x, -y, 0);         // bottom right
+    }
+  }
+
   function overlayColors(): { primary: string; glow: string } {
     const ph1 = Math.min(1.0, colorC2.colorsV2);
     const ph2 = Math.max(0, colorC2.colorsV2 - 1) / 2;
@@ -195,22 +254,27 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
     overlayKey = "";
   }
 
-  function renderOverlay(dt: number) {
+  /** Brings the text group up to date. Returns false if there is nothing to draw. */
+  function updateOverlayText(dt: number): boolean {
     if (!overlayState.enabled) {
       if (overlayGroup) disposeOverlay();
-      return;
+      return false;
     }
     if (!getFont()) {
       if (!overlayFontRequested) {
         overlayFontRequested = true;
         loadFont().catch(err => console.error('[overlay] font load failed:', err));
       }
-      return;
+      return false;
     }
 
     const c = overlayColors();
+    // Colour is deliberately NOT in the key. It is a material property, and under
+    // Motion the palette shifts every frame — keying on it re-tessellated the whole
+    // text sixty times a second. Geometry inputs only.
     const key = [overlayState.text, overlayState.size, overlayState.depth, overlayState.style,
-                 overlayState.align, overlayState.lineSpacing, c.primary, c.glow].join('|');
+                 overlayState.mode, overlayState.align, overlayState.lineSpacing,
+                 (overlayState.lineSizes ?? []).join(',')].join('|');
     if (key !== overlayKey) {
       // Build first, swap only on success — a degenerate geometry must not blank the text.
       let next: THREE.Group;
@@ -218,21 +282,32 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
         next = buildOverlayGroup({
           text: overlayState.text, size: overlayState.size, depth: overlayState.depth,
           style: overlayState.style, align: overlayState.align,
-          lineSpacing: overlayState.lineSpacing, primaryColor: c.primary, glowColor: c.glow,
+          lineSpacing: overlayState.lineSpacing, lineSizes: overlayState.lineSizes,
+          flat: overlayState.mode === 1,
+          primaryColor: c.primary, glowColor: c.glow,
         });
       } catch (err) {
         console.error('[overlay] build failed — keeping previous text', err);
         overlayKey = key; // don't retry the same broken input every frame
-        return;
+        return false;
       }
       if (overlayGroup) { disposeTextGroup(overlayGroup); overlayScene.remove(overlayGroup); }
       overlayScene.add(next);
       overlayGroup = next;
       overlayKey = key;
     }
-    if (!overlayGroup) return;
+    if (!overlayGroup) return false;
 
-    overlaySpinYaw += dt * overlayState.spin;
+    // Repaint from the palette every frame — cheap, and what lets the key above
+    // ignore colour entirely.
+    applyTextColors(overlayGroup, c.primary, c.glow);
+
+    // Simple mode faces front and holds there.
+    if (overlayState.mode === 1) {
+      overlaySpinYaw = 0;
+    } else {
+      overlaySpinYaw += dt * overlayState.spin;
+    }
     overlayGroup.rotation.y = overlaySpinYaw;
     // posX/posY are -1..1 of the half-view, so the text can be parked anywhere.
     const halfH = Math.tan((overlayCamera.fov * Math.PI / 180) / 2) * overlayCamera.position.z;
@@ -246,7 +321,19 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       overlayPhase = 0;
     }
     applyTextOpacity(overlayGroup, alpha);
-    if (!overlayGroup.visible) return;
+    return overlayGroup.visible;
+  }
+
+  /**
+   * One pass for text and watermark together. Either can be on without the other,
+   * so the draw is decided here rather than by whichever one happens to run first.
+   */
+  function renderOverlay(dt: number) {
+    const textVisible = updateOverlayText(dt);
+    if (overlayGroup) overlayGroup.visible = textVisible;
+    renderWatermarkUpdate();
+    const markVisible = !!markMesh?.visible;
+    if (!textVisible && !markVisible) return;
 
     // autoClear would wipe the frame the post pass just composited.
     const prevAutoClear = renderer.autoClear;
@@ -612,6 +699,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
       current.dispose();
       clearScene();
       disposeOverlay();
+      disposeWatermark();
       renderer.dispose();
       rt.dispose();
       histA.dispose();

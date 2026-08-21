@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7.260821-1226 — Watermark · size per line · a much lighter overlay
+
+**Watermark** — a new section in Options takes a PNG (or WebP/JPEG) and lays it over whichever pattern is running. Pick a corner or the centre, then set Size, Margin and Opacity. Transparency is kept, so a logo with a clear background stays clear. Like the text, it is drawn into the picture rather than laid over the interface, so it appears in screenshots, in recordings and on a projector fed from the canvas. Images are scaled down to 1024px on their long edge when you choose them, which keeps a typical logo at a few kilobytes rather than several megabytes.
+
+**A size slider for every line.** Under the text box, each line of the overlay gets its own size slider, appearing and disappearing as you add and remove lines. Set a big headline over a small subtitle without leaving the panel. Lines are stacked by their actual heights, so enlarging one pushes the next one down instead of growing into it.
+
+**The overlay was rebuilding itself sixty times a second.** Its 3D lettering was re-created from scratch whenever the colour changed — and with Motion switched on, the palette shifts on every frame as you move, so it never stopped. Colour is now applied to the existing lettering instead of rebuilding it, and the text is only rebuilt when you actually change it. The same fault, and the same fix, applied to the 3D Typography pattern.
+
+**Wireframe is no longer the expensive one.** It was building its edge lines twice over, once for each of its two passes — which is why it felt heavier than Solid or Neon. It now builds them once and uses them for both. Measured after the change, Wireframe builds in 71.5 ms against Solid's 73.3 ms; it used to carry a whole extra edge pass on top.
+
+**3D Typography stopped doing heat work nobody asked for.** It smoothed and blurred a motion field on every single frame regardless of whether Heat was switched on — around forty thousand calculations a frame, for nothing, for anyone who never used Heat. It now only does that when Heat is actually running.
+
+**Ghost** — a fourth text style, between Solid and Wireframe: the letters half transparent with their edges at full strength, so a pattern reads through the lettering.
+
+**Simple mode** for the text overlay. Flexible is the old behaviour, with spin and full three-dimensional lettering. Simple faces the camera, holds still, and draws flat letters — dropping the bevel and the back of each letter, which you never see on text that does not turn. That is 85% fewer points to build and draw, measured on a two-line title. Spin and Depth grey out, since they have nothing to act on.
+
 ## v0.7.260820-1118 — Interface behaves
 
 **Tap on the canvas hides the interface on iPhone and iPad**, the way clicking already did on the Mac. A tap did fire and did hide the panels — but iOS then synthesizes a mousemove and a click at the same spot, and the click brought everything straight back and reset the five-second timer, which is why the interface appeared to ignore the tap and then linger. A tap on the canvas now suppresses those synthesized events at source, so it hides, and a second tap brings it back. Taps on the panels themselves are untouched.
