@@ -142,15 +142,17 @@ const frag = /* glsl */`
 
     vec3 outc = sharp;
     if (m.r > 0.001) {
-      // 9-tap wide box blur — the "dissolve into a wash of colour" half.
-      vec2 r = uTexel * 14.0;
-      vec3 w = vec3(0.0);
-      for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-          w += texture2D(uTex, clamp(uv + vec2(float(i), float(j)) * r, 0.0, 1.0)).rgb;
-        }
-      }
-      w /= 9.0;
+      // The "dissolve into a wash of colour" half, as a coarse mip fetch.
+      //
+      // This used to be a 3x3 box blur with taps 14 texels apart. On dense
+      // content that passes for a wash, but on a sparse point field like
+      // Particle Field it is not a blur at all — each dot simply gets copied to
+      // 9 places, and because every dot lands on the same offsets the copies
+      // line up into a visible regular grid across the whole frame. A mip level
+      // is a real, correctly filtered average, so sparse and dense elements
+      // both dissolve the same way and nothing is replicated.
+      float lod = 3.0 + clamp(m.r, 0.0, 1.0) * 3.5;
+      vec3 w = texture2D(uTex, uv, lod).rgb;
       outc = mix(outc, w, clamp(m.r, 0.0, 1.0));
     }
     // The "sink into darkness" half — this layer fades out here, so whatever is
@@ -199,11 +201,12 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
   // Colour. Same two controls as the Canvas Lustspiel patterns: Palette blends
   // the target palette from Film (the Lustspiel phase colours) to Default (the
   // app's global palette), Colour Blend goes hard-stepped to smooth. Recolour is
-  // the master amount — it defaults to 0 so every element keeps its own native
-  // colouring until you actually ask for the change.
-  let paletteBlend = 1;
+  // the master amount, and it defaults to FULL with Palette on Film — the film
+  // colours are the intended base for these elements too, and turning Recolour
+  // down is how you get back to each element's own original colours.
+  let paletteBlend = 0;
   let colourBlend = 0.5;
-  let recolour = 0;
+  let recolour = 1;
   const palColors = Array.from({ length: 5 }, () => new THREE.Color(1, 1, 1));
 
   /** Film palette x app palette, per entry — identical to lustspielPattern's
@@ -303,8 +306,13 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
     if (t && t.width === w && t.height === h) return t;
     t?.dispose();
     const nt = new THREE.WebGLRenderTarget(w, h, {
-      minFilter: THREE.LinearFilter,
+      // Mipmapped so the Atmosphere wash can sample a genuinely low-frequency
+      // level instead of faking a blur from a handful of wide taps (see the
+      // shader). three regenerates these on setRenderTarget when the texture
+      // asks for them.
+      minFilter: THREE.LinearMipmapLinearFilter,
       magFilter: THREE.LinearFilter,
+      generateMipmaps: true,
       depthBuffer: true,
     });
     targets[l] = nt;
@@ -502,11 +510,11 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
 
     // ── Colour ────────────────────────────────────────────────────────────────
     { label: 'Colour', type: 'separator' },
-    { label: 'Recolour', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
-      tip: 'How far the elements are re-coloured from the palette below. 0 leaves every element its own native colours; 1 maps all of them onto the shared palette by brightness.',
+    { label: 'Recolour', type: 'range', min: 0, max: 1, step: 0.01, default: 1,
+      tip: 'How far the elements are re-coloured from the palette below. 1 (the default) puts every element on the shared film palette; turn it down to bring back each element’s own original colours.',
       get: () => recolour, set: (v: number) => { recolour = v; } },
-    { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 1,
-      tip: 'Left: Film — the Lustspiel phase colours. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both. Only has an effect while Recolour is above 0.',
+    { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
+      tip: 'Left: Film — the Lustspiel phase colours, the default here. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both. Only has an effect while Recolour is above 0.',
       disabled: () => recolour <= 0.001,
       get: () => paletteBlend, set: (v: number) => { paletteBlend = v; } },
     { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
@@ -589,7 +597,7 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
       }
       compTime += dt * maxSpeed;
 
-      if (recolour > 0.001) updatePalette();
+      updatePalette();
 
       if (maskDirty) rebuildZoneMask();
       else if (masked() && zoneNeedsTimer() && elapsed - lastMaskBuild > 0.1) {
