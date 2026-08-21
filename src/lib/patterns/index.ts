@@ -31,19 +31,20 @@ import { addMotionCamera } from "../motionCameraWrapper";
 import { addAudioReactivity } from "../audioReactivityWrapper";
 import { interactionState, type PatternInteractionSettings } from "../interactionState.svelte";
 
-// Lustspiel — one entry per phase; elements are toggles inside the pattern
-const lspA = makeLustspielPattern('lsp-a', 'Lustspiel A', 'A');
-const lspB = makeLustspielPattern('lsp-b', 'Lustspiel B', 'B');
-const lspC = makeLustspielPattern('lsp-c', 'Lustspiel C', 'C');
-
-// Lustspiel 1/2/3 — Phase 3: additional, separate entries (A/B/C stay untouched)
-// whose defaults lean toward the character of one of the original inspiration
-// images (public/images/dot-waves, two-feather, baroque-vines), and which add a
-// Speed control: 0 holds the image still, 1 lets it slowly drift. Only field()/
-// intensity()/zoneU() ever see that time value — hash() never does — so drift
-// never changes which shapes exist, only their form (see engine.ts).
+// Lustspiel 1/2/3 — one entry per phase; elements are toggles inside the pattern.
+// Defaults lean toward the character of one of the original inspiration images
+// (public/images/dot-waves, two-feather, baroque-vines), and each adds a Speed
+// control (0 holds the image still, 1 lets it slowly drift — only field()/
+// intensity()/zoneU() ever see that time value, hash() never does, so drift
+// never changes which shapes exist, only their form — see engine.ts) plus an
+// Animate toggle: off pins state.time at 0 AND sets state.animated = false,
+// reproducing the exact static look the former separate Lustspiel A/B/C
+// patterns had (state.animated gates a small non-zero static offset in
+// bendOf()/elPoints/elMesh that persists even at Speed 0 — see
+// [[project-lustspiel-patterns]]). A/B/C were removed once this made them
+// redundant.
 // Phase matches the number (1→A, 2→B, 3→C) so the colour character tracks
-// Lustspiel A/B/C: 1 mostly white/blue, 2 and 3 progressively more colourful.
+// the old A/B/C naming: 1 mostly white/blue, 2 and 3 progressively more colourful.
 const lsp1 = makeLustspielPattern('lsp-1', 'Lustspiel 1', 'A', {
   // dot-waves / flowing-dots: an S-band of lines with a halftone field of dots.
   animated: true, speedDefault: 0.15,
@@ -90,7 +91,7 @@ const lspParticle = makeLustspielParticle('lsp-particle', 'Lustspiel Particle');
 // six specific ids, once, at the earliest possible point (module load, before any
 // control is ever read) — and only if nothing was saved for them yet, so a later,
 // deliberate opt-in from the Options panel is never overwritten.
-for (const id of ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle']) {
+for (const id of ['lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle']) {
   if (interactionState.patternSettings[id]) continue;
   const off: PatternInteractionSettings = {
     brightnessEnabled: false, brightnessGain: 1.0,
@@ -135,7 +136,7 @@ const PUSH_IDS = new Set([
 // - light* family  (camera-based themselves)
 // - asciiSwirls  (manages its own internal scene + renderer ref)
 export const LIGHT_IDS = ['lightPaint', 'lightTrail', 'lightPaintBlack', 'lightFly', 'lightVortex', 'lightMirror', 'lightKaleido', 'lightGlitch'];
-export const LUSTSPIEL_IDS = ['lsp-a', 'lsp-b', 'lsp-c', 'lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle'];
+export const LUSTSPIEL_IDS = ['lsp-1', 'lsp-2', 'lsp-3', 'lsp-organic', 'lsp-particle'];
 const NO_MOTION_CAMERA = new Set([...LIGHT_IDS, 'asciiSwirls']);
 
 const rawPatterns: Pattern[] = [
@@ -176,9 +177,6 @@ const rawPatterns: Pattern[] = [
   imgRootWave,
   imgPurpleOrnate,
   imgFlowingDots,
-  lspA,
-  lspB,
-  lspC,
   lsp1,
   lsp2,
   lsp3,

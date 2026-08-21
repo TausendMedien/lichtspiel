@@ -11,6 +11,7 @@ let heatStrength  = 0.5;
 let heatGain      = 11.0;
 let blurRadius    = 4.0;
 let mirrorX       = true;
+let fillAmt       = 0.0;
 
 const MAX_PARTICLES = 50000;
 
@@ -100,22 +101,54 @@ let posStore  = new Float32Array(MAX_PARTICLES * 3);
 let seedStore = new Float32Array(MAX_PARTICLES);
 let storedCount = 0;
 
-function ensureStore(n: number) {
+// Spawn shape blends from the original uniform ball (Fill 0, corners of the
+// frame necessarily empty — a disc silhouette seen from the camera) toward a
+// frustum-shaped box matching the camera's view at that depth (Fill 1, fills
+// the whole frame including corners). Camera sits at z=4 looking at origin.
+function spawnParticle(i: number, aspect: number) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi   = Math.acos(2 * Math.random() - 1);
+  const rBall = Math.cbrt(Math.random()) * 4;
+  const ballX = rBall * Math.sin(phi) * Math.cos(theta);
+  const ballY = rBall * Math.sin(phi) * Math.sin(theta);
+  const ballZ = rBall * Math.cos(phi);
+
+  const t = fillAmt;
+  if (t <= 0) {
+    posStore[i * 3]     = ballX;
+    posStore[i * 3 + 1] = ballY;
+    posStore[i * 3 + 2] = ballZ;
+  } else {
+    const boxZ    = (Math.random() * 2 - 1) * 4;
+    const dist    = Math.max(4 - boxZ, 0.1);
+    const halfH   = dist * Math.tan(30 * Math.PI / 180) * 0.92;
+    const halfW   = halfH * aspect;
+    const boxX    = (Math.random() * 2 - 1) * halfW;
+    const boxY    = (Math.random() * 2 - 1) * halfH;
+    posStore[i * 3]     = ballX * (1 - t) + boxX * t;
+    posStore[i * 3 + 1] = ballY * (1 - t) + boxY * t;
+    posStore[i * 3 + 2] = ballZ * (1 - t) + boxZ * t;
+  }
+  seedStore[i] = Math.random();
+}
+
+function ensureStore(n: number, aspect: number) {
   while (storedCount < n) {
-    const i     = storedCount;
-    const r     = Math.cbrt(Math.random()) * 4;
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    posStore[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-    posStore[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    posStore[i * 3 + 2] = r * Math.cos(phi);
-    seedStore[i] = Math.random();
+    spawnParticle(storedCount, aspect);
     storedCount++;
   }
 }
 
-function buildGeometry(): THREE.BufferGeometry {
-  ensureStore(MAX_PARTICLES);
+function respawnAll(aspect: number) {
+  for (let i = 0; i < storedCount; i++) spawnParticle(i, aspect);
+  if (geometry) {
+    (geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    (geometry.attributes.aSeed as THREE.BufferAttribute).needsUpdate = true;
+  }
+}
+
+function buildGeometry(aspect: number): THREE.BufferGeometry {
+  ensureStore(MAX_PARTICLES, aspect);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(posStore, 3));
   geo.setAttribute("aSeed",    new THREE.BufferAttribute(seedStore, 1));
@@ -142,6 +175,7 @@ export const particlesHeat: Pattern = {
     { label: "Heat Gain",     type: "range",  min: 4.0,  max: 20.0,  step: 0.5,  default: 11,    interactive: 'heat' as const, tip: "Amplify the heat signal — higher = reacts to subtler motion.",    get: () => heatGain,     set: v => { heatGain = v; } },
     { label: "Blur Radius",   type: "range",  min: 0,    max: 10,    step: 0.1,  default: 4,     interactive: 'heat' as const, tip: "Blur applied to the heat map before driving particles.",          get: () => blurRadius,   set: v => { blurRadius = v; } },
     { label: "Point Count",   type: "range",  min: 5000, max: 50000, step: 1000, default: 30000,  tip: "Number of particles. More = denser cloud, heavier on GPU.",                 get: () => particleCount, set: v => { particleCount = v; geometry?.setDrawRange(0, v); } },
+    { label: "Fill",          type: "range",  min: 0,    max: 1,     step: 0.05, default: 0,     tip: "Spread particles toward the frame's edges and corners instead of a centred ball — fewer dark holes, less spherical.", get: () => fillAmt, set: v => { fillAmt = v; respawnAll(currentAspect); } },
   ],
 
   init(ctx: PatternContext) {
@@ -152,7 +186,7 @@ export const particlesHeat: Pattern = {
     heatField = createHeatField();
     heatWasOn = false;
 
-    geometry = buildGeometry();
+    geometry = buildGeometry(currentAspect);
 
     material = new THREE.ShaderMaterial({
       uniforms: {

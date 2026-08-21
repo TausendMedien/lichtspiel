@@ -86,6 +86,11 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     atmosphere: opts?.atmosphere ? (opts.atmosphereDefault ?? 0.6) : 0,
   };
   let speed = opts?.animated ? (opts.speedDefault ?? 0.15) : 0;
+  /** Off reproduces Lustspiel A/B/C exactly: state.animated gates the static
+   *  drift terms in bendOf()/elPoints/elMesh (engine.ts), so turning it off and
+   *  pinning state.time at 0 removes not just motion but the non-zero static
+   *  offset those terms add even at t = 0. */
+  let animateOn = true;
 
   /** Which elements are on, keyed by element id — the toggles write here.
    *  Seeded from state.elems (defaults or an opts.defaults override), not
@@ -248,6 +253,10 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
       { label: 'Speed', type: 'range' as const, min: 0, max: 2, step: 0.01, default: opts.speedDefault ?? 0.15,
         tip: '0 holds the image still. Higher values let it slowly drift — the same shapes stay, in the same places, only their form wanders. Which elements exist never changes (that stays fixed by Seed), so it never flickers.',
         get: () => speed, set: (v: number) => { speed = v; touch(); } },
+      { label: 'Animate', type: 'toggle' as const,
+        tip: 'Off holds this exactly still — like the old separate Lustspiel A/B/C — regardless of Speed. On lets Speed drive a slow drift.',
+        get: () => animateOn,
+        set: (v: boolean) => { animateOn = v; state.animated = v; if (!v) state.time = 0; touch(); } },
     ] : []),
 
     // ── Colour ───────────────────────────────────────────────────────────────
@@ -313,7 +322,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     },
 
     update(dt: number) {
-      if (speed > 0) {
+      if (speed > 0 && animateOn) {
         state.time = (state.time ?? 0) + dt * speed * TIME_RATE;
         dirty = true;
       }

@@ -19,6 +19,7 @@ const params = {
   pointCount: 25000,
   heatStrength: 0.5,
   heatGain:     11.0,
+  fill:         0.0,
 };
 
 let blurRadius = 2.0;
@@ -35,6 +36,7 @@ uniform float uTime;
 uniform float uCurlScale;
 uniform float uSpread;
 uniform float uPtSize;
+uniform float uFill;
 uniform float     uMirrorX;
 
 attribute float aSeed;
@@ -122,8 +124,14 @@ void main() {
   float theta    = aSeed * 6.2831853;
   float phi      = acos(2. * fract(aSeed * 127.1 + 0.5) - 1.);
   vec3 onSphere  = vec3(sin(phi)*cos(theta), sin(phi)*sin(theta), cos(phi));
-  vec3 spawnPos  = onSphere * uSpread;
-  spawnPos.x    += aSide * uSpread * 1.8;
+  // Fill 0: hollow shell (radius factor 1) split into two lobes, as before.
+  // Fill 1: solid ball (cbrt of a second, independent random draw) with the
+  // lobes collapsed back together, so the interior fills in instead of the
+  // cloud staying a bilobed shell.
+  float fillRand = fract(aSeed * 57.31 + 0.13);
+  float radiusF  = mix(1.0, pow(fillRand, 1.0 / 3.0), uFill);
+  vec3 spawnPos  = onSphere * uSpread * radiusF;
+  spawnPos.x    += aSide * uSpread * 1.8 * (1.0 - uFill);
 
   vec3 pos = spawnPos;
   float noiseTime = uTime * 0.4 + aSeed * 13.7;
@@ -138,7 +146,7 @@ void main() {
   vColorRatio = aSide * 0.5 + 0.5;
 
   float sizeRef = 2.0;
-  float sizeScale = min(1.0, sizeRef / uPtSize);
+  float sizeScale = mix(min(1.0, sizeRef / uPtSize), 1.0, uFill);
   vAlpha = smoothstep(0.0, 0.08, tLife) * smoothstep(1.0, 0.75, tLife) * sizeScale;
 
   // Deform the cloud by the heat map at this particle's own screen position.
@@ -292,6 +300,14 @@ export const hyperMixHeat: Pattern = {
       set: (v) => { params.pointCount = v; rebuildPoints(effectiveCount()); },
     },
     {
+      label: "Fill",
+      type: "range", min: 0, max: 1, step: 0.05,
+      default: 0,
+      tip: "Collapse the two lobes into a solid cloud instead of a hollow shell — fewer dark holes, less structured.",
+      get: () => params.fill,
+      set: (v) => { params.fill = v; if (material) material.uniforms.uFill.value = v; },
+    },
+    {
       label: "High Quality",
       type: "toggle" as const,
       tip: "Off = half the point count, saves GPU on slower machines.",
@@ -347,6 +363,7 @@ export const hyperMixHeat: Pattern = {
         uCurlScale:    { value: params.curlScale },
         uSpread:       { value: params.spread },
         uPtSize:       { value: params.pointSize },
+        uFill:         { value: params.fill },
         uBlur:         { value: 1.0 - params.blur },
         uCountScale:   { value: 1.0 },
         uColor1:       { value: new THREE.Color(0x00ccff) },
@@ -373,7 +390,7 @@ export const hyperMixHeat: Pattern = {
     if (!material) return;
     accTime += dt * params.speed;
     material.uniforms.uTime.value       = accTime;
-    material.uniforms.uCountScale.value = Math.min(1.0, BASE_COUNT / params.pointCount);
+    material.uniforms.uCountScale.value = THREE.MathUtils.lerp(Math.min(1.0, BASE_COUNT / params.pointCount), 1.0, params.fill);
     material.uniforms.uMirrorX.value      = mirrorX ? 1.0 : 0.0;
 
     // Heat reactivity must respect the "Heat" toggle — without this gate the pattern

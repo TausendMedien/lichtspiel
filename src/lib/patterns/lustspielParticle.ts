@@ -157,6 +157,17 @@ const frag = /* glsl */`
     vec2 m = texture2D(uMask, vUv).rg * uAtmo;
 
     vec3 outc = sharp;
+    // Atmosphere is a BORDER effect, not a global blur: both halves below share
+    // one falloff, edge, that is 1 at the boundary between zones and fades to
+    // 0 deep inside an element's own zone. width — how far in from the border
+    // it reaches — grows with the Atmosphere amount, so raising the slider makes
+    // the affected band deeper without ever touching the element's interior.
+    // Merged has no neighbour to fade under, so edge is pinned to 1 there and
+    // the wash/dark stay the gentle, frame-wide patchiness they were before.
+    float atmoAmt = clamp(uAtmo, 0.0, 1.0);
+    float width   = mix(0.06, 0.35, atmoAmt);
+    float edge    = uZoneOn > 0.5 ? (1.0 - smoothstep(0.5, 0.5 + width, rawZone)) : 1.0;
+
     if (m.r > 0.001) {
       // The "dissolve into a wash of colour" half, as a coarse mip fetch.
       //
@@ -166,24 +177,19 @@ const frag = /* glsl */`
       // 9 places, and because every dot lands on the same offsets the copies
       // line up into a visible regular grid across the whole frame. A mip level
       // is a real, correctly filtered average, so sparse and dense elements
-      // both dissolve the same way and nothing is replicated.
-      float lod = 3.0 + clamp(m.r, 0.0, 1.0) * 3.5;
+      // both dissolve the same way and nothing is replicated. LOD is kept
+      // modest (1..3, not 3..6.5) so the wash reads as a soft dissolve rather
+      // than a near-solid blur, and it is scaled by edge so it only shows up
+      // at the border — same rule as the darkening below.
+      float lod = mix(1.0, 3.0, clamp(m.r, 0.0, 1.0));
       vec3 w = texture2D(uTex, uv, lod).rgb;
-      outc = mix(outc, w, clamp(m.r, 0.0, 1.0));
+      outc = mix(outc, w, clamp(m.r, 0.0, 1.0) * edge);
     }
-    // The "sink into darkness" half. Two limits, because unrestricted this could
-    // black an element out completely in the middle of its own zone, which just
-    // reads as a hole rather than as depth:
-    //
-    //  - It is biased toward the EDGE of the element's zone (rawZone near 0.5 is
-    //    the boundary, near 1 is deep inside), so an element darkens where it
-    //    meets its neighbour and looks like it slides underneath it, while its
-    //    interior stays lit.
-    //  - It is capped below 1, so the element never disappears entirely. Merged
-    //    mode has no neighbour to slide under, so it gets the tighter cap.
-    float edgeBias = uZoneOn > 0.5 ? (1.0 - smoothstep(0.45, 0.92, rawZone)) : 1.0;
+    // The "sink into darkness" half. Capped below 1 so the element never
+    // disappears entirely — Merged mode has no neighbour to slide under, so it
+    // gets the tighter cap.
     float darkCap  = uZoneOn > 0.5 ? 0.88 : 0.5;
-    outc *= (1.0 - clamp(m.g, 0.0, 1.0) * edgeBias * darkCap);
+    outc *= (1.0 - clamp(m.g, 0.0, 1.0) * edge * darkCap);
 
     // Palette: a luminance gradient map. These hosted patterns colour themselves
     // per particle, so there is no per-shape colour index to reinterpret the way
@@ -502,6 +508,23 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
       disabled: () => assign[i] < 0,
       get: () => gain[i], set: (v: number) => { gain[i] = v; },
     })),
+
+    // Fill — only Particle Field and Hyper Mix have this control on the hosted
+    // pattern itself (see particlesHeat.ts / hyperMixHeat.ts); proxy straight
+    // through to it rather than duplicating the state here.
+    ...SOURCES.filter(s => s.id === 'particlesHeat' || s.id === 'hyperMixHeat').map(s => {
+      const i = SOURCES.indexOf(s);
+      const fillCtrl = () => s.pattern.controls?.find(
+        (c): c is Extract<PatternControl, { type: 'range' }> => c.type === 'range' && c.label === 'Fill'
+      );
+      return {
+        label: `${s.label} Fill`, type: 'range' as const, min: 0, max: 1, step: 0.05, default: 0,
+        tip: `Fills in ${s.label}'s dark holes — spreads it toward the frame's edges and corners instead of a centred, hollow shape.`,
+        disabled: () => assign[i] < 0,
+        get: () => fillCtrl()?.get() ?? 0,
+        set: (v: number) => fillCtrl()?.set(v),
+      };
+    }),
 
     { label: 'Identity', type: 'separator' },
     { label: 'Seed', type: 'stepper', min: 1, max: 9999, step: 1,
