@@ -121,7 +121,14 @@ export const parallelLinesStraight: Pattern = {
         }
         return best;
       },
-      set: (v) => { baseAngle = ANGLE_VALUES[v] ?? 0; } },
+      set: (v) => {
+        baseAngle = ANGLE_VALUES[v] ?? 0;
+        // Also clear the accumulated drift, so the button is ABSOLUTE: 0° is
+        // exactly vertical the moment you press it, 90° exactly horizontal.
+        // Without this the Rotate slider has usually already carried rotAngle
+        // somewhere else, and the buttons only nudge a drifting angle.
+        rotAngle = 0;
+      } },
     { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends the lines around the body silhouette. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
     { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],

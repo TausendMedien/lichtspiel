@@ -100,6 +100,20 @@ const frag = /* glsl */`
     for (int i = 1; i < 5; i++) c = mix(c, uPal[i], step(float(i), pos));
     return c;
   }
+  // Hue in 0..1, plus chroma. Used as the palette ramp position, see below.
+  vec4 hueChroma(vec3 c) {
+    float mx = max(c.r, max(c.g, c.b));
+    float mn = min(c.r, min(c.g, c.b));
+    float d  = mx - mn;
+    float h  = 0.0;
+    if (d > 1e-4) {
+      if (mx == c.r)      h = mod((c.g - c.b) / d, 6.0);
+      else if (mx == c.g) h = (c.b - c.r) / d + 2.0;
+      else                h = (c.r - c.g) / d + 4.0;
+      h /= 6.0;
+    }
+    return vec4(h, d, mx, 0.0);
+  }
   // Smooth: piecewise-linear ramp across neighbouring entries.
   vec3 palSoft(float pos) {
     vec3 c = uPal[0];
@@ -111,8 +125,10 @@ const frag = /* glsl */`
     // Composition mask first, sampled at the UNWARPED vUv so Warp bends the
     // content *inside* a zone that stays put — Photoshop-mask behaviour.
     float zone = 1.0;
+    float rawZone = 1.0;
     if (uZoneOn > 0.5) {
       float raw = dot(texture2D(uZone, vUv), uSlotSel);
+      rawZone = raw;
       // The mask is 2x2 supersampled, so edges arrive as a ramp. uEdge turns
       // that ramp into anything from a hard cut to a wide feather.
       float e = max(uEdge * 0.5, 0.002);
@@ -155,9 +171,19 @@ const frag = /* glsl */`
       vec3 w = texture2D(uTex, uv, lod).rgb;
       outc = mix(outc, w, clamp(m.r, 0.0, 1.0));
     }
-    // The "sink into darkness" half — this layer fades out here, so whatever is
-    // behind it shows through instead.
-    outc *= (1.0 - clamp(m.g, 0.0, 1.0));
+    // The "sink into darkness" half. Two limits, because unrestricted this could
+    // black an element out completely in the middle of its own zone, which just
+    // reads as a hole rather than as depth:
+    //
+    //  - It is biased toward the EDGE of the element's zone (rawZone near 0.5 is
+    //    the boundary, near 1 is deep inside), so an element darkens where it
+    //    meets its neighbour and looks like it slides underneath it, while its
+    //    interior stays lit.
+    //  - It is capped below 1, so the element never disappears entirely. Merged
+    //    mode has no neighbour to slide under, so it gets the tighter cap.
+    float edgeBias = uZoneOn > 0.5 ? (1.0 - smoothstep(0.45, 0.92, rawZone)) : 1.0;
+    float darkCap  = uZoneOn > 0.5 ? 0.88 : 0.5;
+    outc *= (1.0 - clamp(m.g, 0.0, 1.0) * edgeBias * darkCap);
 
     // Palette: a luminance gradient map. These hosted patterns colour themselves
     // per particle, so there is no per-shape colour index to reinterpret the way
@@ -166,12 +192,36 @@ const frag = /* glsl */`
     // rescaled to the ORIGINAL luminance, so re-hueing never changes how bright
     // the element reads on a body.
     if (uRecolour > 0.001) {
-      const vec3 W = vec3(0.2126, 0.7152, 0.0722);
-      float lum = dot(outc, W);
-      float pos = clamp(lum, 0.0, 0.9999) * 5.0;
+      // Swap the HUE, keep the BRIGHTNESS. The previous version matched Rec709
+      // luminance instead, which looks right on paper but darkened the picture:
+      // rescaling a dark, saturated palette entry up to the source luminance
+      // pushes channels past 1.0, and the clamp that follows throws that excess
+      // away — so the result lands *below* the luminance it was aiming for, and
+      // the more saturated the palette, the worse it gets.
+      //
+      // Matching value (max channel) instead is clip-free by construction: the
+      // palette colour is normalised to peak 1.0 and then multiplied by the
+      // source's own peak, so the output peaks at exactly the same level the
+      // input did. Colours change, brightness does not.
+      vec4 hc = hueChroma(outc);
+      float v = hc.z;                      // value = max channel
+      // Ramp position comes from HUE, not brightness. These elements are
+      // light-on-black, so nearly every lit pixel sits near peak value — a
+      // brightness ramp sent them all to the same palette entry and the whole
+      // element collapsed to one colour. Hue actually varies across the
+      // particles, so hue is what carries "which colour is this".
+      float pos = clamp(hc.x, 0.0, 0.9999) * 5.0;
       vec3 pc = mix(palHard(pos), palSoft(pos), uColBlend);
-      vec3 mapped = pc * (lum / max(dot(pc, W), 0.15));
-      outc = mix(outc, clamp(mapped, 0.0, 1.0), uRecolour);
+      // Normalise the palette entry to peak 1 and rescale to the SOURCE's own
+      // peak, so the output peaks exactly where the input did. Brightness is
+      // therefore independent of how dark or light the palette entry happens to
+      // be, and nothing can clip.
+      vec3 pcN = pc / max(max(pc.r, max(pc.g, pc.b)), 0.001);
+      // Near-grey pixels have no meaningful hue, so leave them their neutral
+      // tone instead of forcing them onto an arbitrary palette entry — that is
+      // what keeps white highlights white.
+      float amt = uRecolour * smoothstep(0.03, 0.20, hc.y);
+      outc = mix(outc, pcN * v, amt);
     }
 
     // Masking is an rgb multiply with alpha pinned at 1.0, NOT an alpha encode.
@@ -218,6 +268,11 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
     const appPal = appColors.length >= filmPal.length
       ? appColors.slice(0, filmPal.length)
       : Array.from({ length: filmPal.length }, (_, i) => appColors[i % Math.max(1, appColors.length)] ?? '#ffffff');
+    // Left in the palette's authored order. Sorting by brightness would be
+    // pointless here — the shader normalises every entry to peak 1 and rescales
+    // it to the source pixel's own peak, so an entry's own lightness never
+    // reaches the output — and it would scramble the sequence the palette was
+    // designed in, which is what the hue ramp walks along.
     for (let i = 0; i < filmPal.length; i++) {
       palColors[i].set(mixHex(filmPal[i], appPal[i], paletteBlend));
     }
