@@ -219,7 +219,22 @@ export const compositeFrag = /* glsl */`
       // brightness ramp sent them all to the same palette entry and the whole
       // element collapsed to one colour. Hue actually varies across the
       // particles, so hue is what carries "which colour is this".
-      float pos = clamp(hc.x, 0.0, 0.9999) * 5.0;
+      //
+      // These hosted patterns each paint themselves from a NARROW native hue
+      // band (particlesHeat/parallelLinesStraight explicitly cyan..magenta,
+      // ~0.5..0.83; hyperMixHeat/gravityLines track the app's global palette,
+      // typically similarly narrow) — using hc.x directly as the 0..5 ramp
+      // position therefore only ever reaches a couple of neighbouring palette
+      // entries, and can never land on a palette's white/achromatic entries at
+      // all (phase A is two white entries out of five). A canvas element picks
+      // its palette entry per SHAPE via a hash, uniformly across the whole
+      // palette — sin() of hue (plus a touch of value, so two same-hued but
+      // differently-bright particles can land differently too) instead spreads
+      // this narrow band across the FULL ramp, reaching every entry including
+      // white, while staying perfectly continuous — a particle's hue drifts
+      // smoothly frame to frame, so this never pops or flickers the way a
+      // hashed/quantised remap would.
+      float pos = (0.5 + 0.5 * sin(hc.x * 37.0 + hc.z * 11.0)) * 4.9999;
       vec3 pc = mix(palHard(pos), palSoft(pos), uColBlend);
       // Normalise the palette entry to peak 1 and rescale to the SOURCE's own
       // peak, so the output peaks exactly where the input did. Brightness is
