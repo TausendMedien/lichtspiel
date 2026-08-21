@@ -13,6 +13,12 @@ let scrollSpeed = 0.06;
 let lineWidth = 0.19;
 let colorSpeed = 0.0;
 let rotateSpeed = 0.02;
+/** Fixed orientation picked from the Angle buttons, in radians. Kept separate
+ *  from the drifting rotAngle so the buttons snap to an exact angle while the
+ *  Rotate slider keeps drifting on from there — set Rotate to 0 to hold it. */
+let baseAngle = 0;
+const ANGLE_LABELS = ['0°', '22°', '45°', '68°', '90°'];
+const ANGLE_VALUES = [0, 22, 45, 68, 90].map(d => d * Math.PI / 180);
 
 // Accumulated phases — updated each frame, never reset on hot-reload
 let colorPhase = 0;
@@ -103,6 +109,19 @@ export const parallelLinesStraight: Pattern = {
     { label: "Line Width",   type: "range", min: 0.02,max: 0.4, step: 0.01, default: 0.19, tip: "Thickness of each line.",                                get: () => lineWidth,   set: (v) => { lineWidth = v; } },
     { label: "Color Speed",  type: "range", min: 0.0, max: 1.0, step: 0.05, default: 0,    tip: "How fast the palette cycles along the lines.",           get: () => colorSpeed,  set: (v) => { colorSpeed = v; } },
     { label: "Rotate",       type: "range", min: 0.0, max: 0.5, step: 0.01, default: 0.02, audioWeight: 0.3, tip: "Slow rotation of the entire scene.",     get: () => rotateSpeed, set: (v) => { rotateSpeed = v; } },
+    { label: "Angle", type: "buttons", options: ANGLE_LABELS,
+      tip: "Snap the lines to a fixed orientation. Rotate keeps drifting on from whichever angle you pick, so set Rotate to 0 to hold it exactly.",
+      get: () => {
+        // Nearest button to the current base angle, so the selection still reads
+        // correctly after a preset or a shared link restores an exact value.
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < ANGLE_VALUES.length; i++) {
+          const d = Math.abs(ANGLE_VALUES[i] - baseAngle);
+          if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+      },
+      set: (v) => { baseAngle = ANGLE_VALUES[v] ?? 0; } },
     { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends the lines around the body silhouette. Requires Heat.", get: () => heatStrength, set: v => { heatStrength = v; } },
     { label: "Blur Radius",   type: "range", min: 0, max: 8,   step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Requires Heat.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
@@ -120,7 +139,7 @@ export const parallelLinesStraight: Pattern = {
         uLineWidth:   { value: lineWidth },
         uColorRange:  { value: colorC2.colorsV2 },
         uColorPhase:  { value: colorPhase },
-        uRotAngle:    { value: rotAngle },
+        uRotAngle:    { value: baseAngle + rotAngle },
         uHeatMap:     { value: heatField.heatTexture },
         uPushField:   { value: heatField.pushTexture },
         uPushMode:    { value: 0 },
@@ -157,7 +176,7 @@ export const parallelLinesStraight: Pattern = {
     material.uniforms.uLineWidth.value   = lineWidth;
     material.uniforms.uColorRange.value  = colorC2.colorsV2;
     material.uniforms.uColorPhase.value  = colorPhase;
-    material.uniforms.uRotAngle.value    = rotAngle;
+    material.uniforms.uRotAngle.value    = baseAngle + rotAngle;
     material.uniforms.uPushMode.value     = pushActive() ? 1 : 0;
     material.uniforms.uHeatStrength.value = cameraState.heatEnabled ? heatStrength : 0;
   },

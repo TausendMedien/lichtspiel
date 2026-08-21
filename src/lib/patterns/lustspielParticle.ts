@@ -5,7 +5,8 @@ import { particlesHeat } from './particlesHeat';
 import { gravityLines } from './gravityLines';
 import { parallelLinesStraight } from './parallelLinesStraight';
 import { getSlots } from '../presets';
-import { field, DESIGN_W, buildZoneMask, type ZoneInput } from '../pattern-engine/engine';
+import { field, DESIGN_W, buildZoneMask, PHASE, mixHex, type ZoneInput } from '../pattern-engine/engine';
+import { getEnabledIndices, getColorByIndex } from '../colorC2.svelte';
 import type { ElementId } from '../pattern-engine/types';
 
 /**
@@ -47,7 +48,7 @@ const MAX_LAYERS = 4;
  * Values are <= 1: gains above 1 clip in the UNORM8 target, and clipping is not
  * recoverable by the post pass. Indices follow SOURCES below.
  */
-const GAIN_DEFAULT = [1, 0.75, 0.85, 1];
+const GAIN_DEFAULT = [0.75, 0.85, 1, 1];
 
 interface Source {
   id: string;
@@ -55,10 +56,13 @@ interface Source {
   pattern: Pattern;
 }
 
+// Order matters twice over: it is the order the controls are listed in, and it
+// is the order zone slots are handed out in (slot = position among the enabled
+// sources). GAIN_DEFAULT above follows the same order.
 const SOURCES: Source[] = [
-  { id: 'hyperMixHeat', label: 'Hyper Mix', pattern: hyperMixHeat },
   { id: 'particlesHeat', label: 'Particle Field', pattern: particlesHeat },
   { id: 'gravityLines', label: 'Gravity Lines', pattern: gravityLines },
+  { id: 'hyperMixHeat', label: 'Hyper Mix', pattern: hyperMixHeat },
   { id: 'parallelLinesStraight', label: 'Parallel Lines', pattern: parallelLinesStraight },
 ];
 
@@ -84,7 +88,24 @@ const frag = /* glsl */`
   uniform float uWarp;
   uniform float uTime;
   uniform float uGain;
+  uniform vec3  uPal[5];
+  uniform float uRecolour;   // 0 = each element's own colours, 1 = fully re-mapped
+  uniform float uColBlend;   // 0 = hard stepped palette, 1 = smooth gradient
   varying vec2 vUv;
+
+  // Hard pick: the palette bucket pos falls into. Loop indices are
+  // constant-index-expressions, so indexing uPal[i] here is legal GLSL ES 1.0.
+  vec3 palHard(float pos) {
+    vec3 c = uPal[0];
+    for (int i = 1; i < 5; i++) c = mix(c, uPal[i], step(float(i), pos));
+    return c;
+  }
+  // Smooth: piecewise-linear ramp across neighbouring entries.
+  vec3 palSoft(float pos) {
+    vec3 c = uPal[0];
+    for (int i = 1; i < 5; i++) c = mix(c, uPal[i], clamp(pos - float(i) + 1.0, 0.0, 1.0));
+    return c;
+  }
 
   void main() {
     // Composition mask first, sampled at the UNWARPED vUv so Warp bends the
@@ -136,6 +157,21 @@ const frag = /* glsl */`
     // behind it shows through instead.
     outc *= (1.0 - clamp(m.g, 0.0, 1.0));
 
+    // Palette: a luminance gradient map. These hosted patterns colour themselves
+    // per particle, so there is no per-shape colour index to reinterpret the way
+    // the Canvas engine's col() does — brightness is the one signal every element
+    // shares, which makes it the natural ramp position. The mapped colour is
+    // rescaled to the ORIGINAL luminance, so re-hueing never changes how bright
+    // the element reads on a body.
+    if (uRecolour > 0.001) {
+      const vec3 W = vec3(0.2126, 0.7152, 0.0722);
+      float lum = dot(outc, W);
+      float pos = clamp(lum, 0.0, 0.9999) * 5.0;
+      vec3 pc = mix(palHard(pos), palSoft(pos), uColBlend);
+      vec3 mapped = pc * (lum / max(dot(pc, W), 0.15));
+      outc = mix(outc, clamp(mapped, 0.0, 1.0), uRecolour);
+    }
+
     // Masking is an rgb multiply with alpha pinned at 1.0, NOT an alpha encode.
     // Under AdditiveBlending (SRC_ALPHA, ONE) the colour result is identical, but
     // alpha-encoding would make A_dst = A_src^2 + A_dst and would double-count if
@@ -147,7 +183,8 @@ const frag = /* glsl */`
 // ─── Pattern ──────────────────────────────────────────────────────────────────
 
 export function makeLustspielParticle(id: string, name: string): Pattern {
-  /** Layer index per source, or -1 for off. Default: only Hyper Mix, on layer 1. */
+  /** Layer index per source, or -1 for off. Default: only Particle Field (the
+   *  first source), on layer 1. */
   const assign: number[] = [0, -1, -1, -1];
   let layerCount = 1;
 
@@ -158,6 +195,30 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
   const gain: number[] = [...GAIN_DEFAULT];
 
   let seed = 4271;
+
+  // Colour. Same two controls as the Canvas Lustspiel patterns: Palette blends
+  // the target palette from Film (the Lustspiel phase colours) to Default (the
+  // app's global palette), Colour Blend goes hard-stepped to smooth. Recolour is
+  // the master amount — it defaults to 0 so every element keeps its own native
+  // colouring until you actually ask for the change.
+  let paletteBlend = 1;
+  let colourBlend = 0.5;
+  let recolour = 0;
+  const palColors = Array.from({ length: 5 }, () => new THREE.Color(1, 1, 1));
+
+  /** Film palette x app palette, per entry — identical to lustspielPattern's
+   *  applyPalette(). Phase B is the reference: white / cyan / magenta / violet,
+   *  the same colour world these patterns already live in. */
+  function updatePalette() {
+    const filmPal = PHASE.B.pal;
+    const appColors = getEnabledIndices().map(getColorByIndex);
+    const appPal = appColors.length >= filmPal.length
+      ? appColors.slice(0, filmPal.length)
+      : Array.from({ length: filmPal.length }, (_, i) => appColors[i % Math.max(1, appColors.length)] ?? '#ffffff');
+    for (let i = 0; i < filmPal.length; i++) {
+      palColors[i].set(mixHex(filmPal[i], appPal[i], paletteBlend));
+    }
+  }
 
   // ── Composition: all ENABLED elements share ONE zone partition, regardless of
   // which layer they sit on — "as if they were all on one layer". Layers only
@@ -439,6 +500,20 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
       disabled: () => enabledCount() < 2 || comp === 'merged',
       get: () => maskEdge, set: (v: number) => { maskEdge = v; } },
 
+    // ── Colour ────────────────────────────────────────────────────────────────
+    { label: 'Colour', type: 'separator' },
+    { label: 'Recolour', type: 'range', min: 0, max: 1, step: 0.01, default: 0,
+      tip: 'How far the elements are re-coloured from the palette below. 0 leaves every element its own native colours; 1 maps all of them onto the shared palette by brightness.',
+      get: () => recolour, set: (v: number) => { recolour = v; } },
+    { label: 'Palette', type: 'range', min: 0, max: 1, step: 0.01, default: 1,
+      tip: 'Left: Film — the Lustspiel phase colours. Right: Default — the app’s global colour palette above, changeable live. In between: a blend of both. Only has an effect while Recolour is above 0.',
+      disabled: () => recolour <= 0.001,
+      get: () => paletteBlend, set: (v: number) => { paletteBlend = v; } },
+    { label: 'Colour Blend', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5,
+      tip: 'Hard (0): brightness falls into stepped palette bands, like a posterised gradient map. Soft (1): a smooth ramp across the palette. Only has an effect while Recolour is above 0.',
+      disabled: () => recolour <= 0.001,
+      get: () => colourBlend, set: (v: number) => { colourBlend = v; } },
+
     { label: 'Presets from source patterns', type: 'separator' },
     ...[0, 1, 2].map(i => ({
       label: `Load Preset ${i + 1}`, type: 'button' as const,
@@ -476,6 +551,9 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
             uZoneOn: { value: 0 },
             uEdge: { value: 0.25 },
             uGain: { value: 1 },
+            uPal: { value: palColors },
+            uRecolour: { value: 0 },
+            uColBlend: { value: 0.5 },
             uTexel: { value: new THREE.Vector2(1 / 1920, 1 / 1080) },
             uAtmo: { value: 0 },
             uWarp: { value: 0 },
@@ -510,6 +588,8 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
         if (speed[l] > maxSpeed) maxSpeed = speed[l];
       }
       compTime += dt * maxSpeed;
+
+      if (recolour > 0.001) updatePalette();
 
       if (maskDirty) rebuildZoneMask();
       else if (masked() && zoneNeedsTimer() && elapsed - lastMaskBuild > 0.1) {
@@ -557,6 +637,8 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
         mat.uniforms.uZoneOn.value = useMask && zoneTex ? 1 : 0;
         mat.uniforms.uEdge.value = maskEdge;
         mat.uniforms.uGain.value = gain[i];
+        mat.uniforms.uRecolour.value = recolour;
+        mat.uniforms.uColBlend.value = colourBlend;
         (mat.uniforms.uTexel.value as THREE.Vector2).set(1 / rt!.width, 1 / rt!.height);
         mat.uniforms.uAtmo.value = atmo[l];
         mat.uniforms.uWarp.value = warp[l];
