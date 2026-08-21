@@ -219,6 +219,7 @@ function blobZone(x: number, y: number, o: Ctx, slot: number): boolean {
 }
 
 function inZone(x: number, y: number, o: Ctx, slot: number): boolean {
+  if (o.bypassZones) return true;
   if (o.elems.length === 1) return true;
   return (o.comp === "blobs") ? blobZone(x, y, o, slot) : bandZone(x, y, o, slot);
 }
@@ -271,6 +272,7 @@ export function buildZoneMask(
   mh: number,
   logicalH: number,
   input: ZoneInput,
+  slots?: number[],
 ): void {
   const o: Ctx = {
     ...ZONE_UNUSED,
@@ -280,7 +282,15 @@ export function buildZoneMask(
     pal: [],           // never read by the zone path
     t: input.time ?? 0,
   };
-  const nSlots = Math.min(4, o.elems.length);
+  // Default: the first up-to-4 elements, one per mask channel (Lustspiel
+  // Particle). An explicit `slots` list (Lustspiel Alpha/Beta/Gamma) instead
+  // names which GLOBAL slot each channel reads — the up-to-4 hosted elements
+  // can sit anywhere among up to 9 total. Guarded on both the channel count
+  // (max 4, one per RGBA channel) and the slot actually existing, or a
+  // single-element case would mark every channel as owning the whole screen.
+  const chan = slots ?? [0, 1, 2, 3];
+  const slotAt = (i: number): number => (i < chan.length && chan[i] < o.elems.length) ? chan[i] : -1;
+  const s0 = slotAt(0), s1 = slotAt(1), s2 = slotAt(2), s3 = slotAt(3);
   // Hoisted: blobZone() calls blobCenters() internally, which rebuilds a cache
   // key string every call. Touching it once here keeps that off the hot loop.
   if (o.comp === "blobs") blobCenters(o);
@@ -296,16 +306,16 @@ export function buildZoneMask(
           const fy = (my + (sy + 0.5) / SS) / mh;
           const wx = fx * DESIGN_W;
           const wy = (1 - fy) * logicalH;      // bottom-up, see note above
-          if (nSlots > 0 && inZone(wx, wy, o, 0)) c0 += inv;
-          if (nSlots > 1 && inZone(wx, wy, o, 1)) c1 += inv;
-          if (nSlots > 2 && inZone(wx, wy, o, 2)) c2 += inv;
-          if (nSlots > 3 && inZone(wx, wy, o, 3)) c3 += inv;
+          if (s0 >= 0 && inZone(wx, wy, o, s0)) c0 += inv;
+          if (s1 >= 0 && inZone(wx, wy, o, s1)) c1 += inv;
+          if (s2 >= 0 && inZone(wx, wy, o, s2)) c2 += inv;
+          if (s3 >= 0 && inZone(wx, wy, o, s3)) c3 += inv;
         }
       }
-      out[base] = nSlots > 0 ? Math.round(c0 * 255) : 0;
-      out[base + 1] = nSlots > 1 ? Math.round(c1 * 255) : 0;
-      out[base + 2] = nSlots > 2 ? Math.round(c2 * 255) : 0;
-      out[base + 3] = nSlots > 3 ? Math.round(c3 * 255) : 0;
+      out[base] = s0 >= 0 ? Math.round(c0 * 255) : 0;
+      out[base + 1] = s1 >= 0 ? Math.round(c1 * 255) : 0;
+      out[base + 2] = s2 >= 0 ? Math.round(c2 * 255) : 0;
+      out[base + 3] = s3 >= 0 ? Math.round(c3 * 255) : 0;
     }
   }
 }
@@ -715,12 +725,15 @@ export function paint(
   // element gets its own surface so the grime can eat into one element without
   // touching the one in front of it. Everything else keeps the original
   // single-surface path below, byte-for-byte.
-  if ((o.atmosphere ?? 0) > 0 && o.elems.length > 0) {
+  if (((o.atmosphere ?? 0) > 0 || o.layered) && o.elems.length > 0) {
     paintLayered(ctx, c, P, o, w, h, scale, logicalH);
     return;
   }
 
-  o.elems.forEach((el, slot) => RENDER[el](c, P, o, slot));
+  o.elems.forEach((el, slot) => {
+    if (o.drawOnly && !o.drawOnly.includes(slot)) return;
+    RENDER[el](c, P, o, slot);
+  });
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
@@ -835,6 +848,11 @@ function paintLayered(
   const softBlurPx = soft * soft * 400 * scale;
 
   for (let i = n - 1; i >= 0; i--) {
+    // Lustspiel Alpha/Beta/Gamma: slots standing in for hosted WebGL elements
+    // still occupy a zone slot (so canvas elements partition around them) but
+    // must never actually be drawn.
+    if (o.drawOnly && !o.drawOnly.includes(i)) continue;
+
     // ── render this element alone ──
     ec.setTransform(1, 0, 0, 1, 0, 0);
     ec.globalCompositeOperation = "source-over";
@@ -898,7 +916,9 @@ function paintLayered(
     }
 
     ctx.filter = softBlurPx > 0.05 ? `blur(${softBlurPx}px)` : "none";
+    ctx.globalAlpha = o.elemGain?.[i] ?? 1;
     ctx.drawImage(elemLayer, 0, 0);
+    ctx.globalAlpha = 1;
     ctx.filter = "none";
   }
 

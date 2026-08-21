@@ -48,9 +48,9 @@ const MAX_LAYERS = 4;
  * Values are <= 1: gains above 1 clip in the UNORM8 target, and clipping is not
  * recoverable by the post pass. Indices follow SOURCES below.
  */
-const GAIN_DEFAULT = [0.75, 0.85, 1, 1];
+export const GAIN_DEFAULT = [0.75, 0.85, 1, 1];
 
-interface Source {
+export interface Source {
   id: string;
   label: string;
   pattern: Pattern;
@@ -58,8 +58,11 @@ interface Source {
 
 // Order matters twice over: it is the order the controls are listed in, and it
 // is the order zone slots are handed out in (slot = position among the enabled
-// sources). GAIN_DEFAULT above follows the same order.
-const SOURCES: Source[] = [
+// sources). GAIN_DEFAULT above follows the same order. Exported so Lustspiel
+// Alpha/Beta/Gamma (lustspielCombined.ts) can host the exact same four
+// patterns side by side with the Canvas2D elements, reusing this composite
+// shader instead of duplicating it.
+export const SOURCES: Source[] = [
   { id: 'particlesHeat', label: 'Particle Field', pattern: particlesHeat },
   { id: 'gravityLines', label: 'Gravity Lines', pattern: gravityLines },
   { id: 'hyperMixHeat', label: 'Hyper Mix', pattern: hyperMixHeat },
@@ -70,12 +73,12 @@ const SOURCES: Source[] = [
 // One pass per layer, additively blended onto the frame (these patterns are all
 // light-on-black, same as the Canvas engine's "lighter" compositing).
 
-const vert = /* glsl */`
+export const compositeVert = /* glsl */`
   varying vec2 vUv;
   void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
 `;
 
-const frag = /* glsl */`
+export const compositeFrag = /* glsl */`
   precision highp float;
   uniform sampler2D uTex;
   uniform sampler2D uMask;     // atmosphere: r = dissolve-into-wash, g = sink-into-dark
@@ -645,8 +648,8 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
             uWarp: { value: 0 },
             uTime: { value: 0 },
           },
-          vertexShader: vert,
-          fragmentShader: frag,
+          vertexShader: compositeVert,
+          fragmentShader: compositeFrag,
           depthTest: false,
           depthWrite: false,
           transparent: true,

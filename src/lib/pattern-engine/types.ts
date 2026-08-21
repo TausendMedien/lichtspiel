@@ -61,6 +61,25 @@ export interface EngineState {
    * advances anyway, but which must render bit-for-bit as before this existed.
    */
   animated?: boolean;
+  /** Lustspiel Alpha/Beta/Gamma only: slot indices (positions in `elems`) that
+   *  are actually canvas elements — the rest are filler ids standing in for
+   *  hosted WebGL elements sharing the same zone partition, and must never be
+   *  drawn by RENDER. Unset means "draw everything", so every existing pattern
+   *  is unaffected. */
+  drawOnly?: number[];
+  /** Lustspiel Alpha/Beta/Gamma only: Merged mode for the canvas half — every
+   *  element covers the whole frame instead of being partitioned by inZone().
+   *  Unset/false leaves every existing pattern's zone behaviour untouched. */
+  bypassZones?: boolean;
+  /** Lustspiel Alpha/Beta/Gamma only: per-slot brightness multiplier, applied
+   *  in paintLayered() around each element's final composite. Unset means no
+   *  multiplier (gain 1), so every existing pattern is unaffected. */
+  elemGain?: number[];
+  /** Lustspiel Alpha/Beta/Gamma only: forces the per-element paintLayered()
+   *  path even at Atmosphere 0 — that path is also what makes drawOnly and
+   *  elemGain work. Unset/false leaves every existing pattern on the original
+   *  single-surface paint() path. */
+  layered?: boolean;
 }
 
 export interface Phase {
