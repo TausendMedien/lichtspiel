@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.260822-1446 — Shader Gradient — Push; more patterns to Experimental
+
+**Shader Gradient — Push** — a new pattern next to Shader Gradient, built specifically to show Push doing something no other pattern does: instead of moving the plasma around, it erases it. Wherever your body sweeps, bright colour burns back to the dark base — weighted by how bright each pixel already was, so a near-black valley barely changes while a hot cyan ridge goes first. What survives a sweep is the plasma's own darker structure, not empty space, and it re-blooms as the swept area slowly fills back in. A new **Erase Amount** slider sets how strongly Push burns brightness away; Heat still bends the plasma's position exactly as it always did, so the two sensors read as genuinely different tools rather than the same trick twice.
+
+**The Push filter chip is grey again.** ✋ was a full-colour emoji and ignored the row's grey styling entirely, unlike the plain dingbats (★ ≋ ♨ ♪) next to it. Swapped for ⇝, which — like the others — has no colour emoji form, so it always takes the row's own grey.
+
+**Volcano, Baroque Swirls, ASCII Swirls, Wavy Sphere and Crystal Gem move to Experimental** — dimmed by default, skipped by next/prev cycling and Demo rotation until switched on, and dropped from the default favourites a fresh install starts with (existing installs keep whatever you've already starred — nothing is unstarred automatically).
+
 ## v0.7.260822-1321 — Push in the filters and Demo Options; three patterns to Experimental
 
 **Push joins the filter chips** — the ✋ Push filter now sits next to Move/Heat/Audio in both the pattern picker and the Demo pattern picker, so you can find every pattern the sensor supports at a glance.

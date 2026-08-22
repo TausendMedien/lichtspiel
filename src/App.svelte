@@ -85,7 +85,7 @@
   }
 
   // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
-  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette', 'curlOrbsBody', 'flowLines', 'warpedSurfaces']);
+  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette', 'curlOrbsBody', 'flowLines', 'warpedSurfaces', 'volcano', 'baroqueSwirlsBody', 'asciiSwirls', 'wavySphere', 'crystalGem', 'shaderGradientPush']);
   const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
   let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
 
@@ -306,7 +306,7 @@
     { id: 'favorites', label: '★ Favorites', tip: 'Starred patterns' },
     { id: 'move',      label: '≋ Move',      tip: 'Reacts to camera motion' },
     { id: 'heat',      label: '♨ Heat',      tip: 'Reacts to the camera heat map' },
-    { id: 'push',      label: '✋ Push',      tip: 'Supports the Push sensor — your body clears a path through it' },
+    { id: 'push',      label: '⇝ Push',      tip: 'Supports the Push sensor — your body clears a path through it' },
     { id: 'audio',     label: '♪ Audio',     tip: 'Reacts to microphone audio' },
     { id: 'pose',      label: '⬡ Pose',      tip: 'Reacts to body pose tracking (experimental)' },
   ];
@@ -578,16 +578,15 @@
   let demoPickerFilter = $state<PatternFilter>('all');
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
-    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
+    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','tunnel','tunnelEdge','shaderGradient','lines3d','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Lustspiel',          ids: ['lsp-1','lsp-2','lsp-3','lsp-organic','lsp-particle','lsp-alpha','lsp-beta','lsp-gamma'] },
-    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette','curlOrbsBody','flowLines','warpedSurfaces'] },
+    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette','curlOrbsBody','flowLines','warpedSurfaces','volcano','baroqueSwirlsBody','asciiSwirls','wavySphere','crystalGem','shaderGradientPush'] },
   ];
   const DEFAULT_FAVORITES = [
-    'hyperMixHeat', 'particlesHeat', 'gravityLines', 'volcano', 'heatMap', 'particleLines', 'parallelLinesWave',
-    'tunnelEdge', 'baroqueSwirlsBody', 'shaderGradient', 'asciiSwirls',
-    'wavySphere', 'crystalGem', 'typography3d',
+    'hyperMixHeat', 'particlesHeat', 'gravityLines', 'heatMap', 'particleLines', 'parallelLinesWave',
+    'tunnelEdge', 'shaderGradient', 'typography3d',
     'lightPaint', 'lightPaintBlack', 'lightFly', 'lightMirror', 'lightKaleido', 'lightGlitch',
     'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines', 'img-thinVerticals',
     'img-twoFeather', 'img-rootWave', 'img-purpleOrnate', 'img-flowingDots',

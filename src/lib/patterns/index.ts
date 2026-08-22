@@ -4,6 +4,7 @@ import { particleLines } from "./particleLines";
 import { tunnel } from "./tunnel";
 import { tunnelEdge } from "./tunnelEdge";
 import { shaderGradient } from "./shaderGradient";
+import { shaderGradientPush } from "./shaderGradientPush";
 import { parallelLinesStraight } from "./parallelLinesStraight";
 import { parallelLinesWave } from "./parallelLinesWave";
 import { flowLines } from "./flowLines";
@@ -133,7 +134,7 @@ const imgFlowingDots   = makeImagePattern('img-flowingDots',   'Flowing Dots',  
 // of a flow angle rather than a position (Baroque Swirls, Flow Lines).
 const PUSH_IDS = new Set([
   'particlesHeat', 'hyperMixHeat', 'gravityLines', 'volcano', 'particleLines',
-  'parallelLinesStraight', 'parallelLinesWave', 'tunnel', 'shaderGradient',
+  'parallelLinesStraight', 'parallelLinesWave', 'tunnel', 'shaderGradient', 'shaderGradientPush',
   'warpedSurfaces', 'curlOrbsBody',
   'img-tealLines', 'img-organicWeb', 'img-dotWaves', 'img-baroqueVines',
   'img-thinVerticals', 'img-twoFeather', 'img-rootWave', 'img-purpleOrnate',
@@ -154,19 +155,14 @@ const rawPatterns: Pattern[] = [
   hyperMixHeat,
   particlesHeat,
   gravityLines,
-  volcano,
   heatMap,
   particleLines,
   parallelLinesStraight,
   parallelLinesWave,
   tunnel,
   tunnelEdge,
-  baroqueSwirlsBody,
   shaderGradient,
   lines3d,
-  asciiSwirls,
-  wavySphere,
-  crystalGem,
   typography3d,
   lightPaint,
   lightTrail,
@@ -199,6 +195,12 @@ const rawPatterns: Pattern[] = [
   curlOrbsBody,
   flowLines,
   warpedSurfaces,
+  volcano,
+  baroqueSwirlsBody,
+  asciiSwirls,
+  wavySphere,
+  crystalGem,
+  shaderGradientPush,
 ];
 
 export const patterns: Pattern[] = rawPatterns
