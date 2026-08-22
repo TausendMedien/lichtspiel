@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.260822-1541 — Shader Gradient — Push actually pushes now
+
+**Fixed: nothing was being pushed.** The first version just dimmed bright colour in place wherever you'd swept — it read as a motion-triggered dimmer, not a push. It now reads the *size* of the push field rather than dimming by brightness alone: deep inside a sweep the plasma erases to the dark base same as before, but the ring where that field falls off — the edge of the swept area — now visibly brightens, as if the erased colour had piled up right there. Sweep a hand through it and the bright plasma now visibly flees to a ring around where you swept, leaving the middle dark, exactly the "pushed to the edges" look Push is supposed to have.
+
 ## v0.7.260822-1446 — Shader Gradient — Push; more patterns to Experimental
 
 **Shader Gradient — Push** — a new pattern next to Shader Gradient, built specifically to show Push doing something no other pattern does: instead of moving the plasma around, it erases it. Wherever your body sweeps, bright colour burns back to the dark base — weighted by how bright each pixel already was, so a near-black valley barely changes while a hot cyan ridge goes first. What survives a sweep is the plasma's own darker structure, not empty space, and it re-blooms as the swept area slowly fills back in. A new **Erase Amount** slider sets how strongly Push burns brightness away; Heat still bends the plasma's position exactly as it always did, so the two sensors read as genuinely different tools rather than the same trick twice.

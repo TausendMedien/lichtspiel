@@ -5,12 +5,17 @@ import { cameraState } from "../globalCameraSettings.svelte";
 import { createHeatField, HEAT_WARP_GLSL, pushActive, heatOrPushActive, type HeatField } from "../heatField";
 
 // Shader Gradient — Push: same fbm plasma as Shader Gradient, but Push does not
-// move it. Instead your body erases it: wherever the push field has built up,
-// bright colour is eaten back to the dark base, proportional to how bright that
-// pixel was — a near-black valley barely changes, a hot cyan ridge goes first.
-// Sweep a hand through it and only the darker structure of the plasma survives
-// where you swept; it re-blooms as the push field relaxes (Return Speed) and
-// re-covers (Softness), same as every other Push pattern.
+// move the sample position at all — it reads the SIZE of the push field instead.
+// The push field is an eviction offset: large deep inside a sweep, falling to
+// exactly zero just past its edge. That size (not the raw vector, whose discrete
+// distance-transform direction is blocky at the pixel scale) drives two things:
+// deep inside erases toward the dark base, and the ring where that size falls
+// fastest — the swept area's edge — gets boosted, as if the erased brightness
+// had piled up right there. The result reads as displacement, not a dimmer
+// switch: sweep a hand through it and the bright plasma visibly flees to a ring
+// around where you swept, leaving the middle dark, then the ring settles back in
+// as the push field relaxes (Return Speed) and re-covers (Softness), same as
+// every other Push pattern.
 //
 // Heat (Attract) is untouched from the original: it still bends the sample
 // position, so the two sensors read as genuinely different tools on the same
@@ -25,7 +30,7 @@ let speed = 0.02;
 let accTime = 0;
 let colors = 0.85;
 let dynamic = 0.6;
-let eraseAmount = 5.0;
+let eraseAmount = 34.0;
 
 let heatStrength  = 1.8;
 let heatBlurR     = 1;
@@ -110,15 +115,34 @@ const fragmentShader = /* glsl */ `
     col = (col - 0.5) * contrast + 0.5;
     col = clamp(col, 0.0, 1.0);
 
-    // Push: erase brightness where your body has swept, weighted by how bright
-    // the pixel already was — the dark base is nearly immune, so what survives
-    // a sweep is exactly the plasma's own darker structure, not empty space.
+    // Push reads the SIZE of the eviction offset at this pixel (large deep inside
+    // a sweep, falling to exactly zero just past its edge) rather than its raw
+    // vector — the offset field's discrete distance-transform directions are
+    // blocky at the pixel scale, but its magnitude is smooth, so working from
+    // magnitude alone (and an edge-detector on that magnitude for the rim) stays
+    // clean instead of picking up per-pixel direction noise.
+    //
+    // Deep inside (high magnitude) erases toward the dark base; the ring where
+    // that magnitude falls fastest — the boundary of the swept area — is boosted,
+    // as if the erased brightness had piled up right there. Erase and pile are
+    // driven by different features of the same field (level vs. edge) so they
+    // never both fire on the same pixel: the result reads as PUSHED, not merely
+    // darkened in place.
     if (uPushMode > 0.5) {
-      vec2 pushVec = texture2D(uPushField, clamp(hUv, 0.0, 1.0)).rg;
-      float pushAmt = clamp(length(pushVec) * uEraseAmount, 0.0, 1.0);
-      float luma = dot(col, vec3(0.299, 0.587, 0.114));
-      float erase = pushAmt * smoothstep(0.08, 0.55, luma);
+      vec2 peps = vec2(1.5 / 160.0, 1.5 / 90.0);
+      float mC = length(texture2D(uPushField, clamp(hUv, 0.0, 1.0)).rg);
+      float mL = length(texture2D(uPushField, clamp(hUv - vec2(peps.x, 0.0), 0.0, 1.0)).rg);
+      float mR = length(texture2D(uPushField, clamp(hUv + vec2(peps.x, 0.0), 0.0, 1.0)).rg);
+      float mD = length(texture2D(uPushField, clamp(hUv - vec2(0.0, peps.y), 0.0, 1.0)).rg);
+      float mU = length(texture2D(uPushField, clamp(hUv + vec2(0.0, peps.y), 0.0, 1.0)).rg);
+      float rimEdge = length(vec2(mR - mL, mU - mD));
+
+      float luma  = dot(col, vec3(0.299, 0.587, 0.114));
+      float erase = clamp(mC * uEraseAmount, 0.0, 1.0) * smoothstep(0.08, 0.55, luma);
+      float pile  = clamp(rimEdge * uEraseAmount * 6.0, 0.0, 1.0);
+
       col = mix(col, dark, erase);
+      col = mix(col, clamp((col - dark) * 1.7 + dark, 0.0, 1.0), pile);
     }
 
     vec3 _orig = col;
@@ -137,8 +161,8 @@ export const shaderGradientPush: Pattern = {
   controls: [
     { label: "Speed",         type: "range", min: 0.005, max: 0.15, step: 0.005, default: 0.02, tip: "How fast the gradient flows and shifts across the screen.", get: () => speed,   set: (v) => { speed = v; } },
     { label: "Dynamic",       type: "range", min: 0.0,   max: 1.0,  step: 0.05,  default: 0.6,  tip: "Amount of noise turbulence added to the gradient. 0 = smooth, 1 = fully animated.", get: () => dynamic, set: (v) => { dynamic = v; } },
-    { label: "Erase Amount",  type: "range", min: 0.0,   max: 10.0, step: 0.5,   default: 5.0,  tip: "How strongly Push erases bright colour where your body sweeps. Higher = a smaller push clears more.", get: () => eraseAmount, set: (v) => { eraseAmount = v; } },
-    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends the gradient around the body. Requires Heat — Push instead erases brightness, see Erase Amount.", get: () => heatStrength, set: v => { heatStrength = v; } },
+    { label: "Erase Amount",  type: "range", min: 0.0,   max: 80.0, step: 2.0,   default: 34.0, tip: "How strongly Push carves a gap and piles brightness at its rim. Higher = a smaller sweep clears more.", get: () => eraseAmount, set: (v) => { eraseAmount = v; } },
+    { label: "Heat Strength", type: "range", min: 0, max: 2.5, step: 0.1, default: 1.8, interactive: 'heat' as const, tip: "How much heat-map motion bends the gradient around the body. Requires Heat — Push instead carves a gap, see Erase Amount.", get: () => heatStrength, set: v => { heatStrength = v; } },
     { label: "Blur Radius",   type: "range", min: 0, max: 8, step: 1,   default: 1,   interactive: 'heat' as const, tip: "Radius of heat-map blur — larger = broader glow around motion zones. Affects Heat and Push alike.",  get: () => heatBlurR,    set: v => { heatBlurR = v; } },
   ],
 
