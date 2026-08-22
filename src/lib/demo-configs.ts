@@ -22,6 +22,7 @@ export interface DemoConfig {
   evoConcurrent: number;
   motionEnabled: boolean;
   heatEnabled: boolean;
+  pushEnabled: boolean;
   audioEnabled: boolean;
 }
 

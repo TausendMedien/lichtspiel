@@ -85,7 +85,7 @@
   }
 
   // Experimental patterns — hidden from next/prev navigation and deselected in demo by default
-  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette']);
+  const EXPERIMENTAL_IDS = new Set(['particlesPalette', 'tunnelEdgePalette', 'curlOrbsBody', 'flowLines', 'warpedSurfaces']);
   const EXPERIMENTAL_KEY = 'pp:experimentalEnabled';
   let experimentalEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(EXPERIMENTAL_KEY) === 'true' : false);
 
@@ -297,7 +297,7 @@
   let midiEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem(MIDI_ENABLED_KEY) === 'true' : false);
   let midiConnected = $state(false);
   let favorites = $state(new Set<string>());
-  type PatternFilter = 'all' | 'favorites' | 'move' | 'heat' | 'audio' | 'pose';
+  type PatternFilter = 'all' | 'favorites' | 'move' | 'heat' | 'push' | 'audio' | 'pose';
   let patternFilter = $state<PatternFilter>('all');
   // Filter chips for the pattern overview — move/heat/audio/pose map onto the
   // reactivity metadata set on each Pattern (motionReactive, heatReactive, …).
@@ -306,6 +306,7 @@
     { id: 'favorites', label: '★ Favorites', tip: 'Starred patterns' },
     { id: 'move',      label: '≋ Move',      tip: 'Reacts to camera motion' },
     { id: 'heat',      label: '♨ Heat',      tip: 'Reacts to the camera heat map' },
+    { id: 'push',      label: '✋ Push',      tip: 'Supports the Push sensor — your body clears a path through it' },
     { id: 'audio',     label: '♪ Audio',     tip: 'Reacts to microphone audio' },
     { id: 'pose',      label: '⬡ Pose',      tip: 'Reacts to body pose tracking (experimental)' },
   ];
@@ -577,11 +578,11 @@
   let demoPickerFilter = $state<PatternFilter>('all');
 
   const DEMO_GROUPS: { label: string; ids: readonly string[] }[] = [
-    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','flowLines','curlOrbsBody','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','warpedSurfaces','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
+    { label: 'Generative',        ids: ['hyperMixHeat','particlesHeat','gravityLines','volcano','heatMap','particleLines','parallelLinesStraight','parallelLinesWave','tunnel','tunnelEdge','baroqueSwirlsBody','shaderGradient','lines3d','asciiSwirls','wavySphere','crystalGem','typography3d'] },
     { label: 'Live Light Painting',ids: ['lightPaint','lightTrail','lightPaintBlack','lightFly','lightVortex','lightMirror','lightKaleido','lightGlitch'] },
     { label: 'Static Images',      ids: ['img-tealLines','img-organicWeb','img-dotWaves','img-baroqueVines','img-thinVerticals','img-twoFeather','img-rootWave','img-purpleOrnate','img-flowingDots'] },
     { label: 'Lustspiel',          ids: ['lsp-1','lsp-2','lsp-3','lsp-organic','lsp-particle','lsp-alpha','lsp-beta','lsp-gamma'] },
-    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette'] },
+    { label: 'Experimental',       ids: ['particlesPalette','tunnelEdgePalette','curlOrbsBody','flowLines','warpedSurfaces'] },
   ];
   const DEFAULT_FAVORITES = [
     'hyperMixHeat', 'particlesHeat', 'gravityLines', 'volcano', 'heatMap', 'particleLines', 'parallelLinesWave',
@@ -731,6 +732,7 @@
       case 'favorites': return favorites.has(p.id);
       case 'move':      return !!p.motionReactive;
       case 'heat':      return !!p.heatReactive;
+      case 'push':      return !!p.pushReactive;
       case 'audio':     return !!p.audioReactive;
       case 'pose':      return !!p.usesPose;
       default:          return true;
@@ -1901,6 +1903,7 @@
       evoConcurrent: evolving.maxConcurrent,
       motionEnabled: cameraState.motionEnabled,
       heatEnabled: cameraState.heatEnabled,
+      pushEnabled: pushState.enabled,
       audioEnabled: audioState.enabled,
     });
     demoConfigs = listDemoConfigs();
@@ -1934,6 +1937,9 @@
     saveEvolving();
     cameraState.motionEnabled = cfg.motionEnabled;
     cameraState.heatEnabled = cfg.heatEnabled;
+    // Older saved configs predate Push — default it off rather than throw.
+    pushState.enabled = cfg.pushEnabled ?? false;
+    savePushSettings();
     audioState.enabled = cfg.audioEnabled;
   }
 
@@ -2129,6 +2135,7 @@
         evoConcurrent: 2,
         motionEnabled: false,
         heatEnabled: false,
+        pushEnabled: false,
         audioEnabled: true,
       });
       saveDemoConfig('Chilled Visuals', {
@@ -2153,6 +2160,7 @@
         evoConcurrent: 2,
         motionEnabled: false,
         heatEnabled: false,
+        pushEnabled: false,
         audioEnabled: true,
       });
       demoConfigs = listDemoConfigs();
@@ -2183,6 +2191,7 @@
         evoConcurrent: 2,
         motionEnabled: true,
         heatEnabled: true,
+        pushEnabled: false,
         audioEnabled: true,
       });
       demoConfigs = listDemoConfigs();
@@ -3990,9 +3999,20 @@
               const next = !cameraState.heatEnabled;
               cameraState.heatEnabled = next;
               if (next) { cameraState.enabled = true; enumerateCameras(); }
-              else if (!cameraState.motionEnabled) cameraState.enabled = false;
+              else if (!cameraState.motionEnabled && !pushState.enabled) cameraState.enabled = false;
             }}
           >Heat</button>
+          <button
+            title="Enable Push: your body clears a path through supported patterns and it slowly fills back in."
+            class="rounded-full border px-3 py-1 text-[11px] transition-colors cursor-pointer {pushState.enabled ? 'border-white/40 bg-white/15 text-white' : 'border-white/15 text-white/40 hover:border-white/30'}"
+            onclick={() => {
+              const next = !pushState.enabled;
+              pushState.enabled = next;
+              savePushSettings();
+              if (next) { cameraState.enabled = true; enumerateCameras(); }
+              else if (!cameraState.motionEnabled && !cameraState.heatEnabled) cameraState.enabled = false;
+            }}
+          >Push</button>
         </div>
         {#if poseError}
           <div class="mt-1.5 text-[11px] text-red-400/80">{poseError} — tap Pose to retry</div>
@@ -4924,7 +4944,7 @@
                       const next = !cameraState.heatEnabled;
                       cameraState.heatEnabled = next;
                       if (next) { cameraState.enabled = true; enumerateCameras(); triggerMotionCameraStart(patterns[index].id); }
-                      else if (!cameraState.motionEnabled) cameraState.enabled = false;
+                      else if (!cameraState.motionEnabled && !pushState.enabled) cameraState.enabled = false;
                     }}
                   >
                     <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.heatEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
@@ -5025,7 +5045,7 @@
                       const next = !cameraState.motionEnabled;
                       cameraState.motionEnabled = next;
                       if (next && !cameraState.enabled) { cameraState.enabled = true; enumerateCameras(); }
-                      if (!next && !cameraState.heatEnabled) cameraState.enabled = false;
+                      if (!next && !cameraState.heatEnabled && !pushState.enabled) cameraState.enabled = false;
                     }}
                   >
                     <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {cameraState.motionEnabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>

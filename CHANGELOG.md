@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.260822-1321 — Push in the filters and Demo Options; three patterns to Experimental
+
+**Push joins the filter chips** — the ✋ Push filter now sits next to Move/Heat/Audio in both the pattern picker and the Demo pattern picker, so you can find every pattern the sensor supports at a glance.
+
+**Push in Demo Options** — a Push button now sits in Demo's Interactive Features row next to Motion/Heat/Audio, turning the sensor on for the whole Demo rotation at once. Saved Configs and the built-in "Just Lightpainting" / "Chilled Visuals" / "Interactive Planetary" configs now remember it (older saved configs default it off rather than error).
+
+**Curl Orbs, Flow Lines and Warped Surfaces move to Experimental** — dimmed by default in the picker, skipped by next/prev cycling and Demo rotation until switched on, same as the other Experimental patterns.
+
+**Shader Gradient already supports Push** — its heat effect displaces the noise field's sample position, so it was folded in when Push first rolled out; nothing new needed here, just confirming it works end to end.
+
+**Baroque Swirls does not** — heat there shifts the *phase* of its colour bands, not a screen position, the same reason Flow Lines was left out. Push's "your body clears a path" only makes sense for a spatial displacement, and forcing one in would mean redesigning Baroque Swirls' tuned Heat look rather than genuinely adding Push.
+
 ## v0.7.260822-1204 — Volcano: Jet Power 3.3
 
 **Volcano** — default and all three presets now launch at Jet Power 3.3.

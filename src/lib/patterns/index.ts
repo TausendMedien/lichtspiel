@@ -159,13 +159,10 @@ const rawPatterns: Pattern[] = [
   particleLines,
   parallelLinesStraight,
   parallelLinesWave,
-  flowLines,
-  curlOrbsBody,
   tunnel,
   tunnelEdge,
   baroqueSwirlsBody,
   shaderGradient,
-  warpedSurfaces,
   lines3d,
   asciiSwirls,
   wavySphere,
@@ -199,6 +196,9 @@ const rawPatterns: Pattern[] = [
   // ── Experimental ──────────────────────────────────────────────────────────
   particlesPalette,
   tunnelEdgePalette,
+  curlOrbsBody,
+  flowLines,
+  warpedSurfaces,
 ];
 
 export const patterns: Pattern[] = rawPatterns
