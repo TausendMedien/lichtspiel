@@ -3148,7 +3148,7 @@
             </label>
             {#if overlayLines.length > 1}
               <div class="flex flex-col gap-1">
-                <span class="text-[11px] text-white/50">Size per line</span>
+                <span class="text-[11px] text-white/50" title="Scales each line independently. Lines stack by their actual height, so a bigger line pushes the next one down.">Size per line</span>
                 {#each overlayLines as line, i}
                   <div class="flex items-center gap-2">
                     <span class="w-14 shrink-0 truncate text-[11px] text-white/40" title={line}>
@@ -3173,55 +3173,68 @@
                 {/each}
               </div>
             {/if}
-            <div class="grid grid-cols-2 gap-2">
-              <label class="flex flex-col gap-1">
-                <span class="text-[11px] text-white/50">Mode</span>
-                <select
-                  value={overlayState.mode}
-                  onchange={(e) => { overlayState.mode = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
-                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                ><option value={0}>Flexible</option><option value={1}>Simple</option></select>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50" title="Flexible spins and reacts to motion with full 3D lettering. Simple faces the camera and holds still with flat lettering — uses noticeably less processing power.">Mode</span>
+                <div class="flex gap-1">
+                  {#each [[0, 'Flexible'], [1, 'Simple']] as [v, label]}
+                    <button
+                      onclick={() => { overlayState.mode = v; saveOverlaySettings(); }}
+                      title={v === 1 ? 'Faces the camera and holds still. Flat lettering, no spin — uses noticeably less processing power.' : 'Spins and reacts to motion, with full 3D bevelled lettering.'}
+                      class="flex-1 rounded px-2 py-1 text-[11px] border transition-colors cursor-pointer {overlayState.mode === v ? 'border-white/50 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'}"
+                    >{label}</button>
+                  {/each}
+                </div>
                 {#if overlayState.mode === 1}
                   <span class="text-[10px] leading-tight text-white/35">Faces the camera and holds still. Flat lettering, no spin — uses noticeably less processing power.</span>
                 {/if}
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-[11px] text-white/50">Align</span>
-                <select
-                  value={overlayState.align}
-                  onchange={(e) => { overlayState.align = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
-                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                >{#each ALIGN_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-[11px] text-white/50">Style</span>
-                <select
-                  value={overlayState.style}
-                  onchange={(e) => { overlayState.style = parseInt((e.target as HTMLSelectElement).value); saveOverlaySettings(); }}
-                  class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-                >{#each STYLE_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
-              </label>
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50" title="Horizontal alignment of each line within the text block.">Align</span>
+                <div class="flex gap-1">
+                  {#each ALIGN_OPTIONS as o, i}
+                    <button
+                      onclick={() => { overlayState.align = i; saveOverlaySettings(); }}
+                      title={`Align text ${o}.`}
+                      class="flex-1 rounded px-2 py-1 text-[11px] border capitalize transition-colors cursor-pointer {overlayState.align === i ? 'border-white/50 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'}"
+                    >{o}</button>
+                  {/each}
+                </div>
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-[11px] text-white/50" title="Solid: filled letters. Wireframe: edges only. Neon: glowing outline. Ghost: half-transparent fill under full-strength edges.">Style</span>
+                <div class="flex gap-1">
+                  {#each STYLE_OPTIONS as o, i}
+                    <button
+                      onclick={() => { overlayState.style = i; saveOverlaySettings(); }}
+                      title={o}
+                      class="flex-1 rounded px-2 py-1 text-[11px] border transition-colors cursor-pointer {overlayState.style === i ? 'border-white/50 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'}"
+                    >{o}</button>
+                  {/each}
+                </div>
+              </div>
             </div>
             {#each [
-              { k: 'size',        label: 'Size',         min: 0.1, max: 2,   step: 0.01 },
-              { k: 'depth',       label: 'Depth',        min: 0,   max: 1,   step: 0.01 },
-              { k: 'lineSpacing', label: 'Line Spacing', min: 0.6, max: 3,   step: 0.05 },
-              { k: 'posX',        label: 'Position X',   min: -1,  max: 1,   step: 0.01 },
-              { k: 'posY',        label: 'Position Y',   min: -1,  max: 1,   step: 0.01 },
-              { k: 'opacity',     label: 'Opacity',      min: 0,   max: 1,   step: 0.01 },
-              { k: 'spin',        label: 'Spin',         min: -2,  max: 2,   step: 0.05 },
+              { k: 'size',        label: 'Size',         min: 0.1, max: 2,   step: 0.01, tip: 'Overall text size.' },
+              { k: 'depth',       label: 'Depth',        min: 0,   max: 1,   step: 0.01, tip: 'Extrusion depth of the 3D lettering.' },
+              { k: 'lineSpacing', label: 'Line Spacing', min: 0.6, max: 3,   step: 0.05, tip: 'Vertical gap between lines.' },
+              { k: 'posX',        label: 'Position X',   min: -1,  max: 1,   step: 0.01, tip: 'Horizontal position on screen.' },
+              { k: 'posY',        label: 'Position Y',   min: -1,  max: 1,   step: 0.01, tip: 'Vertical position on screen.' },
+              { k: 'opacity',     label: 'Opacity',      min: 0,   max: 1,   step: 0.01, tip: 'Transparency of the text.' },
+              { k: 'spin',        label: 'Spin',         min: -2,  max: 2,   step: 0.05, tip: 'Rotation speed. Negative reverses direction.' },
             ] as s}
               <!-- Simple mode faces front with flat lettering, so depth and spin have
                    nothing to act on — grey them rather than leaving dead controls live. -->
               {@const inert = overlayState.mode === 1 && (s.k === 'spin' || s.k === 'depth')}
               <div class={inert ? 'opacity-35 pointer-events-none' : ''}>
                 <div class="flex justify-between mb-1 text-xs text-white/70">
-                  <span>{s.label}</span>
+                  <span title={s.tip}>{s.label}</span>
                   <span class="font-mono text-white/40">{(overlayState as any)[s.k].toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min={s.min} max={s.max} step={s.step} value={(overlayState as any)[s.k]}
                   oninput={(e) => { (overlayState as any)[s.k] = parseFloat((e.target as HTMLInputElement).value); saveOverlaySettings(); }}
+                  title={s.tip}
                   class="w-full accent-white cursor-pointer"
                 />
               </div>
@@ -3261,6 +3274,82 @@
           {/if}
         </div>
       </div>
+
+      <!-- Watermark section -->
+      <div class="mb-5">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Watermark</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex flex-col gap-2.5">
+          <p class="text-[11px] text-white/40">A logo laid over whichever pattern is running. Like the text, it is drawn into the picture, so it appears in screenshots and recordings.</p>
+          <div class="flex items-center justify-between text-xs text-white/70">
+            <span title="Draw the chosen image into the picture.">Show watermark</span>
+            <div
+              data-knob
+              class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {watermarkState.enabled ? 'bg-white/70' : 'bg-white/20'}"
+              onclick={() => { watermarkState.enabled = !watermarkState.enabled; saveWatermarkSettings(); }}
+              title={watermarkState.enabled ? 'Watermark on — click to hide' : 'Watermark off — click to show'}
+            >
+              <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {watermarkState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            {#if watermarkState.dataUrl}
+              <img src={watermarkState.dataUrl} alt="Watermark preview"
+                   class="h-10 w-10 shrink-0 rounded border border-white/15 bg-black/40 object-contain" />
+            {/if}
+            <label class="cursor-pointer rounded-md border border-white/15 bg-white/[0.07] px-3 py-1 text-xs text-white/70 transition-colors hover:border-white/40" title="Downscaled to at most 1024px on the long edge before it's stored.">
+              {watermarkState.dataUrl ? 'Replace image…' : 'Choose image…'}
+              <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange={onWatermarkPick} />
+            </label>
+            {#if watermarkState.dataUrl}
+              <button
+                class="cursor-pointer rounded px-2 py-1 text-xs text-white/50 transition-colors hover:text-white/80"
+                onclick={() => { watermarkState.dataUrl = null; watermarkState.enabled = false; saveWatermarkSettings(); }}
+                title="Remove the stored image and hide the watermark."
+              >Remove</button>
+            {/if}
+          </div>
+          {#if watermarkError}
+            <p class="text-[11px] text-red-300">{watermarkError}</p>
+          {/if}
+          {#if watermarkState.enabled && watermarkState.dataUrl}
+            <label class="flex flex-col gap-1">
+              <span class="text-[11px] text-white/50" title="Which corner (or the centre) the image is pinned to.">Position</span>
+              <div class="flex flex-wrap gap-1">
+                {#each ANCHOR_OPTIONS as o, i}
+                  <button
+                    onclick={() => { watermarkState.anchor = i; saveWatermarkSettings(); }}
+                    title={`Pin the watermark to the ${o}.`}
+                    class="flex-1 rounded px-2 py-1 text-[11px] border capitalize transition-colors cursor-pointer {watermarkState.anchor === i ? 'border-white/50 bg-white/15 text-white' : 'border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'}"
+                  >{o}</button>
+                {/each}
+              </div>
+            </label>
+            {#each [
+              { k: 'scale',   label: 'Size',    min: 0.02, max: 1.0, step: 0.01, tip: 'Width of the watermark, as a fraction of the visible width.' },
+              { k: 'margin',  label: 'Margin',  min: 0,    max: 0.5, step: 0.01, tip: 'How far the watermark is pulled in from its pinned corner or edge, so it doesn\'t sit flush against the screen edge. 0 = flush against the edge.' },
+              { k: 'opacity', label: 'Opacity', min: 0,    max: 1,   step: 0.01, tip: 'Transparency of the watermark.' },
+            ] as s}
+              <div>
+                <div class="flex justify-between mb-1 text-xs text-white/70">
+                  <span title={s.tip}>{s.label}</span>
+                  <span class="font-mono text-white/40">{(watermarkState as any)[s.k].toFixed(2)}</span>
+                </div>
+                <input
+                  type="range" min={s.min} max={s.max} step={s.step} value={(watermarkState as any)[s.k]}
+                  oninput={(e) => { (watermarkState as any)[s.k] = parseFloat((e.target as HTMLInputElement).value); saveWatermarkSettings(); }}
+                  title={s.tip}
+                  class="w-full accent-white cursor-pointer"
+                />
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </div>
+
       <!-- Camera section -->
       <div class="mb-5">
         <div class="mb-3 flex items-center gap-2">
@@ -3350,75 +3439,6 @@
         {#if midiEnabled}
           <div class="mt-2 text-[11px] text-white/40">{midiConnected ? '♪ Device connected' : 'No device detected'}</div>
         {/if}
-      </div>
-
-
-      <!-- Watermark section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Watermark</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex flex-col gap-2.5">
-          <p class="text-[11px] text-white/40">A logo laid over whichever pattern is running. Like the text, it is drawn into the picture, so it appears in screenshots and recordings.</p>
-          <div class="flex items-center justify-between text-xs text-white/70">
-            <span>Show watermark</span>
-            <div
-              data-knob
-              class="relative h-[18px] w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 {watermarkState.enabled ? 'bg-white/70' : 'bg-white/20'}"
-              onclick={() => { watermarkState.enabled = !watermarkState.enabled; saveWatermarkSettings(); }}
-            >
-              <div class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform duration-200 {watermarkState.enabled ? 'translate-x-[11px]' : 'translate-x-[2px]'}"></div>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            {#if watermarkState.dataUrl}
-              <img src={watermarkState.dataUrl} alt="Watermark preview"
-                   class="h-10 w-10 shrink-0 rounded border border-white/15 bg-black/40 object-contain" />
-            {/if}
-            <label class="cursor-pointer rounded-md border border-white/15 bg-white/[0.07] px-3 py-1 text-xs text-white/70 transition-colors hover:border-white/40">
-              {watermarkState.dataUrl ? 'Replace image…' : 'Choose image…'}
-              <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange={onWatermarkPick} />
-            </label>
-            {#if watermarkState.dataUrl}
-              <button
-                class="cursor-pointer rounded px-2 py-1 text-xs text-white/50 transition-colors hover:text-white/80"
-                onclick={() => { watermarkState.dataUrl = null; watermarkState.enabled = false; saveWatermarkSettings(); }}
-              >Remove</button>
-            {/if}
-          </div>
-          {#if watermarkError}
-            <p class="text-[11px] text-red-300">{watermarkError}</p>
-          {/if}
-          {#if watermarkState.enabled && watermarkState.dataUrl}
-            <label class="flex flex-col gap-1">
-              <span class="text-[11px] text-white/50">Position</span>
-              <select
-                value={watermarkState.anchor}
-                onchange={(e) => { watermarkState.anchor = parseInt((e.target as HTMLSelectElement).value); saveWatermarkSettings(); }}
-                class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none cursor-pointer"
-              >{#each ANCHOR_OPTIONS as o, i}<option value={i}>{o}</option>{/each}</select>
-            </label>
-            {#each [
-              { k: 'scale',   label: 'Size',    min: 0.02, max: 0.8, step: 0.01 },
-              { k: 'margin',  label: 'Margin',  min: 0,    max: 0.5, step: 0.01 },
-              { k: 'opacity', label: 'Opacity', min: 0,    max: 1,   step: 0.01 },
-            ] as s}
-              <div>
-                <div class="flex justify-between mb-1 text-xs text-white/70">
-                  <span>{s.label}</span>
-                  <span class="font-mono text-white/40">{(watermarkState as any)[s.k].toFixed(2)}</span>
-                </div>
-                <input
-                  type="range" min={s.min} max={s.max} step={s.step} value={(watermarkState as any)[s.k]}
-                  oninput={(e) => { (watermarkState as any)[s.k] = parseFloat((e.target as HTMLInputElement).value); saveWatermarkSettings(); }}
-                  class="w-full accent-white cursor-pointer"
-                />
-              </div>
-            {/each}
-          {/if}
-        </div>
       </div>
 
       <!-- Remote Control section -->
@@ -3557,28 +3577,6 @@
               <option value="screenshot">Screenshot</option>
               <option value="record10">Record 10-second video</option>
             </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Presets section -->
-      <div class="mb-5">
-        <div class="mb-3 flex items-center gap-2">
-          <div class="h-px flex-1 bg-white/15"></div>
-          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Presets</span>
-          <div class="h-px flex-1 bg-white/15"></div>
-        </div>
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-white/70">Reset slots 1·2·3 to factory defaults</span>
-          <div class="flex gap-1 shrink-0">
-            <button
-              onclick={() => { resetSlots(patterns[index].id); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); }}
-              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
-            >This pattern</button>
-            <button
-              onclick={() => { if (confirm('Reset ALL patterns to factory defaults? This deletes every saved preset slot.')) { resetAllSlots(); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); } }}
-              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-rose-300/50 hover:text-rose-200/90 transition-colors cursor-pointer"
-            >All patterns</button>
           </div>
         </div>
       </div>
@@ -3747,40 +3745,96 @@
           <div class="mt-1 text-[10px] leading-snug text-white/30">Pose tracking is experimental and may be unreliable. Shows the Pose filter, patterns' pose controls and the T shortcut.</div>
         </div>
 
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-white/70">Export preset defaults</span>
-          <button
-            onclick={() => {
-              const entries: string[] = [];
-              const validIds = new Set(patterns.map(p => p.id));
-              for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i)!;
-                if (k.startsWith('pp:slots:')) {
-                  const patternId = k.slice('pp:slots:'.length);
-                  if (!validIds.has(patternId)) continue; // skip zombie keys from renamed/removed patterns
-                  const val = localStorage.getItem(k);
-                  entries.push(`  '${patternId}': ${val},`);
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-white/70" title="Copy saved preset slots as TypeScript, to paste into preset-defaults.ts.">Export preset defaults</span>
+          <div class="flex gap-1 shrink-0">
+            <button
+              onclick={() => {
+                const id = patterns[index].id;
+                const val = localStorage.getItem(`pp:slots:${id}`);
+                const ts = [
+                  `  // paste into src/lib/preset-defaults.ts`,
+                  `  '${id}': ${val},`,
+                ].join('\n');
+                navigator.clipboard.writeText(ts);
+              }}
+              title="Copy only the currently selected pattern's slots 1·2·3."
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            >This pattern</button>
+            <button
+              onclick={() => {
+                const entries: string[] = [];
+                const validIds = new Set(patterns.map(p => p.id));
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i)!;
+                  if (k.startsWith('pp:slots:')) {
+                    const patternId = k.slice('pp:slots:'.length);
+                    if (!validIds.has(patternId)) continue; // skip zombie keys from renamed/removed patterns
+                    const val = localStorage.getItem(k);
+                    entries.push(`  '${patternId}': ${val},`);
+                  }
                 }
-              }
-              const extraKeys = ['pp:demo-configs', 'lichtspiel-demo', 'pp:favorites', 'pp:evolving'];
-              const consoleCmds = extraKeys
-                .map(k => { const v = localStorage.getItem(k); return v ? `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});` : null; })
-                .filter(Boolean) as string[];
-              const ts = [
-                `  // paste into src/lib/preset-defaults.ts`,
-                ...entries,
-                ``,
-                `  // paste into browser console to restore demo settings:`,
-                ...consoleCmds,
-              ].join('\n');
-              navigator.clipboard.writeText(ts);
-            }}
-            class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
-          >Copy Defaults</button>
+                const extraKeys = ['pp:demo-configs', 'lichtspiel-demo', 'pp:favorites', 'pp:evolving'];
+                const consoleCmds = extraKeys
+                  .map(k => { const v = localStorage.getItem(k); return v ? `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});` : null; })
+                  .filter(Boolean) as string[];
+                const ts = [
+                  `  // paste into src/lib/preset-defaults.ts`,
+                  ...entries,
+                  ``,
+                  `  // paste into browser console to restore demo settings:`,
+                  ...consoleCmds,
+                ].join('\n');
+                navigator.clipboard.writeText(ts);
+              }}
+              title="Copy every pattern's slots 1·2·3, plus demo/favorites/evolving state."
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            >All patterns</button>
+            <button
+              onclick={() => {
+                const cmds: string[] = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i)!;
+                  const v = localStorage.getItem(k);
+                  if (v == null) continue;
+                  cmds.push(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`);
+                }
+                const script = [
+                  `  // paste into browser console to restore every saved setting:`,
+                  ...cmds,
+                ].join('\n');
+                navigator.clipboard.writeText(script);
+              }}
+              title="Copy every saved setting in the app — all patterns' slots plus every other Option (colours, camera, text overlay, watermark, MIDI, and more) — as a console script that restores all of it."
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            >All Options</button>
+          </div>
         </div>
 
-        <div class="mt-2 flex items-center justify-between">
-          <span class="text-xs text-white/70">Factory reset</span>
+        <!-- Presets -->
+        <div class="mt-3 mb-1 flex items-center gap-2">
+          <div class="h-px flex-1 bg-white/15"></div>
+          <span class="text-xs font-semibold uppercase tracking-widest text-white/60">Presets</span>
+          <div class="h-px flex-1 bg-white/15"></div>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-white/70" title="Wipes saved preset slots 1, 2 and 3, restoring them to their shipped defaults.">Reset slots 1·2·3 to factory defaults</span>
+          <div class="flex gap-1 shrink-0">
+            <button
+              onclick={() => { resetSlots(patterns[index].id); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); }}
+              title="Reset slots 1·2·3 for the currently selected pattern only."
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            >This pattern</button>
+            <button
+              onclick={() => { if (confirm('Reset ALL patterns to factory defaults? This deletes every saved preset slot.')) { resetAllSlots(); presetSlots = getSlots(patterns[index].id); presetCycleIdx = -1; resetAllControls(); } }}
+              title="Reset slots 1·2·3 for every pattern in the app."
+              class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-rose-300/50 hover:text-rose-200/90 transition-colors cursor-pointer"
+            >All patterns</button>
+          </div>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between">
+          <span class="text-xs text-white/70" title="Wipes every saved setting in localStorage and reloads the app from its shipped defaults.">Factory reset</span>
           <button
             onclick={() => {
               if (confirm('Reset ALL settings to factory defaults? This clears every saved value and reloads the app.')) {
