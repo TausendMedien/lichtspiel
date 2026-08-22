@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.260822-1204 — Volcano: Jet Power 3.3
+
+**Volcano** — default and all three presets now launch at Jet Power 3.3.
+
 ## v0.7.260821-1226 — Watermark · size per line · a much lighter overlay
 
 **Watermark** — a new section in Options takes a PNG (or WebP/JPEG) and lays it over whichever pattern is running. Pick a corner or the centre, then set Size, Margin and Opacity. Transparency is kept, so a logo with a clear background stays clear. Like the text, it is drawn into the picture rather than laid over the interface, so it appears in screenshots, in recordings and on a projector fed from the canvas. Images are scaled down to 1024px on their long edge when you choose them, which keeps a typical logo at a few kilobytes rather than several megabytes.

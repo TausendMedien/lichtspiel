@@ -31,7 +31,7 @@ const HALF_H = CAM_Z * Math.tan((60 * Math.PI) / 360);   // renderer fov is 60°
 let particleCount = 24000;
 let trail         = 1.0;
 let lineWidth     = 3.5;   // pixels
-let jetPower      = 3.0;
+let jetPower      = 3.3;
 let spread        = 0.54;  // radians, max angle off vertical
 let gravity       = 1.8;
 let pulse         = 0.9;
@@ -457,7 +457,7 @@ export const volcano: Pattern = {
     { label: "Particle Count", type: "range", min: 3000, max: MAX_PARTICLES, step: 500, default: 24000, tip: "Number of magma and ash particles. More = denser eruption, heavier on GPU.", get: () => particleCount, set: v => { particleCount = Math.round(v); geometry?.setDrawRange(0, particleCount * 6); } },
     { label: "Trail",          type: "range", min: 0,     max: 10,  step: 0.5,  default: 1,     tip: "Streak length behind each particle. 0 = round embers instead of streaks.", get: () => trail,         set: v => { trail = v; } },
     { label: "Streak Width",   type: "range", min: 1,     max: 8,   step: 0.5,  default: 3.5,   tip: "Thickness of each streak, in pixels.",                                   get: () => lineWidth,     set: v => { lineWidth = v; } },
-    { label: "Jet Power",      type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 3,     tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
+    { label: "Jet Power",      type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 3.3,   tip: "Launch speed out of the vent.",                                          get: () => jetPower,      set: v => { jetPower = v; } },
     { label: "Spread",         type: "range", min: 0,     max: 1.2, step: 0.02, default: 0.54,  tip: "Cone angle of the jet — 0 = a narrow vertical fountain, higher = a wide fan.", get: () => spread,       set: v => { spread = v; } },
     { label: "Gravity",        type: "range", min: 0.5,   max: 4,   step: 0.1,  default: 1.8,   tip: "How hard trajectories arc back down.",                                   get: () => gravity,       set: v => { gravity = v; } },
     { label: "Pulse",          type: "range", min: 0,     max: 1,   step: 0.02, default: 0.9,   tip: "How strongly the eruption surges and eases, like a Strombolian burst.",  get: () => pulse,         set: v => { pulse = v; } },
