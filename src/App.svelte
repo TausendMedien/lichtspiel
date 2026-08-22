@@ -3795,19 +3795,20 @@
                 const cmds: string[] = [];
                 for (let i = 0; i < localStorage.length; i++) {
                   const k = localStorage.key(i)!;
+                  if (k.startsWith('pp:slots:')) continue; // preset slots — covered by This pattern / All patterns
                   const v = localStorage.getItem(k);
                   if (v == null) continue;
                   cmds.push(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`);
                 }
                 const script = [
-                  `  // paste into browser console to restore every saved setting:`,
+                  `  // paste into browser console to restore every Option (excludes preset slots):`,
                   ...cmds,
                 ].join('\n');
                 navigator.clipboard.writeText(script);
               }}
-              title="Copy every saved setting in the app — all patterns' slots plus every other Option (colours, camera, text overlay, watermark, MIDI, and more) — as a console script that restores all of it."
+              title="Copy every other saved Option (colours, camera, text overlay, watermark, MIDI, and more) — no preset slots — as a console script that restores it."
               class="rounded px-2 py-0.5 text-[10px] text-white/50 border border-white/15 hover:border-white/40 hover:text-white/80 transition-colors cursor-pointer"
-            >All Options</button>
+            >Only Options</button>
           </div>
         </div>
 
