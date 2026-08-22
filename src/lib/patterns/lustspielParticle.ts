@@ -596,7 +596,7 @@ export function makeLustspielParticle(id: string, name: string): Pattern {
         || (comp === 'bands' && arrangement !== 'chaotic'),
       get: () => zones, set: (v: number) => { zones = Math.round(v); maskDirty = true; } },
     { label: 'Interlock', type: 'range', min: 0, max: 1, step: 0.01, default: 0.35,
-      tip: 'How much neighbouring zones reach into each other at their edge — from a sharp seam to an almost seamless blend.',
+      tip: 'How much neighbouring zones reach into each other at their edge — from a sharp seam to a fully seamless blend.',
       disabled: () => enabledCount() < 2 || comp === 'merged',
       get: () => lock, set: (v: number) => { lock = v; maskDirty = true; } },
     { label: 'Mask Edge', type: 'range', min: 0, max: 1, step: 0.01, default: 0.25,

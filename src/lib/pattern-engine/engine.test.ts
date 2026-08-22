@@ -228,3 +228,76 @@ describe("buildZoneMask", () => {
     expect(topC0).toBeGreaterThan(botC0 * 3);
   });
 });
+
+describe("zone seams — Interlock closes gaps without double-covering", () => {
+  const { debugZoneSlot, buildZoneMask, DESIGN_W } = require("./engine") as typeof import("./engine");
+  const H = 1080;
+  const base = {
+    phase: "B" as const, pointStyle: "strands" as const, lineDir: "v" as const,
+    dens: 1, stroke: 1, warp: 1, organic: 0, zones: 2, pk: 0,
+    seed: 8685, colorSoftness: 0, strictness: 0.65, elems: [1, 2] as const,
+  };
+
+  test("blobs: Interlock=0 still leaves an unclaimed seam (unchanged look)", () => {
+    const st = { ...base, comp: "blobs" as const, arrangement: "chaotic" as const, lock: 0 };
+    let seam = 0;
+    const N = 60;
+    for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+      const x = (ix + 0.5) / N * DESIGN_W, y = (iy + 0.5) / N * H;
+      if (debugZoneSlot(x, y, H, st as any) === -1) seam++;
+    }
+    expect(seam).toBeGreaterThan(0);
+  });
+
+  test("blobs: Interlock=1 closes the seam completely — no unclaimed points", () => {
+    const st = { ...base, comp: "blobs" as const, arrangement: "chaotic" as const, lock: 1 };
+    let seam = 0;
+    const N = 60;
+    for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+      const x = (ix + 0.5) / N * DESIGN_W, y = (iy + 0.5) / N * H;
+      if (debugZoneSlot(x, y, H, st as any) === -1) seam++;
+    }
+    expect(seam).toBe(0);
+  });
+
+  test("bands: Interlock handoff never lets two neighbouring elements both claim the same point", () => {
+    // Regression test for the "bright seam" bug: the mask's per-channel bytes
+    // sum to at most one full channel's worth (255) per texel iff each
+    // supersample ever counts toward exactly one channel. Summed well above
+    // 255 would mean some subsamples counted toward two channels at once —
+    // the additive double-coverage that read as an unrelated bright line.
+    const st = {
+      comp: "bands" as const, arrangement: "leftRight" as const, zones: 3,
+      lock: 1, seed: 8685, strictness: 0.65, elems: [1, 2, 3, 4] as const,
+    };
+    const MW = 400, MH = 4;
+    const out = new Uint8Array(MW * MH * 4);
+    buildZoneMask(out, MW, MH, H, st);
+    let maxSum = 0;
+    for (let i = 0; i < MW * MH; i++) {
+      const sum = out[i * 4] + out[i * 4 + 1] + out[i * 4 + 2] + out[i * 4 + 3];
+      if (sum > maxSum) maxSum = sum;
+    }
+    // Each of up to 4 channels independently rounds its own 0..255 coverage,
+    // so a boundary texel split evenly between two channels can round each
+    // side up and land a couple of units over 255 — real double-coverage
+    // (the bug this guards against) pushes the sum toward ~2x that, not a
+    // rounding-sized nudge.
+    expect(maxSum).toBeLessThanOrEqual(260);
+  });
+
+  test("bands: Interlock=0 leaves the seam handoff disabled (unchanged look)", () => {
+    const st = { ...base, comp: "bands" as const, arrangement: "leftRight" as const, lock: 0 };
+    // Every point belongs to exactly its home band — no handoff at all — so
+    // slot assignment must be a clean step function with no dithering.
+    const N = 300;
+    let last = -1, flips = 0;
+    for (let i = 0; i < N; i++) {
+      const x = (i + 0.5) / N * DESIGN_W;
+      const slot = debugZoneSlot(x, H * 0.5, H, st as any);
+      if (slot !== last) { flips++; last = slot; }
+    }
+    // 2 elements, chaotic-free leftRight split -> exactly one transition.
+    expect(flips).toBeLessThanOrEqual(2);
+  });
+});

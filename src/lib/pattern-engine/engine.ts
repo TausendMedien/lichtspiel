@@ -124,30 +124,39 @@ function bandZone(x: number, y: number, o: Ctx, slot: number): boolean {
   const n = o.elems.length;
   const u = zoneU(x, y, o), fl = Math.floor(u);
   let idx = fl % n; if (idx < 0) idx += n;
-  if (idx === slot) return true;
-  if (o.lock > 0) {
-    const f = u - fl, d = Math.min(f, 1 - f), band = 0.32 * o.lock;
-    if (d < band) {
-      const nb = (f < 0.5) ? ((idx - 1 + n) % n) : ((idx + 1) % n);
-      if (nb === slot) {
-        // field(), not hash(): at Speed 0 this is a fixed dither seam (same as
-        // before); once Speed > 0, o.t drifts it smoothly, so marks in the seam
-        // trade places back and forth — the flicker is deliberate here, but it
-        // rides the same speed-capped, slider-driven o.t as everything else, so
-        // it never runs faster than the user's own Speed setting allows.
-        const w = field(x * 0.7, y * 0.9, o.seed + 5 + o.t) * 0.5 + 0.5;
-        return w < (1 - d / band) * 0.85;
-      }
-    }
+  const f = u - fl, d = Math.min(f, 1 - f), band = 0.32 * o.lock;
+  const inBand = o.lock > 0 && d < band;
+  const nb = (f < 0.5) ? ((idx - 1 + n) % n) : ((idx + 1) % n);
+
+  // The dither band is a HANDOFF, never an overlap: home and neighbour read
+  // the identical field() value and test opposite sides of the same
+  // threshold, so exactly one of them owns any given point inside the band.
+  // (An earlier version had the home slot return true unconditionally while
+  // the neighbour could ALSO return true in the same band — both the canvas's
+  // "lighter" compositing and the hosted quads' additive blending then summed
+  // the overlap into a visibly brighter seam, not a blend.)
+  if (idx === slot) {
+    if (!inBand) return true;
+    // field(), not hash(): at Speed 0 this is a fixed dither seam (same as
+    // before); once Speed > 0, o.t drifts it smoothly, so marks in the seam
+    // trade places back and forth — the flicker is deliberate here, but it
+    // rides the same speed-capped, slider-driven o.t as everything else, so
+    // it never runs faster than the user's own Speed setting allows.
+    const w = field(x * 0.7, y * 0.9, o.seed + 5 + o.t) * 0.5 + 0.5;
+    return w >= (1 - d / band) * 0.85;
+  }
+  if (inBand && nb === slot) {
+    const w = field(x * 0.7, y * 0.9, o.seed + 5 + o.t) * 0.5 + 0.5;
+    return w < (1 - d / band) * 0.85;
   }
   return false;
 }
 
 /**
  * Blobs: amorphous cells instead of straight bands, with a dark seam at the
- * border rather than blending into each other. Zones sets how many blob
- * clusters each element gets (more = finer, more scattered composition);
- * Interlock narrows the seam toward a soft blend as it rises.
+ * border at Interlock 0. Zones sets how many blob clusters each element gets
+ * (more = finer, more scattered composition); Interlock closes the seam as it
+ * rises, reaching a fully seamless (but still organically dithered) edge at 1.
  */
 let _blobKey: string | null = null;
 let _blobList: { x: number; y: number; slot: number }[] | null = null;
@@ -203,19 +212,38 @@ function blobZone(x: number, y: number, o: Ctx, slot: number): boolean {
   let wx = 1, wy = 1;
   if (o.arrangement === "leftRight") { const w = 1 - 0.92 * o.strictness; wy = w * w; }
   else if (o.arrangement === "upDown") { const w = 1 - 0.92 * o.strictness; wx = w * w; }
-  let best = Infinity, bestSlot = -1, second = Infinity;
+  let best = Infinity, bestSlot = -1, second = Infinity, secondSlot = -1;
   for (let i = 0; i < centers.length; i++) {
     const c = centers[i], dx = x - c.x, dy = y - c.y, d = dx * dx * wx + dy * dy * wy;
-    if (d < best) { second = best; best = d; bestSlot = c.slot; }
-    else if (d < second) { second = d; }
+    if (d < best) { second = best; secondSlot = bestSlot; best = d; bestSlot = c.slot; }
+    else if (d < second) { second = d; secondSlot = c.slot; }
   }
-  if (bestSlot !== slot) return false;
+  if (slot !== bestSlot && slot !== secondSlot) return false;
+  // A blob's own two nearest clusters can both belong to this element (when
+  // Zones > 1 gives one element several clusters) — there's no neighbouring
+  // element to interlock with, so it just owns the point outright.
+  if (secondSlot === bestSlot) return slot === bestSlot;
+
   const rDist = Math.sqrt(best), rSecond = Math.sqrt(second);
   const margin = (rSecond - rDist) / Math.max(rSecond, 1);
-  // lock=0 → 0.06 (sharp seam, the original look); lock=1 → close to 0 (blobs
-  // interlock almost seamlessly).
-  const threshold = 0.06 * (1 - 0.85 * o.lock);
-  return margin > threshold;
+  // Fixed width, not lock-scaled: this is the contested band at the seam
+  // between the two nearest blobs. At lock=0 nothing inside it is rescued
+  // (see below) — the original "dark seam" look, exactly reproduced.
+  const BAND = 0.06;
+  if (margin > BAND) return slot === bestSlot;
+
+  // Inside the contested band, hand the WHOLE band off between the two
+  // nearest slots instead of rejecting both (the old behaviour, which is why
+  // raising Interlock only ever shrank the seam and never closed it — the
+  // rejected band never actually went away, it just narrowed). `o.lock` is
+  // the fraction of the band RESCUED from the gap: 0 rescues none (today's
+  // full gap, byte-identical), 1 rescues all of it, split ~50/50 by field()
+  // so every point in the band is claimed by exactly one of the two slots —
+  // true zero seam, with an organic dithered edge rather than a hard cut.
+  // field(), not hash(): o.t is the only time-safe input here.
+  const w = field(x * 0.7, y * 0.9, o.seed + 6 + o.t) * 0.5 + 0.5; // 0..1
+  if (slot === bestSlot) return w < o.lock * 0.5;
+  /* slot === secondSlot */ return w >= o.lock * 0.5 && w < o.lock;
 }
 
 function inZone(x: number, y: number, o: Ctx, slot: number): boolean {

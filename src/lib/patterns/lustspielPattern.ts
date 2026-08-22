@@ -3,6 +3,7 @@ import type { Pattern, PatternContext, PatternControl } from './types';
 import type { EngineState, ElementId, PhaseId } from '../pattern-engine/types';
 import { paint, PHASE, DESIGN_W, mixHex } from '../pattern-engine/engine';
 import { getEnabledIndices, getColorByIndex } from '../colorC2.svelte';
+import { createRepaintScheduler } from './repaintScheduler';
 
 // ─── Shaders ──────────────────────────────────────────────────────────────────
 // The canvas is drawn at the output resolution, so the texture maps 1:1 onto the
@@ -111,6 +112,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
 
   let pixelRatio = 1;
   let dirty = true;
+  const scheduler = createRepaintScheduler();
 
   const touch = () => { dirty = true; };
   const multi = () => state.elems.length > 1;
@@ -237,7 +239,7 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
       disabled: () => !zonesMatter(),
       get: () => state.zones, set: v => { state.zones = Math.round(v); touch(); } },
     { label: 'Interlock', type: 'range', min: 0, max: 1, step: 0.01, default: 0.35,
-      tip: 'How much neighbouring zones reach into each other at their edge — from a sharp dark seam to an almost seamless blend.',
+      tip: 'How much neighbouring zones reach into each other at their edge — from a sharp dark seam to a fully seamless blend.',
       disabled: () => !multi(),
       get: () => state.lock, set: v => { state.lock = v; touch(); } },
 
@@ -322,17 +324,25 @@ export function makeLustspielPattern(id: string, name: string, phase: PhaseId, o
     },
 
     update(dt: number) {
-      if (speed > 0 && animateOn) {
-        state.time = (state.time ?? 0) + dt * speed * TIME_RATE;
-        dirty = true;
-      }
+      if (speed > 0 && animateOn) dirty = true;
       // Colour edits happen in the global palette, outside this pattern's controls
       // — only worth checking while the blend actually uses them.
       if (paletteBlend > 0) {
         const key = appPaletteKey();
         if (key !== lastAppPaletteKey) { lastAppPaletteKey = key; dirty = true; }
       }
-      if (dirty) repaint();
+      if (scheduler.shouldRepaint(dt, dirty)) {
+        if (speed > 0 && animateOn) {
+          // Real (capped) time since the last repaint, not this frame's dt —
+          // see repaintScheduler.ts for why: a delayed repaint is catching
+          // up on several frames at once, and capping that catch-up is what
+          // keeps it from reading as a single oversized jump.
+          state.time = (state.time ?? 0) + scheduler.consumeStep() * speed * TIME_RATE;
+        }
+        const t0 = performance.now();
+        repaint();
+        scheduler.reportCost(performance.now() - t0);
+      }
     },
 
     resize(width: number, height: number) {

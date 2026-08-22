@@ -5,6 +5,7 @@ import { paint, PHASE, DESIGN_W, mixHex, buildZoneMask, field, type ZoneInput } 
 import { getEnabledIndices, getColorByIndex } from '../colorC2.svelte';
 import { getSlots } from '../presets';
 import { SOURCES, GAIN_DEFAULT, compositeVert, compositeFrag } from './lustspielParticle';
+import { createRepaintScheduler } from './repaintScheduler';
 
 /**
  * Lustspiel Alpha / Beta / Gamma — combines the Canvas2D vocabulary (Points,
@@ -55,7 +56,30 @@ const N_SLOTS = CANVAS_ELEMENTS.length + SOURCES.length; // 9
 const DEFAULT_SEED = 8420;
 const TIME_RATE = 1.0;
 
+/**
+ * The hosted-element Order controls used to be labelled "<name> Order" (e.g.
+ * "Particle Field Order"); the label is also the localStorage persistence key
+ * (`pp:<patternId>:<label>`, see persist.ts), so dropping the suffix orphans
+ * any value already saved under the old key. Carry it forward once, before
+ * wrapWithPersist's own restore pass reads localStorage — leaves the old key
+ * in place rather than deleting it, same as this project's other renames.
+ */
+function migrateOrderLabels(id: string) {
+  for (const s of SOURCES) {
+    const oldKey = `pp:${id}:${s.label} Order`;
+    const newKey = `pp:${id}:${s.label}`;
+    try {
+      if (localStorage.getItem(newKey) === null) {
+        const old = localStorage.getItem(oldKey);
+        if (old !== null) localStorage.setItem(newKey, old);
+      }
+    } catch { /* localStorage unavailable — nothing to migrate */ }
+  }
+}
+
 export function makeLustspielCombined(id: string, name: string, phase: PhaseId): Pattern {
+  migrateOrderLabels(id);
+
   // ── Elements / Order ────────────────────────────────────────────────────────
   // order[i] = 0 (off) or its position among active elements (1-based, ties
   // broken by fixed slot index — stable and always resolvable, so it can
@@ -131,8 +155,7 @@ export function makeLustspielCombined(id: string, name: string, phase: PhaseId):
   let material: THREE.ShaderMaterial | null = null;
   let geometry: THREE.PlaneGeometry | null = null;
   let dirty = true;
-  let repaintAccum = 0;
-  const REPAINT_INTERVAL = 1 / 18; // throttle canvas repaint to ~18Hz
+  const scheduler = createRepaintScheduler();
 
   const touch = () => { dirty = true; };
 
@@ -286,7 +309,7 @@ export function makeLustspielCombined(id: string, name: string, phase: PhaseId):
     ...SOURCES.map((s, si) => {
       const i = CANVAS_ELEMENTS.length + si;
       return {
-        label: `${s.label} Order`, type: 'stepper' as const, min: 0, max: N_SLOTS,
+        label: s.label, type: 'stepper' as const, min: 0, max: N_SLOTS,
         tip: `${s.label} (hosted) — 0 = off, otherwise its position among the active elements. Its Heat / Push / pose reactivity works exactly as in the original pattern.`,
         get: () => order[i],
         set: (v: number) => {
@@ -500,21 +523,26 @@ export function makeLustspielCombined(id: string, name: string, phase: PhaseId):
       const active = activeList();
       const n = active.length;
 
-      if (speed > 0) {
-        state.time = (state.time ?? 0) + dt * speed * TIME_RATE;
-        touch();
-      }
+      if (speed > 0) touch();
       if (paletteBlend >= 0) {
         const key = appPaletteKey();
         if (key !== lastAppPaletteKey) { lastAppPaletteKey = key; touch(); }
       }
       if (maskDirty && compMode !== 'merged' && n > 1) rebuildZoneMask(active);
 
-      repaintAccum += dt;
-      if (dirty && repaintAccum >= REPAINT_INTERVAL) {
-        repaintAccum = 0;
+      if (scheduler.shouldRepaint(dt, dirty)) {
+        if (speed > 0) {
+          // Advance by the real (capped) time since the last repaint, not
+          // this frame's dt — a throttled repaint is "catching up" on
+          // several frames at once, and capping it here (see
+          // repaintScheduler.ts) is what keeps that catch-up from reading
+          // as a single oversized jump.
+          state.time = (state.time ?? 0) + scheduler.consumeStep() * speed * TIME_RATE;
+        }
         resizeCanvas(size.width, size.height);
+        const t0 = performance.now();
         repaint();
+        scheduler.reportCost(performance.now() - t0);
       }
 
       // Dual speed calibration: canvas time above already scales by 0.15-ish

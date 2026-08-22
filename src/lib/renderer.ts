@@ -587,7 +587,12 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Pattern): Ren
   }
 
   function renderFrame(now: number) {
-    const dt = (now - last) / 1000;
+    // Cap dt so a genuine stall (GC pause, tab-switch, a slow synchronous
+    // repaint) can't inflate the NEXT frame's motion step into a visible
+    // jump — 1/20s is well above normal frame-time variance (never clips an
+    // ordinary dip to ~24fps), so this only engages for real stalls.
+    const RAW_DT_MAX = 1 / 20;
+    const dt = Math.min((now - last) / 1000, RAW_DT_MAX);
     const elapsed = (now - start) / 1000;
     last = now;
     // Tier 1: Speed universal — driven by motionCameraWrapper per active pattern.
